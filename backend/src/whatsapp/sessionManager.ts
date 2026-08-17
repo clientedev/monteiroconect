@@ -355,14 +355,34 @@ class WhatsAppSessionManager extends EventEmitter {
     return result;
   }
 
-  private normalizeJid(phone: string): string {
-    const cleaned = phone.replace(/\D/g, '');
-    return cleaned.includes('@s.whatsapp.net') ? cleaned : `${cleaned}@s.whatsapp.net`;
+  /**
+   * Converte um destino (telefone ou JID) em JID válido.
+   * Preserva JIDs completos (@g.us = grupos, @lid = contatos com privacidade);
+   * apenas números recebem o sufixo @s.whatsapp.net.
+   */
+  private normalizeJid(to: string): string {
+    const t = to.trim();
+    if (t.includes('@')) return t; // já é JID completo — usar exatamente como veio
+    return `${t.replace(/\D/g, '')}@s.whatsapp.net`;
+  }
+
+  /**
+   * Extrai do JID o identificador de contato — MESMA transformação usada ao
+   * salvar mensagens recebidas, para que envio e recebimento caiam no mesmo contato.
+   */
+  private jidToContactPhone(jid: string): string {
+    if (jid.endsWith('@s.whatsapp.net')) {
+      return jid.split('@')[0].split(':')[0]; // remove sufixo de dispositivo ":N" se houver
+    }
+    return jid; // grupos (@g.us) e LIDs (@lid) são mantidos íntegros
   }
 
   private async handleIncomingMessage(accountId: string, msg: WAMessage): Promise<void> {
     try {
-      const fromPhone = msg.key.remoteJid?.replace('@s.whatsapp.net', '') || '';
+      const remoteJid = msg.key.remoteJid || '';
+      if (!remoteJid || remoteJid === 'status@broadcast') return;
+
+      const fromPhone = this.jidToContactPhone(remoteJid);
       const pushName = msg.pushName || fromPhone;
 
       // Salvar/atualizar contato
@@ -523,9 +543,8 @@ class WhatsAppSessionManager extends EventEmitter {
           if (contactMsgCount === 1) {
             const greeting = await getGreetingForAccount(accountId);
             if (greeting) {
-              const jid = `${fromPhone}@s.whatsapp.net`;
-              await session.socket.sendMessage(jid, { text: greeting });
-              await this.saveOutgoingMessage(accountId, jid, greeting, 'text', null, { key: { id: `greeting-${Date.now()}` } });
+              await session.socket.sendMessage(remoteJid, { text: greeting });
+              await this.saveOutgoingMessage(accountId, remoteJid, greeting, 'text', null, { key: { id: `greeting-${Date.now()}` } });
               logger.info(`Saudação enviada para ${fromPhone} via chatbot`);
             }
           }
@@ -533,14 +552,13 @@ class WhatsAppSessionManager extends EventEmitter {
           // Check auto-replies
           const match = await findMatchingReply(accountId, content);
           if (match) {
-            const jid = `${fromPhone}@s.whatsapp.net`;
             let sendResult: any;
             if (match.mediaType === 'image' && match.mediaUrl) {
-              sendResult = await session.socket.sendMessage(jid, { image: { url: match.mediaUrl }, caption: match.reply });
+              sendResult = await session.socket.sendMessage(remoteJid, { image: { url: match.mediaUrl }, caption: match.reply });
             } else {
-              sendResult = await session.socket.sendMessage(jid, { text: match.reply });
+              sendResult = await session.socket.sendMessage(remoteJid, { text: match.reply });
             }
-            await this.saveOutgoingMessage(accountId, jid, match.reply, match.mediaType, match.mediaUrl ?? null, sendResult);
+            await this.saveOutgoingMessage(accountId, remoteJid, match.reply, match.mediaType, match.mediaUrl ?? null, sendResult);
             logger.info(`Auto-resposta enviada para ${fromPhone} via chatbot "${match.chatbotName}"`);
           }
         } catch (botErr) {
@@ -561,7 +579,7 @@ class WhatsAppSessionManager extends EventEmitter {
     result: any,
   ): Promise<void> {
     try {
-      const toPhone = jid.replace('@s.whatsapp.net', '');
+      const toPhone = this.jidToContactPhone(jid);
 
       let contact = await prisma.contact.findUnique({
         where: { phone_whatsappId: { phone: toPhone, whatsappId: accountId } },
