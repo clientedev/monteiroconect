@@ -54,7 +54,7 @@ model Contact {
   updatedAt    DateTime @updatedAt
 
   whatsappId   String
-  whatsapp     WhatsAppAccount @relation(fields: [whatsappId], references: [id])
+  whatsapp     WhatsAppAccount @relation(fields: [whatsappId], references: [id], onDelete: Cascade)
   conversations Conversation[]
 
   @@unique([phone, whatsappId])
@@ -65,9 +65,9 @@ model Contact {
 model Conversation {
   id             String   @id @default(cuid())
   contactId      String
-  contact        Contact  @relation(fields: [contactId], references: [id])
+  contact        Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
   whatsappId     String
-  whatsapp       WhatsAppAccount @relation(fields: [whatsappId], references: [id])
+  whatsapp       WhatsAppAccount @relation(fields: [whatsappId], references: [id], onDelete: Cascade)
   lastMessage    String?
   lastMessageAt  DateTime?
   unreadCount    Int      @default(0)
@@ -89,7 +89,7 @@ model Message {
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   whatsappId     String
-  whatsapp       WhatsAppAccount @relation(fields: [whatsappId], references: [id])
+  whatsapp       WhatsAppAccount @relation(fields: [whatsappId], references: [id], onDelete: Cascade)
   type           String   @default("text")
   content        String?
   mediaUrl       String?
@@ -153,7 +153,7 @@ model SystemLog {
   message   String
   source    String?
   whatsappId String?
-  whatsapp   WhatsAppAccount? @relation(fields: [whatsappId], references: [id])
+  whatsapp   WhatsAppAccount? @relation(fields: [whatsappId], references: [id], onDelete: Cascade)
   metadata  String?
   createdAt DateTime @default(now())
 
@@ -181,6 +181,7 @@ model Chatbot {
   whatsappAccountId String
   whatsappAccount  WhatsAppAccount @relation(fields: [whatsappAccountId], references: [id], onDelete: Cascade)
   isActive         Boolean  @default(true)
+  useAi            Boolean  @default(false)
   greetingMessage  String?
   fallbackMessage  String?
   triggerMode      String   @default("any") // any, first_message, keyword_only

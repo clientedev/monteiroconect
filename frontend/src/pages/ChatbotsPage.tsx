@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bot, Plus, Trash2, ToggleLeft, ToggleRight, Edit3, X, MessageSquare, Smartphone, ChevronDown, ChevronUp, GripVertical } from 'lucide-react';
+import { Bot, Plus, Trash2, ToggleLeft, ToggleRight, Edit3, X, MessageSquare, Smartphone, ChevronDown, ChevronUp, GripVertical, Sparkles } from 'lucide-react';
 
 interface AutoReplyRule {
   id?: string;
@@ -15,6 +15,7 @@ interface Chatbot {
   id: string;
   name: string;
   isActive: boolean;
+  useAi: boolean;
   greetingMessage: string | null;
   fallbackMessage: string | null;
   triggerMode: string;
@@ -54,6 +55,7 @@ export default function ChatbotsPage() {
 
   const [formName, setFormName] = useState('');
   const [formAccount, setFormAccount] = useState('');
+  const [formUseAi, setFormUseAi] = useState(false);
   const [formGreeting, setFormGreeting] = useState('');
   const [formFallback, setFormFallback] = useState('');
   const [formTriggerMode, setFormTriggerMode] = useState('any');
@@ -83,13 +85,14 @@ export default function ChatbotsPage() {
       await chatbotApi.create({
         name: formName.trim(),
         whatsappAccountId: formAccount,
+        useAi: formUseAi,
         greetingMessage: formGreeting.trim() || undefined,
         fallbackMessage: formFallback.trim() || undefined,
         triggerMode: formTriggerMode,
         autoReplies: formRules.filter(r => r.trigger.trim() && r.reply.trim()),
       });
       setShowCreate(false);
-      setFormName(''); setFormAccount(''); setFormGreeting(''); setFormFallback('');
+      setFormName(''); setFormAccount(''); setFormUseAi(false); setFormGreeting(''); setFormFallback('');
       setFormTriggerMode('any');
       setFormRules([{ triggerType: 'contains', trigger: '', reply: '', mediaType: 'text', mediaUrl: '' }]);
       await loadData();
@@ -103,6 +106,14 @@ export default function ChatbotsPage() {
       await chatbotApi.toggle(id);
       await loadData();
     } catch {}
+  };
+
+  const handleToggleAi = async (id: string, useAi: boolean) => {
+    try {
+      const { chatbotApi } = await import('../lib/api');
+      await chatbotApi.update(id, { useAi: !useAi });
+      await loadData();
+    } catch (err: any) { alert(err.message); }
   };
 
   const handleDelete = async (id: string) => {
@@ -165,7 +176,7 @@ export default function ChatbotsPage() {
                 </div>
                 <div>
                   <h3 className="font-bold font-display text-monte-azul">{bot.name}</h3>
-                  <div className="flex items-center gap-3 mt-0.5">
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                     {bot.whatsappAccount && (
                       <span className="text-xs text-monte-sereno flex items-center gap-1">
                         <Smartphone className="w-3 h-3" /> {bot.whatsappAccount.name}
@@ -174,12 +185,24 @@ export default function ChatbotsPage() {
                     <span className={`badge text-[10px] ${bot.isActive ? 'badge-green' : 'badge-gray'}`}>
                       {bot.isActive ? 'Ativo' : 'Inativo'}
                     </span>
+                    {bot.useAi && (
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-semibold bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-sm">
+                        <Sparkles className="w-3 h-3" /> IA Grok
+                      </span>
+                    )}
                     <span className="text-xs text-monte-sereno/60">{bot.autoReplies.length} regras</span>
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-1">
+                <button
+                  onClick={() => handleToggleAi(bot.id, bot.useAi)}
+                  className={`p-2 rounded-full transition-colors ${bot.useAi ? 'bg-purple-100 hover:bg-purple-200' : 'hover:bg-monte-areiaSecao'}`}
+                  title={bot.useAi ? 'Desativar IA Grok' : 'Ativar IA Grok (assistente de seguros e planos de saúde)'}
+                >
+                  <Sparkles className={`w-5 h-5 ${bot.useAi ? 'text-purple-600' : 'text-monte-sereno'}`} />
+                </button>
                 <button onClick={() => handleToggle(bot.id)} className="p-2 rounded-full hover:bg-monte-areiaSecao transition-colors" title={bot.isActive ? 'Desativar' : 'Ativar'}>
                   {bot.isActive ? <ToggleRight className="w-6 h-6 text-monte-verde" /> : <ToggleLeft className="w-6 h-6 text-monte-sereno" />}
                 </button>
@@ -320,6 +343,25 @@ export default function ChatbotsPage() {
                   <option value="keyword_only">Apenas palavras-chave configuradas</option>
                 </select>
               </div>
+
+              <label className="flex items-start gap-3 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/60 rounded-2xl p-4 cursor-pointer transition-all hover:shadow-md">
+                <input
+                  type="checkbox"
+                  checked={formUseAi}
+                  onChange={e => setFormUseAi(e.target.checked)}
+                  className="w-4 h-4 mt-1 accent-purple-600 flex-shrink-0"
+                />
+                <div>
+                  <p className="text-sm font-bold text-monte-azul flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-purple-600" /> IA Grok — Assistente Inteligente
+                  </p>
+                  <p className="text-xs text-monte-sereno mt-1 leading-relaxed">
+                    Quando ativa, a IA da Grok responde os clientes automaticamente, treinada para falar
+                    apenas sobre seguros, planos de saúde e a Monteiro Corretora. As regras de palavras-chave
+                    continuam como alternativa quando a IA não responde. Requer a variável XAI_API_KEY no servidor.
+                  </p>
+                </div>
+              </label>
 
               <div>
                 <label className="block text-sm font-medium text-monte-azul mb-2">Mensagem de Saudação (opcional)</label>

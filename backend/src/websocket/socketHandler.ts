@@ -56,6 +56,11 @@ export function setupWebSocket(httpServer: HttpServer): Server {
     socket.on('leave-conversation', (conversationId: string) => {
       socket.leave(`conversation:${conversationId}`);
     });
+
+    // Cliente marcou conversa como lida — notifica todos para zerar badges
+    socket.on('conversation-read', (conversationId: string) => {
+      io.emit('conversation:read', { conversationId });
+    });
   });
 
   // Forward session manager events to WebSocket clients

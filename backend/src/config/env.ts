@@ -24,4 +24,7 @@ export const env = {
   adminPassword: process.env.ADMIN_PASSWORD || 'Admin@2026!',
   adminEmail: process.env.ADMIN_EMAIL || 'admin@monteiroconecta.local',
   corsOrigin: process.env.CORS_ORIGIN || '*',
+  xaiApiKey: process.env.XAI_API_KEY || '',
+  xaiBaseUrl: process.env.XAI_BASE_URL || 'https://api.x.ai/v1',
+  xaiModel: process.env.XAI_MODEL || 'grok-3-mini-beta',
 } as const;

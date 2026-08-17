@@ -2,8 +2,8 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { disconnectSocket, getSocket } from '../lib/socket';
 import {
-  LayoutDashboard, MessageSquare, Smartphone, Users, Tags,
-  ScrollText, Settings, LogOut, Search, Menu, X, Bot,
+  LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell,
+  LogOut, Search, Menu, X, Bot,
 } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { dashboardApi } from '../lib/api';
@@ -19,8 +19,6 @@ const manageItems = [
   { to: '/contacts', icon: Users, label: 'Contatos' },
   { to: '/attendants', icon: Users, label: 'Atendentes' },
   { to: '/tags', icon: Tags, label: 'Etiquetas' },
-  { to: '/logs', icon: ScrollText, label: 'Logs' },
-  { to: '/settings', icon: Settings, label: 'Configurações' },
 ];
 
 export default function Layout() {
@@ -31,6 +29,8 @@ export default function Layout() {
   const [searchResults, setSearchResults] = useState<any>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadConversations, setUnreadConversations] = useState<any[]>([]);
+  const [showNotif, setShowNotif] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
@@ -50,6 +50,7 @@ export default function Layout() {
       if (e.key === 'Escape') {
         setSidebarOpen(false);
         setShowSearch(false);
+        setShowNotif(false);
       }
     };
     document.addEventListener('keydown', handleKey);
@@ -60,6 +61,7 @@ export default function Layout() {
     try {
       const stats = await dashboardApi.stats();
       setUnreadCount(stats.unreadMessages || 0);
+      setUnreadConversations(stats.unreadConversations || []);
     } catch {}
   }, []);
 
@@ -69,16 +71,20 @@ export default function Layout() {
     return () => clearInterval(interval);
   }, [loadUnreadCount]);
 
+  // Atualiza badge em tempo real: nova mensagem OU conversa lida
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
 
-    const onNewMsg = () => {
-      loadUnreadCount();
-    };
+    const onNewMsg = () => loadUnreadCount();
+    const onRead = () => loadUnreadCount();
 
     socket.on('message:new', onNewMsg);
-    return () => { socket.off('message:new', onNewMsg); };
+    socket.on('conversation:read', onRead);
+    return () => {
+      socket.off('message:new', onNewMsg);
+      socket.off('conversation:read', onRead);
+    };
   }, [loadUnreadCount]);
 
   const handleLogout = () => {
@@ -94,6 +100,13 @@ export default function Layout() {
       const res = await searchApi.search(searchQuery);
       setSearchResults(res);
     } catch {}
+  };
+
+  const openConversation = (conv: any) => {
+    setShowNotif(false);
+    navigate('/conversations', {
+      state: { conversationId: conv.id, accountId: conv.whatsapp?.id },
+    });
   };
 
   return (
@@ -157,7 +170,7 @@ export default function Layout() {
                 <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
                 <span className="flex-1">{item.label}</span>
                 {item.showBadge && unreadCount > 0 && (
-                  <span className="notif-badge">
+                  <span className="bg-monte-terracota text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 leading-none shadow-sm">
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
@@ -266,10 +279,70 @@ export default function Layout() {
               </>
             )}
           </div>
+
+          {/* Notification bell */}
+          <div className="relative ml-auto">
+            <button
+              onClick={() => setShowNotif(v => !v)}
+              className="relative p-2.5 rounded-full text-monte-azul hover:bg-monte-areiaSecao transition-colors"
+              title="Notificações"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-monte-terracota text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 leading-none shadow-sm animate-pulse">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+            {showNotif && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowNotif(false)} />
+                <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white/95 backdrop-blur-xl rounded-3xl shadow-xl border border-monte-sereno/20 z-50 max-h-96 overflow-y-auto overflow-x-hidden">
+                  <div className="px-4 py-3 border-b border-monte-sereno/15 sticky top-0 bg-white/95 backdrop-blur-xl">
+                    <p className="text-sm font-bold font-display text-monte-azul">Notificações</p>
+                    <p className="text-xs text-monte-sereno">
+                      {unreadCount > 0 ? `${unreadCount} mensagem${unreadCount > 1 ? 's' : ''} não lida${unreadCount > 1 ? 's' : ''}` : 'Tudo em dia'}
+                    </p>
+                  </div>
+                  {unreadConversations.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <Bell className="w-8 h-8 mx-auto mb-2 text-monte-sereno/30" />
+                      <p className="text-sm text-monte-sereno">Nenhuma notificação</p>
+                    </div>
+                  ) : (
+                    unreadConversations.map(conv => (
+                      <button
+                        key={conv.id}
+                        onClick={() => openConversation(conv)}
+                        className="w-full text-left px-4 py-3 hover:bg-monte-areiaSecao/60 transition-colors flex items-center gap-3 border-b border-monte-sereno/10"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-monte-verde to-monte-azul text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                          {(conv.contact?.name || conv.contact?.phone || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-monte-azul truncate">
+                              {conv.contact?.name || conv.contact?.phone}
+                            </p>
+                            <span className="bg-monte-terracota text-white text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold flex-shrink-0">
+                              {conv.unreadCount}
+                            </span>
+                          </div>
+                          <p className="text-xs text-monte-sereno truncate mt-0.5">
+                            {conv.lastMessage || 'Nova mensagem'}
+                          </p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6" onClick={() => setShowSearch(false)}>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6" onClick={() => { setShowSearch(false); }}>
           <Outlet />
         </main>
       </div>

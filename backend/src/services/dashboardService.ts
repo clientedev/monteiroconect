@@ -9,12 +9,13 @@ export async function getDashboardStats() {
     messagesToday,
     recentMessages,
     recentConversations,
+    unreadConversations,
     messagesPerAccount,
   ] = await Promise.all([
     prisma.whatsAppAccount.count({ where: { status: 'CONNECTED' } }),
     prisma.whatsAppAccount.count({ where: { status: { not: 'CONNECTED' } } }),
     prisma.conversation.count({ where: { isOpen: true } }),
-    prisma.conversation.aggregate({ _sum: { unreadCount: true }, where: { isOpen: true } }),
+    prisma.conversation.aggregate({ _sum: { unreadCount: true }, where: { unreadCount: { gt: 0 } } }),
     prisma.message.count({
       where: { createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
     }),
@@ -28,6 +29,12 @@ export async function getDashboardStats() {
       take: 10,
       include: { contact: true, whatsapp: true },
       where: { isOpen: true },
+    }),
+    prisma.conversation.findMany({
+      where: { unreadCount: { gt: 0 } },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 15,
+      include: { contact: true, whatsapp: { select: { id: true, name: true } } },
     }),
     prisma.whatsAppAccount.findMany({
       select: {
@@ -47,6 +54,7 @@ export async function getDashboardStats() {
     messagesToday,
     recentMessages,
     recentConversations,
+    unreadConversations,
     messagesPerAccount,
   };
 }

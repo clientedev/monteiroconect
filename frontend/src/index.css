@@ -130,6 +130,6 @@ h1, h2, h3, h4, h5, h6 {
     @apply text-left px-5 py-3 text-xs font-semibold text-monte-sereno uppercase tracking-wider;
   }
   .table-row {
-    @apply px-5 py-3 text-sm hover:bg-monte-areiaSecao/50 transition-colors;
+    @apply px-5 py-3 text-sm align-middle hover:bg-monte-areiaSecao/50 transition-colors;
   }
 }

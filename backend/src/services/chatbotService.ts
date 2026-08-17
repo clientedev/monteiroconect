@@ -30,6 +30,7 @@ export async function getChatbot(id: string) {
 export async function createChatbot(data: {
   name: string;
   whatsappAccountId: string;
+  useAi?: boolean;
   greetingMessage?: string;
   fallbackMessage?: string;
   triggerMode?: string;
@@ -49,6 +50,7 @@ export async function createChatbot(data: {
     data: {
       name: data.name,
       whatsappAccountId: data.whatsappAccountId,
+      useAi: data.useAi || false,
       greetingMessage: data.greetingMessage || null,
       fallbackMessage: data.fallbackMessage || null,
       triggerMode: data.triggerMode || 'any',
@@ -70,6 +72,7 @@ export async function createChatbot(data: {
 export async function updateChatbot(id: string, data: {
   name?: string;
   isActive?: boolean;
+  useAi?: boolean;
   greetingMessage?: string | null;
   fallbackMessage?: string | null;
   triggerMode?: string;
@@ -110,7 +113,7 @@ export async function addAutoReply(chatbotId: string, data: {
     data: {
       chatbotId,
       triggerType: data.triggerType,
-      trigger: data.reply,
+      trigger: data.trigger,
       reply: data.reply,
       mediaType: data.mediaType || 'text',
       mediaUrl: data.mediaUrl || null,
@@ -162,7 +165,10 @@ export async function findMatchingReply(whatsappAccountId: string, messageConten
         };
       }
     }
+  }
 
+  // Fallback apenas no modo "any" — responde qualquer mensagem
+  for (const chatbot of chatbots) {
     if (chatbot.fallbackMessage && chatbot.triggerMode === 'any') {
       return {
         reply: chatbot.fallbackMessage,
@@ -174,6 +180,16 @@ export async function findMatchingReply(whatsappAccountId: string, messageConten
   }
 
   return null;
+}
+
+/**
+ * Retorna o primeiro chatbot ativo da conta (para saudação, IA e modo de gatilho).
+ */
+export async function getFirstActiveChatbot(whatsappAccountId: string) {
+  return prisma.chatbot.findFirst({
+    where: { whatsappAccountId, isActive: true },
+    orderBy: { createdAt: 'asc' },
+  });
 }
 
 export async function getGreetingForAccount(whatsappAccountId: string) {

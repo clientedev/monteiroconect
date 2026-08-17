@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { whatsappApi, conversationApi } from '../lib/api';
 import { getSocket } from '../lib/socket';
-import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck } from 'lucide-react';
+import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff } from 'lucide-react';
 
 interface ConvItem {
   id: string;
@@ -28,6 +29,7 @@ interface Msg {
 }
 
 export default function ConversationsPage() {
+  const location = useLocation();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [conversations, setConversations] = useState<ConvItem[]>([]);
@@ -38,6 +40,7 @@ export default function ConversationsPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingConvId = useRef<string | null>(null);
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -48,10 +51,13 @@ export default function ConversationsPage() {
   const loadAccounts = useCallback(async () => {
     try {
       const data = await whatsappApi.list();
-      const connected = data.filter((a: any) => a.status === 'CONNECTED');
-      setAccounts(connected);
-      if (connected.length > 0 && !selectedAccountId) {
-        setSelectedAccountId(connected[0].id);
+      // Mostra TODAS as contas (conectadas primeiro) — conversas não somem ao desconectar
+      const sorted = [...data].sort((a: any, b: any) =>
+        (b.status === 'CONNECTED' ? 1 : 0) - (a.status === 'CONNECTED' ? 1 : 0)
+      );
+      setAccounts(sorted);
+      if (sorted.length > 0 && !selectedAccountId) {
+        setSelectedAccountId(sorted[0].id);
       }
     } catch {}
   }, [selectedAccountId]);
@@ -70,6 +76,8 @@ export default function ConversationsPage() {
       const data = await conversationApi.messages(convId);
       setMessages(data.messages || []);
       await conversationApi.markRead(convId);
+      // Zera o badge de notificações em todas as telas abertas
+      getSocket()?.emit('conversation-read', convId);
       scrollToBottom();
     } catch {}
   }, []);
@@ -82,6 +90,26 @@ export default function ConversationsPage() {
       setMessages([]);
     }
   }, [selectedAccountId]);
+
+  // Pré-seleção vinda do sino de notificações (location.state)
+  useEffect(() => {
+    const st: any = location.state;
+    if (st?.accountId && st.accountId !== selectedAccountId) {
+      setSelectedAccountId(st.accountId);
+    }
+    if (st?.conversationId) {
+      pendingConvId.current = st.conversationId;
+    }
+  }, [location.state]);
+
+  // Quando a lista carrega, abre a conversa pendente
+  useEffect(() => {
+    if (pendingConvId.current && conversations.length) {
+      const conv = conversations.find(c => c.id === pendingConvId.current);
+      pendingConvId.current = null;
+      if (conv) handleSelectConv(conv);
+    }
+  }, [conversations]);
 
   // Join socket rooms
   useEffect(() => {
@@ -124,7 +152,9 @@ export default function ConversationsPage() {
           createdAt: data.message.createdAt,
           fromPhone: data.contact?.phone,
         }]);
-        conversationApi.markRead(data.conversationId).catch(() => {});
+        conversationApi.markRead(data.conversationId).then(() => {
+          getSocket()?.emit('conversation-read', data.conversationId);
+        }).catch(() => {});
         scrollToBottom();
       }
     };
@@ -162,11 +192,15 @@ export default function ConversationsPage() {
 
   const handleSelectConv = (conv: ConvItem) => {
     setSelectedConv(conv);
+    setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
     loadMessages(conv.id);
   };
 
+  const selectedAccount = accounts.find(a => a.id === selectedAccountId);
+  const isConnected = selectedAccount?.status === 'CONNECTED';
+
   const handleSend = async () => {
-    if (!newMessage.trim() || !selectedAccountId || !selectedConv) return;
+    if (!newMessage.trim() || !selectedAccountId || !selectedConv || !isConnected) return;
     const text = newMessage.trim();
     setSending(true);
     setNewMessage('');
@@ -181,7 +215,7 @@ export default function ConversationsPage() {
 
   const handleSendFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !selectedAccountId || !selectedConv) return;
+    if (!file || !selectedAccountId || !selectedConv || !isConnected) return;
     setSending(true);
     try {
       const formData = new FormData();
@@ -235,7 +269,9 @@ export default function ConversationsPage() {
           <div className="p-3 border-b border-monte-sereno/15">
             <select className="input-rect text-sm" value={selectedAccountId} onChange={e => setSelectedAccountId(e.target.value)}>
               {accounts.map((a: any) => (
-                <option key={a.id} value={a.id}>{a.name} ({a.phone || '—'})</option>
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.phone || '—'}){a.status !== 'CONNECTED' ? ` — ${a.status === 'QR_CODE' ? 'aguardando QR' : a.status === 'ERROR' ? 'erro' : 'desconectado'}` : ''}
+                </option>
               ))}
             </select>
           </div>
@@ -243,8 +279,8 @@ export default function ConversationsPage() {
 
         <div className="p-3 border-b border-monte-sereno/15">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-monte-sereno" />
-            <input type="text" className="input-rect pl-9 text-sm" placeholder="Buscar conversa..." value={search} onChange={e => setSearch(e.target.value)} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-monte-sereno" />
+            <input type="text" className="input-rect pl-10 text-sm" placeholder="Buscar conversa..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
         </div>
 
@@ -308,6 +344,13 @@ export default function ConversationsPage() {
                 <p className="text-xs text-monte-sereno">{selectedConv.contactPhone}</p>
               </div>
             </div>
+
+            {!isConnected && (
+              <div className="bg-amber-100/80 border-b border-amber-200/50 px-4 py-2 flex items-center gap-2 text-amber-800 text-xs">
+                <WifiOff className="w-4 h-4 flex-shrink-0" />
+                Este WhatsApp está desconectado — reconecte na aba Whatsapps para enviar mensagens. O histórico continua visível.
+              </div>
+            )}
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -374,24 +417,25 @@ export default function ConversationsPage() {
             {/* Input */}
             <div className="bg-white/80 backdrop-blur-md border-t border-monte-sereno/15 p-3">
               <div className="flex items-end gap-2">
-                <label className="text-monte-sereno hover:text-monte-verde p-2 rounded-full cursor-pointer transition-colors" title="Enviar imagem">
+                <label className={`p-2 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem">
                   <ImageIcon className="w-5 h-5" />
-                  <input type="file" accept="image/*" className="hidden" onChange={handleSendFile} disabled={sending} />
+                  <input type="file" accept="image/*" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
-                <label className="text-monte-sereno hover:text-monte-verde p-2 rounded-full cursor-pointer transition-colors" title="Enviar arquivo">
+                <label className={`p-2 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar arquivo">
                   <Paperclip className="w-5 h-5" />
-                  <input type="file" className="hidden" onChange={handleSendFile} disabled={sending} />
+                  <input type="file" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
                 <textarea
                   className="input-rect flex-1 resize-none min-h-[40px]"
                   rows={1}
-                  placeholder="Digite uma mensagem..."
+                  placeholder={isConnected ? 'Digite uma mensagem...' : 'WhatsApp desconectado...'}
                   value={newMessage}
                   onChange={e => setNewMessage(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  disabled={!isConnected}
                   autoFocus
                 />
-                <button onClick={handleSend} disabled={!newMessage.trim() || sending} className="btn-primary p-2.5 rounded-full disabled:opacity-50 transition-opacity">
+                <button onClick={handleSend} disabled={!newMessage.trim() || sending || !isConnected} className="btn-primary p-2.5 rounded-full disabled:opacity-50 transition-opacity">
                   {sending
                     ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     : <Send className="w-5 h-5" />

@@ -8,8 +8,6 @@ import ConversationsPage from './pages/ConversationsPage';
 import ContactsPage from './pages/ContactsPage';
 import AttendantsPage from './pages/AttendantsPage';
 import TagsPage from './pages/TagsPage';
-import LogsPage from './pages/LogsPage';
-import SettingsPage from './pages/SettingsPage';
 import ChatbotsPage from './pages/ChatbotsPage';
 import { useEffect } from 'react';
 import { connectSocket, disconnectSocket } from './lib/socket';
@@ -46,8 +44,6 @@ export default function App() {
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="attendants" element={<AttendantsPage />} />
         <Route path="tags" element={<TagsPage />} />
-        <Route path="logs" element={<LogsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   );

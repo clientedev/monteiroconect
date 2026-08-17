@@ -114,17 +114,17 @@ export default function WhatsAppPage() {
           const status = statusConfig[acc.status] || statusConfig.DISCONNECTED;
           return (
             <div key={acc.id} className="card-static p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-monte-verde to-monte-azul rounded-2xl flex items-center justify-center shadow-sm">
+              <div className="flex items-center justify-between mb-4 gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-monte-verde to-monte-azul rounded-2xl flex items-center justify-center shadow-sm flex-shrink-0">
                     <Smartphone className="w-6 h-6 text-white" />
                   </div>
-                  <div>
-                    <h3 className="font-bold font-display text-monte-azul">{acc.name}</h3>
-                    <p className="text-sm text-monte-sereno">{acc.phone || 'Sem número'}</p>
+                  <div className="min-w-0">
+                    <h3 className="font-bold font-display text-monte-azul truncate">{acc.name}</h3>
+                    <p className="text-sm text-monte-sereno truncate">{acc.phone || 'Sem número'}</p>
                   </div>
                 </div>
-                <span className={status.badge}>{status.label}</span>
+                <span className={status.badge + ' flex-shrink-0'}>{status.label}</span>
               </div>
 
               <div className="flex items-center gap-2 mb-3">

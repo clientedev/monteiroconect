@@ -16,7 +16,8 @@ import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { AppError } from '../utils/errors.js';
 import { calculateBackoff, sleep } from '../utils/helpers.js';
-import { findMatchingReply, getGreetingForAccount } from '../services/chatbotService.js';
+import { findMatchingReply, getFirstActiveChatbot } from '../services/chatbotService.js';
+import { generateAiReply } from '../services/aiService.js';
 
 type SessionStatus = 'CONNECTING' | 'QR_CODE' | 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING' | 'ERROR';
 
@@ -324,6 +325,23 @@ class WhatsAppSessionManager extends EventEmitter {
   async removeSession(accountId: string): Promise<void> {
     await this.disconnectSession(accountId, true);
     this.sessions.delete(accountId);
+
+    // Limpeza manual dos dados relacionados — contas antigas no banco podem
+    // não ter as FKs com onDelete: Cascade ainda, o que bloquearia o delete.
+    try {
+      await prisma.$transaction([
+        prisma.message.deleteMany({ where: { whatsappId: accountId } }),
+        prisma.conversationTag.deleteMany({ where: { conversation: { whatsappId: accountId } } }),
+        prisma.conversationAssignment.deleteMany({ where: { conversation: { whatsappId: accountId } } }),
+        prisma.conversation.deleteMany({ where: { whatsappId: accountId } }),
+        prisma.contact.deleteMany({ where: { whatsappId: accountId } }),
+        prisma.chatbot.deleteMany({ where: { whatsappAccountId: accountId } }),
+        prisma.systemLog.deleteMany({ where: { whatsappId: accountId } }),
+      ]);
+    } catch (err) {
+      logger.warn(`Limpeza manual falhou para ${accountId} (cascade do schema deve cobrir):`, err);
+    }
+
     await prisma.whatsAppAccount.delete({ where: { id: accountId } });
     logger.info(`Sessão removida: ${accountId}`);
   }
@@ -538,38 +556,58 @@ class WhatsAppSessionManager extends EventEmitter {
         data: { lastMessage: content, lastContact: new Date() },
       });
 
-      // Auto-resposta via Chatbot
+      // Auto-resposta via Chatbot (IA Grok ou regras de palavras-chave)
       const session = this.sessions.get(accountId);
       if (session?.socket && content) {
         try {
-          const contactMsgCount = await prisma.message.count({
-            where: {
-              conversationId: conversation.id,
-              isFromMe: false,
-            },
-          });
+          const bot = await getFirstActiveChatbot(accountId);
+          if (bot) {
+            const contactMsgCount = await prisma.message.count({
+              where: {
+                conversationId: conversation.id,
+                isFromMe: false,
+              },
+            });
 
-          // Send greeting on first message
-          if (contactMsgCount === 1) {
-            const greeting = await getGreetingForAccount(accountId);
-            if (greeting) {
-              await session.socket.sendMessage(remoteJid, { text: greeting });
-              await this.saveOutgoingMessage(accountId, remoteJid, greeting, 'text', null, { key: { id: `greeting-${Date.now()}` } });
-              logger.info(`Saudação enviada para ${fromPhone} via chatbot`);
+            // Saudação na primeira mensagem do contato
+            if (contactMsgCount === 1 && bot.greetingMessage) {
+              await session.socket.sendMessage(remoteJid, { text: bot.greetingMessage });
+              await this.saveOutgoingMessage(accountId, remoteJid, bot.greetingMessage, 'text', null, { key: { id: `greeting-${Date.now()}` } });
+              logger.info(`Saudação enviada para ${fromPhone} via chatbot "${bot.name}"`);
             }
-          }
 
-          // Check auto-replies
-          const match = await findMatchingReply(accountId, content);
-          if (match) {
-            let sendResult: any;
-            if (match.mediaType === 'image' && match.mediaUrl) {
-              sendResult = await session.socket.sendMessage(remoteJid, { image: { url: match.mediaUrl }, caption: match.reply });
-            } else {
-              sendResult = await session.socket.sendMessage(remoteJid, { text: match.reply });
+            // Modo "primeira mensagem" não responde além da saudação
+            if (bot.triggerMode !== 'first_message' || contactMsgCount === 1) {
+              let replied = false;
+
+              // IA (Grok) tem prioridade quando habilitada
+              if (bot.useAi) {
+                const aiReply = await generateAiReply(conversation.id, content);
+                if (aiReply) {
+                  const aiResult = await session.socket.sendMessage(remoteJid, { text: aiReply });
+                  await this.saveOutgoingMessage(accountId, remoteJid, aiReply, 'text', null, aiResult);
+                  logger.info(`Resposta IA (Grok) enviada para ${fromPhone}`);
+                  replied = true;
+                } else {
+                  logger.warn(`Grok não respondeu para ${fromPhone} — usando regras de auto-resposta`);
+                }
+              }
+
+              // Regras de palavras-chave (fallback da IA ou modo sem IA)
+              if (!replied) {
+                const match = await findMatchingReply(accountId, content);
+                if (match) {
+                  let sendResult: any;
+                  if (match.mediaType === 'image' && match.mediaUrl) {
+                    sendResult = await session.socket.sendMessage(remoteJid, { image: { url: match.mediaUrl }, caption: match.reply });
+                  } else {
+                    sendResult = await session.socket.sendMessage(remoteJid, { text: match.reply });
+                  }
+                  await this.saveOutgoingMessage(accountId, remoteJid, match.reply, match.mediaType, match.mediaUrl ?? null, sendResult);
+                  logger.info(`Auto-resposta enviada para ${fromPhone} via chatbot "${match.chatbotName}"`);
+                }
+              }
             }
-            await this.saveOutgoingMessage(accountId, remoteJid, match.reply, match.mediaType, match.mediaUrl ?? null, sendResult);
-            logger.info(`Auto-resposta enviada para ${fromPhone} via chatbot "${match.chatbotName}"`);
           }
         } catch (botErr) {
           logger.error(`Erro ao processar auto-resposta (${accountId}):`, botErr);
@@ -695,11 +733,19 @@ class WhatsAppSessionManager extends EventEmitter {
 
     if (session.qrCode) return session.qrCode;
 
+    // Reset flags so connectSession can proceed
+    session.isDestroying = false;
     session.reconnectAttempts = 0;
-    await this.disconnectSession(accountId, false);
-    await this.connectSession(accountId, false);
+    session.socket = null;
 
-    for (let i = 0; i < 10; i++) {
+    // Destroy old session data on disk to force a fresh QR
+    const sessionDir = path.join(env.sessionsPath, accountId);
+    try { await fs.rm(sessionDir, { recursive: true, force: true }); } catch {}
+    await fs.mkdir(sessionDir, { recursive: true });
+
+    await this.connectSession(accountId, true);
+
+    for (let i = 0; i < 15; i++) {
       if (session.qrCode) return session.qrCode;
       await sleep(1000);
     }
