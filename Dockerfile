@@ -26,7 +26,7 @@ FROM node:20-alpine
 ENV NODE_ENV=production
 WORKDIR /app/backend
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git openssl ca-certificates
 
 # Backend compilado + dependências
 COPY --from=backend-builder /app/backend/dist ./dist
