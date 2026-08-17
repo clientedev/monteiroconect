@@ -1,7 +1,8 @@
 # ===== Estágio 1: Build do Frontend =====
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json* ./
+COPY frontend/_package.json frontend/package-lock.json* ./
+RUN mv _package.json package.json
 RUN npm install
 COPY frontend/ .
 RUN npm run build
@@ -9,8 +10,9 @@ RUN npm run build
 # ===== Estágio 2: Build do Backend =====
 FROM node:20-alpine AS backend-builder
 WORKDIR /app/backend
-COPY backend/package.json backend/package-lock.json* ./
+COPY backend/_package.json backend/package-lock.json* ./
 COPY backend/prisma ./prisma/
+RUN mv _package.json package.json
 RUN npm install
 COPY backend/ .
 RUN npx prisma generate
