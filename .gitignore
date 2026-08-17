@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.db-journal
+backend/prisma/dev.db
+backend/prisma/migrations/dev.db
+
+# WhatsApp sessions (CREDENCIAIS — NUNCA COMMITAR)
+backend/sessions/
+sessions/
+backend/sessions/*
+!backend/sessions/.gitkeep
+
+# Uploads e logs
+backend/uploads/
+uploads/
+backend/logs/
+logs/
+!backend/uploads/.gitkeep
+!backend/logs/.gitkeep
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

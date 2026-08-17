@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  role      String   @default("attendant") // admin, supervisor, attendant
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments ConversationAssignment[]
+
+  @@index([username])
+  @@index([role])
+}
+
+model WhatsAppAccount {
+  id             String   @id @default(cuid())
+  name           String
+  phone          String?
+  status         String   @default("DISCONNECTED")
+  lastConnection DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversations Conversation[]
+  contacts      Contact[]
+  messages      Message[]
+  logs          SystemLog[]
+  chatbots      Chatbot[]
+
+  @@index([status])
+}
+
+model Contact {
+  id           String   @id @default(cuid())
+  phone        String
+  name         String?
+  avatarUrl    String?
+  lastMessage  String?
+  lastContact  DateTime?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  whatsappId   String
+  whatsapp     WhatsAppAccount @relation(fields: [whatsappId], references: [id])
+  conversations Conversation[]
+
+  @@unique([phone, whatsappId])
+  @@index([whatsappId])
+  @@index([phone])
+}
+
+model Conversation {
+  id             String   @id @default(cuid())
+  contactId      String
+  contact        Contact  @relation(fields: [contactId], references: [id])
+  whatsappId     String
+  whatsapp       WhatsAppAccount @relation(fields: [whatsappId], references: [id])
+  lastMessage    String?
+  lastMessageAt  DateTime?
+  unreadCount    Int      @default(0)
+  isOpen         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  messages      Message[]
+  tags          ConversationTag[]
+  assignments   ConversationAssignment[]
+
+  @@unique([contactId, whatsappId])
+  @@index([whatsappId])
+  @@index([lastMessageAt])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  whatsappId     String
+  whatsapp       WhatsAppAccount @relation(fields: [whatsappId], references: [id])
+  type           String   @default("text")
+  content        String?
+  mediaUrl       String?
+  mediaType      String?
+  caption        String?
+  isFromMe       Boolean  @default(false)
+  isRead         Boolean  @default(false)
+  messageId      String?
+  fromPhone      String?
+  toPhone        String?
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId])
+  @@index([whatsappId])
+  @@index([createdAt])
+  @@index([isRead])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String   @default("#3B82F6")
+  createdAt DateTime @default(now())
+
+  conversations ConversationTag[]
+
+  @@index([name])
+}
+
+model ConversationTag {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  contactId      String
+  tagId          String
+  tag            Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime  @default(now())
+
+  @@unique([conversationId, tagId])
+  @@index([tagId])
+  @@index([conversationId])
+}
+
+model ConversationAssignment {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  assignedAt     DateTime @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId])
+}
+
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String   @default("info")
+  message   String
+  source    String?
+  whatsappId String?
+  whatsapp   WhatsAppAccount? @relation(fields: [whatsappId], references: [id])
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  @@index([level])
+  @@index([whatsappId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  type      String
+  title     String
+  body      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model Chatbot {
+  id               String   @id @default(cuid())
+  name             String
+  whatsappAccountId String
+  whatsappAccount  WhatsAppAccount @relation(fields: [whatsappAccountId], references: [id], onDelete: Cascade)
+  isActive         Boolean  @default(true)
+  greetingMessage  String?
+  fallbackMessage  String?
+  triggerMode      String   @default("any") // any, first_message, keyword_only
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  autoReplies      AutoReply[]
+
+  @@index([whatsappAccountId])
+  @@index([isActive])
+}
+
+model AutoReply {
+  id           String   @id @default(cuid())
+  chatbotId    String
+  chatbot      Chatbot  @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+  triggerType  String   @default("contains") // exact, contains, starts_with, regex, always
+  trigger      String
+  reply        String
+  mediaType    String   @default("text") // text, image
+  mediaUrl     String?
+  isActive     Boolean  @default(true)
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([chatbotId])
+  @@index([isActive])
+}
