@@ -328,6 +328,15 @@ class WhatsAppSessionManager extends EventEmitter {
     logger.info(`Sessão removida: ${accountId}`);
   }
 
+  /**
+   * Converte um mediaUrl relativo (ex: /uploads/file.jpg) em caminho absoluto do disco.
+   * Se já for caminho absoluto (começa com / em Unix ou letra de drive em Windows), mantém.
+   */
+  private resolveMediaPath(mediaUrl: string): string {
+    if (!mediaUrl.startsWith('/uploads/')) return mediaUrl;
+    return path.resolve(process.cwd(), mediaUrl);
+  }
+
   async sendMessage(accountId: string, to: string, content: string, type = 'text', mediaUrl?: string): Promise<any> {
     const session = this.sessions.get(accountId);
     if (!session?.socket) {
@@ -335,18 +344,19 @@ class WhatsAppSessionManager extends EventEmitter {
     }
 
     const jid = this.normalizeJid(to);
+    const resolvedMedia = mediaUrl ? this.resolveMediaPath(mediaUrl) : undefined;
     let result: any;
 
-    if (type === 'text' || !mediaUrl) {
+    if (type === 'text' || !resolvedMedia) {
       result = await session.socket.sendMessage(jid, { text: content });
     } else if (type === 'image') {
-      result = await session.socket.sendMessage(jid, { image: { url: mediaUrl }, caption: content || undefined });
+      result = await session.socket.sendMessage(jid, { image: { url: resolvedMedia }, caption: content || undefined });
     } else if (type === 'video') {
-      result = await session.socket.sendMessage(jid, { video: { url: mediaUrl }, caption: content || undefined });
+      result = await session.socket.sendMessage(jid, { video: { url: resolvedMedia }, caption: content || undefined });
     } else if (type === 'audio') {
-      result = await session.socket.sendMessage(jid, { audio: { url: mediaUrl }, mimetype: 'audio/mp4' });
+      result = await session.socket.sendMessage(jid, { audio: { url: resolvedMedia }, mimetype: 'audio/mp4' });
     } else if (type === 'document') {
-      result = await session.socket.sendMessage(jid, { document: { url: mediaUrl }, caption: content || undefined, mimetype: 'application/octet-stream' });
+      result = await session.socket.sendMessage(jid, { document: { url: resolvedMedia }, caption: content || undefined, mimetype: 'application/octet-stream' });
     } else {
       result = await session.socket.sendMessage(jid, { text: content });
     }

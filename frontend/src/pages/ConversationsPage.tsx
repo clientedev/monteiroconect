@@ -179,7 +179,7 @@ export default function ConversationsPage() {
     finally { setSending(false); }
   };
 
-  const handleSendImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSendFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedAccountId || !selectedConv) return;
     setSending(true);
@@ -194,9 +194,17 @@ export default function ConversationsPage() {
       });
       if (!res.ok) throw new Error('Upload falhou');
       const { url } = await res.json();
-      await conversationApi.send(selectedAccountId, selectedConv.contactPhone, '', 'image', url);
+
+      // Detectar tipo pelo MIME
+      const mime = file.type.toLowerCase();
+      let type = 'document';
+      if (mime.startsWith('image/')) type = 'image';
+      else if (mime.startsWith('video/')) type = 'video';
+      else if (mime.startsWith('audio/')) type = 'audio';
+
+      await conversationApi.send(selectedAccountId, selectedConv.contactPhone, '', type, url);
     } catch (err: any) {
-      alert('Erro ao enviar imagem: ' + (err.message || 'tente novamente'));
+      alert('Erro ao enviar arquivo: ' + (err.message || 'tente novamente'));
     }
     finally {
       setSending(false);
@@ -373,11 +381,11 @@ export default function ConversationsPage() {
               <div className="flex items-end gap-2">
                 <label className="text-gray-400 hover:text-brand-600 p-2 cursor-pointer transition-colors" title="Enviar imagem">
                   <ImageIcon className="w-5 h-5" />
-                  <input type="file" accept="image/*" className="hidden" onChange={handleSendImage} disabled={sending} />
+                  <input type="file" accept="image/*" className="hidden" onChange={handleSendFile} disabled={sending} />
                 </label>
                 <label className="text-gray-400 hover:text-brand-600 p-2 cursor-pointer transition-colors" title="Enviar arquivo">
                   <Paperclip className="w-5 h-5" />
-                  <input type="file" className="hidden" disabled={sending} />
+                  <input type="file" className="hidden" onChange={handleSendFile} disabled={sending} />
                 </label>
                 <textarea
                   className="input flex-1 resize-none min-h-[40px]"

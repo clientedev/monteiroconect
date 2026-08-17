@@ -87,10 +87,7 @@ export function setupWebSocket(httpServer: HttpServer): Server {
 
   sessionManager.on('message', (data) => {
     io.emit('message:new', data);
-    io.to(`account:${data.accountId}`).emit('message:new', data);
-    io.to(`conversation:${data.conversationId}`).emit('message:new', data);
 
-    // Notification
     prisma.notification.create({
       data: {
         type: 'new_message',
@@ -102,8 +99,6 @@ export function setupWebSocket(httpServer: HttpServer): Server {
 
   sessionManager.on('message-sent', (data) => {
     io.emit('message:sent', data);
-    io.to(`account:${data.accountId}`).emit('message:sent', data);
-    io.to(`conversation:${data.conversationId}`).emit('message:sent', data);
   });
 
   sessionManager.on('reconnect-failed', (data) => {

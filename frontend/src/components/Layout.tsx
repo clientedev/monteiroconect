@@ -1,16 +1,17 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { disconnectSocket } from '../lib/socket';
+import { disconnectSocket, getSocket } from '../lib/socket';
 import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags,
   ScrollText, Settings, LogOut, Search, Menu, X, Bot,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { dashboardApi } from '../lib/api';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/whatsapp', icon: Smartphone, label: 'WhatsApps' },
-  { to: '/conversations', icon: MessageSquare, label: 'Conversas' },
+  { to: '/conversations', icon: MessageSquare, label: 'Conversas', showBadge: true },
   { to: '/chatbots', icon: Bot, label: 'Chatbots' },
   { to: '/contacts', icon: Users, label: 'Contatos' },
   { to: '/attendants', icon: Users, label: 'Atendentes' },
@@ -26,6 +27,7 @@ export default function Layout() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   // Close sidebar on route change or outside click
@@ -49,6 +51,29 @@ export default function Layout() {
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
+  }, []);
+
+  // Carregar contagem de não lidas
+  const loadUnreadCount = async () => {
+    try {
+      const stats = await dashboardApi.stats();
+      setUnreadCount(stats.unreadMessages || 0);
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadUnreadCount();
+    const interval = setInterval(loadUnreadCount, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Atualizar badge em tempo real via socket
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const onNew = () => { loadUnreadCount(); };
+    socket.on('message:new', onNew);
+    return () => { socket.off('message:new', onNew); };
   }, []);
 
   const handleLogout = () => {
@@ -119,7 +144,12 @@ export default function Layout() {
                 }
               >
                 <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.showBadge && unreadCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 leading-none">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </NavLink>
             ))}
 
