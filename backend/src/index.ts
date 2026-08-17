@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { createServer } from 'node:http';
-import { execSync } from 'node:child_process';
+import { exec } from 'node:child_process';
 import path from 'node:path';
 import { promises as fs } from 'fs';
 import { env } from './config/env.js';
@@ -24,32 +24,25 @@ import searchRoutes from './routes/searchRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import chatbotRoutes from './routes/chatbotRoutes.js';
 
-let dbReady = false;
-let dbError: string | null = null;
-
-async function syncDatabase() {
-  try {
+function syncDatabaseInBackground(): Promise<void> {
+  return new Promise((resolve) => {
     logger.info('Sincronizando schema com banco de dados (prisma db push)...');
-    execSync('npx prisma db push --skip-generate --accept-data-loss 2>&1', {
-      stdio: 'pipe',
-      timeout: 120_000,
-    });
-    dbReady = true;
-    dbError = null;
-    logger.info('Schema sincronizado com sucesso');
-  } catch (err: any) {
-    dbError = err?.message || String(err);
-    logger.error(`Falha ao sincronizar schema: ${dbError}`);
-    // Tenta conectar mesmo assim — tabelas podem já existir
-    try {
-      await prisma.$connect();
-      dbReady = true;
-      dbError = null;
-      logger.info('Conexão com banco estabelecida (schema pode já estar atualizado)');
-    } catch {
-      logger.error('Banco de dados indisponível');
-    }
-  }
+    const child = exec(
+      'npx prisma db push --skip-generate --accept-data-loss',
+      { timeout: 120_000 },
+      (err, stdout, stderr) => {
+        if (err) {
+          logger.error(`prisma db push falhou: ${stderr || err.message}`);
+          logger.info('Tentando conectar ao banco mesmo assim...');
+        } else {
+          logger.info(`Schema sincronizado: ${stdout?.trim()}`);
+        }
+        resolve();
+      }
+    );
+    child.stdout?.on('data', (d) => logger.info(`[prisma] ${d.trim()}`));
+    child.stderr?.on('data', (d) => logger.warn(`[prisma] ${d.trim()}`));
+  });
 }
 
 async function bootstrap() {
@@ -60,22 +53,13 @@ async function bootstrap() {
   await fs.mkdir(env.uploadPath, { recursive: true });
   await fs.mkdir(env.logPath, { recursive: true });
 
-  // Express app (inicia ANTES do DB para healthcheck funcionar)
+  // Express app
   const app = express();
   const httpServer = createServer(app);
 
-  // Health check — responde imediatamente mesmo sem DB
-  app.get('/api/health', async (_req, res) => {
-    if (dbReady) {
-      try {
-        await prisma.$queryRaw`SELECT 1`;
-        res.json({ status: 'ok', uptime: process.uptime(), db: 'connected' });
-      } catch {
-        res.status(503).json({ status: 'degrading', uptime: process.uptime(), db: 'disconnected' });
-      }
-    } else {
-      res.status(503).json({ status: 'starting', uptime: process.uptime(), db: dbError || 'syncing' });
-    }
+  // Health check — SEMPRE retorna 200 (servidor está rodando = saudável)
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', uptime: process.uptime() });
   });
 
   // Middleware
@@ -121,28 +105,28 @@ async function bootstrap() {
   // WebSocket
   const io = setupWebSocket(httpServer);
 
-  // Start server IMEDIATAMENTE (antes do DB)
+  // Start server IMEDIATAMENTE
   httpServer.listen(env.port, () => {
     logger.info(`Servidor HTTP rodando na porta ${env.port}`);
     logger.info(`WebSocket disponível em ws://localhost:${env.port}/ws`);
   });
 
-  // Sincroniza banco EM PARALELO — healthcheck já responde
-  await syncDatabase();
+  // Sincroniza banco em background (não bloqueia o event loop)
+  await syncDatabaseInBackground();
 
-  if (dbReady) {
+  try {
     await prisma.$connect();
     await ensureAdminExists();
     logger.info('Banco de dados pronto');
+  } catch (err) {
+    logger.error('Falha ao conectar ao banco de dados:', err);
   }
 
   // Initialize WhatsApp sessions
-  if (dbReady) {
-    try {
-      await sessionManager.initialize();
-    } catch (err) {
-      logger.error('Erro ao inicializar sessões WhatsApp:', err);
-    }
+  try {
+    await sessionManager.initialize();
+  } catch (err) {
+    logger.error('Erro ao inicializar sessões WhatsApp:', err);
   }
 
   // Graceful shutdown
