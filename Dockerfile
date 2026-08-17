@@ -26,7 +26,6 @@ FROM node:20-alpine
 ENV NODE_ENV=production
 WORKDIR /app/backend
 
-# Git necessário para runtime (baileys)
 RUN apk add --no-cache git
 
 # Backend compilado + dependências
@@ -43,5 +42,5 @@ RUN mkdir -p /app/backend/sessions /app/backend/uploads /app/backend/logs
 
 EXPOSE 3001
 
-# Cria as tabelas automaticamente no primeiro boot e inicia o servidor
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+# Servidor inicia imediatamente; prisma db push roda dentro do bootstrap()
+CMD ["node", "dist/index.js"]
