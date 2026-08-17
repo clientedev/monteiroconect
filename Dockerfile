@@ -8,25 +8,27 @@ RUN npm install
 COPY frontend/ .
 RUN npm run build
 
-# ===== Estágio 2: Build do Backend =====
+# ===== Estágio 2: Build do Backend (gera binário Prisma para Debian) =====
 FROM node:20-alpine AS backend-builder
-RUN apk add --no-cache git
+RUN apk add --no-cache git openssl-dev
 WORKDIR /app/backend
 COPY backend/_package.json backend/package-lock.json* ./
 COPY backend/prisma ./prisma/
 RUN mv _package.json package.json
 RUN npm install
 COPY backend/ .
-RUN npx prisma generate
+# Gera o client Prisma com target para Debian (estágio final é node:20-slim)
+RUN npx prisma generate --no-hints
 RUN npm run build
 
-# ===== Estágio Final: Produção =====
-FROM node:20-alpine
+# ===== Estágio Final: Produção (Debian — OpenSSL nativo para Prisma) =====
+FROM node:20-slim
 
 ENV NODE_ENV=production
 WORKDIR /app/backend
 
-RUN apk add --no-cache git
+# Git + OpenSSL necessários para runtime
+RUN apt-get update && apt-get install -y --no-install-recommends git openssl && rm -rf /var/lib/apt/lists/*
 
 # Backend compilado + dependências
 COPY --from=backend-builder /app/backend/dist ./dist
