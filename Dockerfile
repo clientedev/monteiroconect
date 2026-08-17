@@ -1,5 +1,6 @@
 # ===== Estágio 1: Build do Frontend =====
 FROM node:20-alpine AS frontend-builder
+RUN apk add --no-cache git
 WORKDIR /app/frontend
 COPY frontend/_package.json frontend/package-lock.json* ./
 RUN mv _package.json package.json
@@ -9,6 +10,7 @@ RUN npm run build
 
 # ===== Estágio 2: Build do Backend =====
 FROM node:20-alpine AS backend-builder
+RUN apk add --no-cache git
 WORKDIR /app/backend
 COPY backend/_package.json backend/package-lock.json* ./
 COPY backend/prisma ./prisma/
@@ -20,9 +22,12 @@ RUN npm run build
 
 # ===== Estágio Final: Produção =====
 FROM node:20-alpine
-WORKDIR /app/backend
 
 ENV NODE_ENV=production
+WORKDIR /app/backend
+
+# Git necessário para runtime (baileys)
+RUN apk add --no-cache git
 
 # Backend compilado + dependências
 COPY --from=backend-builder /app/backend/dist ./dist
