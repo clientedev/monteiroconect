@@ -1,7 +1,7 @@
 {
-  "name": "wa-central",
+  "name": "monteiro-conecta",
   "version": "1.0.0",
-  "description": "Centralizador de Múltiplos WhatsApps - Painel de atendimento multi-sessão",
+  "description": "Monteiro Conecta - Central de atendimento multi-WhatsApp com chatbots",
   "private": true,
   "workspaces": [
     "backend",
