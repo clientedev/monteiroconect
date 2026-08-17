@@ -41,61 +41,61 @@ export default function ContactsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Contatos</h2>
+    <div className="space-y-8">
+      <h2 className="section-title">Contatos</h2>
 
-      <div className="flex gap-4">
+      <div className="flex gap-3">
         {accounts.length > 0 && (
-          <select className="input w-auto" value={selectedAccountId} onChange={e => setSelectedAccountId(e.target.value)}>
+          <select className="input-rect w-auto" value={selectedAccountId} onChange={e => setSelectedAccountId(e.target.value)}>
             {accounts.map((a: any) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
         )}
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input type="text" className="input pl-9" placeholder="Buscar contatos..." value={search} onChange={e => setSearch(e.target.value)} />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-monte-sereno" />
+          <input type="text" className="input-rect pl-10" placeholder="Buscar contatos..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
       </div>
 
-      <div className="card">
+      <div className="card-static overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-monte-areiaSecao/60 border-b border-monte-sereno/15">
               <tr>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Contato</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Telefone</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Última Mensagem</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Último Contato</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase w-20">Ações</th>
+                <th className="table-header">Contato</th>
+                <th className="table-header">Telefone</th>
+                <th className="table-header">Última Mensagem</th>
+                <th className="table-header">Último Contato</th>
+                <th className="table-header w-20">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-monte-sereno/10">
               {contacts.map(c => (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-5 py-3">
+                <tr key={c.id} className="hover:bg-monte-areiaSecao/40 transition-colors">
+                  <td className="table-row">
                     {editingId === c.id ? (
-                      <input type="text" className="input text-sm py-1" value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave(c.id)} autoFocus />
+                      <input type="text" className="input-rect text-sm py-1 w-full" value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave(c.id)} autoFocus />
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold text-gray-600">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-xs font-bold text-white">
                           {(c.name || c.phone)[0].toUpperCase()}
                         </div>
-                        <span className="text-sm font-medium">{c.name || '—'}</span>
+                        <span className="text-sm font-semibold text-monte-azul">{c.name || '—'}</span>
                       </div>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-sm text-gray-600">{c.phone}</td>
-                  <td className="px-5 py-3 text-sm text-gray-500 truncate max-w-[200px]">{c.lastMessage || '—'}</td>
-                  <td className="px-5 py-3 text-sm text-gray-400">{c.lastContact ? new Date(c.lastContact).toLocaleDateString('pt-BR') : '—'}</td>
-                  <td className="px-5 py-3">
+                  <td className="table-row text-monte-sereno">{c.phone}</td>
+                  <td className="table-row text-monte-sereno truncate max-w-[200px]">{c.lastMessage || '—'}</td>
+                  <td className="table-row text-monte-sereno/70">{c.lastContact ? new Date(c.lastContact).toLocaleDateString('pt-BR') : '—'}</td>
+                  <td className="table-row">
                     {editingId === c.id ? (
-                      <div className="flex gap-1">
-                        <button onClick={() => handleSave(c.id)} className="text-green-600 hover:text-green-700"><Save className="w-4 h-4" /></button>
-                        <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => handleSave(c.id)} className="text-emerald-600 hover:text-emerald-700"><Save className="w-4 h-4" /></button>
+                        <button onClick={() => setEditingId(null)} className="text-monte-sereno hover:text-monte-azul"><X className="w-4 h-4" /></button>
                       </div>
                     ) : (
-                      <button onClick={() => handleEdit(c)} className="text-gray-400 hover:text-brand-600"><Edit2 className="w-4 h-4" /></button>
+                      <button onClick={() => handleEdit(c)} className="text-monte-sereno hover:text-monte-verde"><Edit2 className="w-4 h-4" /></button>
                     )}
                   </td>
                 </tr>
@@ -103,7 +103,7 @@ export default function ContactsPage() {
             </tbody>
           </table>
           {contacts.length === 0 && !loading && (
-            <div className="p-12 text-center text-gray-400 text-sm">
+            <div className="p-12 text-center text-monte-sereno text-sm">
               <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
               Nenhum contato encontrado
             </div>

@@ -7,10 +7,10 @@ export default function SettingsPage() {
   const [tab, setTab] = useState('info');
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Configurações</h2>
+    <div className="space-y-8">
+      <h2 className="section-title">Configurações</h2>
 
-      <div className="flex gap-2 border-b border-gray-200 pb-0">
+      <div className="flex gap-1 bg-white/50 backdrop-blur-sm border border-monte-sereno/15 rounded-full p-1 w-fit">
         {[
           { key: 'info', label: 'Informações', icon: Info },
           { key: 'security', label: 'Segurança', icon: Shield },
@@ -20,8 +20,10 @@ export default function SettingsPage() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.key ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            className={`flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
+              tab === t.key
+                ? 'bg-monte-verde text-white shadow-sm'
+                : 'text-monte-sereno hover:text-monte-azul hover:bg-white/60'
             }`}
           >
             <t.icon className="w-4 h-4" />
@@ -31,36 +33,25 @@ export default function SettingsPage() {
       </div>
 
       {tab === 'info' && (
-        <div className="card p-6 space-y-4">
-          <h3 className="text-lg font-semibold">Informações do Sistema</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-500">Sistema</p>
-              <p className="font-medium">Monteiro Conecta v1.0.0</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-500">Biblioteca WhatsApp</p>
-              <p className="font-medium">@whiskeysockets/baileys</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-500">Backend</p>
-              <p className="font-medium">Node.js + Express + TypeScript</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-500">Frontend</p>
-              <p className="font-medium">React + Vite + Tailwind CSS</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-500">Tempo Real</p>
-              <p className="font-medium">Socket.IO / WebSocket</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-500">Banco de Dados</p>
-              <p className="font-medium">Prisma (SQLite / PostgreSQL)</p>
-            </div>
+        <div className="card-static p-8 space-y-6">
+          <h3 className="text-lg font-bold font-display text-monte-azul">Informações do Sistema</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              { label: 'Sistema', value: 'Monteiro Conecta v1.0.0' },
+              { label: 'Biblioteca WhatsApp', value: '@whiskeysockets/baileys' },
+              { label: 'Backend', value: 'Node.js + Express + TypeScript' },
+              { label: 'Frontend', value: 'React + Vite + Tailwind CSS' },
+              { label: 'Tempo Real', value: 'Socket.IO / WebSocket' },
+              { label: 'Banco de Dados', value: 'Prisma (SQLite / PostgreSQL)' },
+            ].map(item => (
+              <div key={item.label} className="bg-monte-areiaSecao/60 rounded-2xl p-4">
+                <p className="text-xs font-medium text-monte-sereno uppercase tracking-wider mb-1">{item.label}</p>
+                <p className="font-medium text-monte-azul text-sm">{item.value}</p>
+              </div>
+            ))}
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
-            <p className="text-sm font-medium text-amber-800">⚠️ Aviso</p>
+          <div className="bg-amber-50/80 backdrop-blur-sm border border-amber-200/50 rounded-2xl p-4">
+            <p className="text-sm font-semibold text-amber-800">⚠️ Aviso</p>
             <p className="text-sm text-amber-700 mt-1">
               Este sistema utiliza integração não oficial com WhatsApp Web. O uso pode violar os termos de serviço do WhatsApp.
               Use por sua conta e risco. Não armazene credenciais em locais inseguros.
@@ -70,62 +61,43 @@ export default function SettingsPage() {
       )}
 
       {tab === 'security' && (
-        <div className="card p-6 space-y-4">
-          <h3 className="text-lg font-semibold">Segurança</h3>
+        <div className="card-static p-8 space-y-6">
+          <h3 className="text-lg font-bold font-display text-monte-azul">Segurança</h3>
           <div className="space-y-3">
-            <div className="flex items-center justify-between py-3 border-b border-gray-100">
-              <div>
-                <p className="text-sm font-medium">Autenticação JWT</p>
-                <p className="text-xs text-gray-500">Tokens assinados com HMAC-SHA256</p>
+            {[
+              { name: 'Autenticação JWT', desc: 'Tokens assinados com HMAC-SHA256' },
+              { name: 'Rate Limiting', desc: 'Proteção contra abuso de API' },
+              { name: 'Helmet (Headers de Segurança)', desc: 'Proteção XSS, CSRF, etc.' },
+              { name: 'CORS', desc: 'Origens restritas configuradas' },
+              { name: 'Sessões do WhatsApp', desc: 'Armazenadas apenas no servidor, nunca expostas ao frontend' },
+            ].map((item, i, arr) => (
+              <div key={item.name} className={`flex items-center justify-between py-4 ${i < arr.length - 1 ? 'border-b border-monte-sereno/15' : ''}`}>
+                <div>
+                  <p className="text-sm font-semibold text-monte-azul">{item.name}</p>
+                  <p className="text-xs text-monte-sereno">{item.desc}</p>
+                </div>
+                <span className="badge-verde">Ativo</span>
               </div>
-              <span className="badge-green">Ativo</span>
-            </div>
-            <div className="flex items-center justify-between py-3 border-b border-gray-100">
-              <div>
-                <p className="text-sm font-medium">Rate Limiting</p>
-                <p className="text-xs text-gray-500">Proteção contra abuso de API</p>
-              </div>
-              <span className="badge-green">Ativo</span>
-            </div>
-            <div className="flex items-center justify-between py-3 border-b border-gray-100">
-              <div>
-                <p className="text-sm font-medium">Helmet (Headers de Segurança)</p>
-                <p className="text-xs text-gray-500">Proteção XSS, CSRF, etc.</p>
-              </div>
-              <span className="badge-green">Ativo</span>
-            </div>
-            <div className="flex items-center justify-between py-3 border-b border-gray-100">
-              <div>
-                <p className="text-sm font-medium">CORS</p>
-                <p className="text-xs text-gray-500">Origens restritas configuradas</p>
-              </div>
-              <span className="badge-green">Ativo</span>
-            </div>
-            <div className="flex items-center justify-between py-3">
-              <div>
-                <p className="text-sm font-medium">Sessões do WhatsApp</p>
-                <p className="text-xs text-gray-500">Armazenadas apenas no servidor, nunca expostas ao frontend</p>
-              </div>
-              <span className="badge-green">Seguro</span>
-            </div>
+            ))}
           </div>
         </div>
       )}
 
       {tab === 'notifications' && (
-        <div className="card p-6 space-y-4">
-          <h3 className="text-lg font-semibold">Notificações</h3>
-          <p className="text-sm text-gray-500">
+        <div className="card-static p-8 space-y-4">
+          <h3 className="text-lg font-bold font-display text-monte-azul">Notificações</h3>
+          <p className="text-sm text-monte-sereno leading-relaxed">
             Notificações são recebidas em tempo real via WebSocket. Novas mensagens atualizam
             automaticamente o dashboard, contadores e conversas sem necessidade de refresh.
+            O badge na sidebar mostra o total de mensagens não lidas de todas as contas.
           </p>
         </div>
       )}
 
       {tab === 'database' && (
-        <div className="card p-6 space-y-4">
-          <h3 className="text-lg font-semibold">Banco de Dados</h3>
-          <p className="text-sm text-gray-500">
+        <div className="card-static p-8 space-y-4">
+          <h3 className="text-lg font-bold font-display text-monte-azul">Banco de Dados</h3>
+          <p className="text-sm text-monte-sereno leading-relaxed">
             O sistema utiliza Prisma ORM com SQLite para desenvolvimento e PostgreSQL para produção.
             As tabelas incluem: users, whatsapp_accounts, contacts, conversations, messages, tags, logs, notifications.
           </p>

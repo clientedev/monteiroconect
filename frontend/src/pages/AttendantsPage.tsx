@@ -33,16 +33,16 @@ export default function AttendantsPage() {
 
   const roleIcon = (role: string) => {
     switch (role) {
-      case 'admin': return <Shield className="w-4 h-4 text-red-500" />;
-      case 'supervisor': return <Eye className="w-4 h-4 text-blue-500" />;
-      default: return <UserCheck className="w-4 h-4 text-green-500" />;
+      case 'admin': return <Shield className="w-4 h-4 text-monte-terracota" />;
+      case 'supervisor': return <Eye className="w-4 h-4 text-sky-500" />;
+      default: return <UserCheck className="w-4 h-4 text-emerald-500" />;
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Atendentes</h2>
+        <h2 className="section-title">Atendentes</h2>
         {user?.role === 'admin' && (
           <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
             <Plus className="w-4 h-4" /> Novo Usuário
@@ -50,44 +50,44 @@ export default function AttendantsPage() {
         )}
       </div>
 
-      <div className="card">
+      <div className="card-static overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-monte-areiaSecao/60 border-b border-monte-sereno/15">
               <tr>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Usuário</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Email</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Função</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase w-20">Ações</th>
+                <th className="table-header">Usuário</th>
+                <th className="table-header">Email</th>
+                <th className="table-header">Função</th>
+                <th className="table-header">Status</th>
+                <th className="table-header w-20">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-monte-sereno/10">
               {users.map(u => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 bg-brand-100 rounded-full flex items-center justify-center text-xs font-bold text-brand-700">
+                <tr key={u.id} className="hover:bg-monte-areiaSecao/40 transition-colors">
+                  <td className="table-row">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-xs font-bold text-white">
                         {u.username[0].toUpperCase()}
                       </div>
-                      <span className="text-sm font-medium">{u.username}</span>
+                      <span className="text-sm font-semibold text-monte-azul">{u.username}</span>
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-sm text-gray-600">{u.email}</td>
-                  <td className="px-5 py-3">
+                  <td className="table-row text-monte-sereno">{u.email}</td>
+                  <td className="table-row">
                     <div className="flex items-center gap-1.5">
                       {roleIcon(u.role)}
-                      <span className="text-sm capitalize">{u.role}</span>
+                      <span className="text-sm capitalize text-monte-azul">{u.role}</span>
                     </div>
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="table-row">
                     <span className={u.isActive ? 'badge-green' : 'badge-gray'}>
                       {u.isActive ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="table-row">
                     {user?.role === 'admin' && u.id !== user.id && (
-                      <button onClick={() => handleDelete(u.id)} className="text-gray-400 hover:text-red-600">
+                      <button onClick={() => handleDelete(u.id)} className="text-monte-sereno hover:text-monte-terracota transition-colors">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
@@ -100,11 +100,11 @@ export default function AttendantsPage() {
       </div>
 
       {showCreate && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center" onClick={() => setShowCreate(false)}>
-          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-4">Novo Usuário</h3>
-            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm mb-3">{error}</div>}
-            <div className="space-y-3">
+        <div className="fixed inset-0 z-50 bg-monte-azul/30 backdrop-blur-sm flex items-center justify-center" onClick={() => setShowCreate(false)}>
+          <div className="bg-white rounded-4xl p-8 w-full max-w-md mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold font-display text-monte-azul mb-6">Novo Usuário</h3>
+            {error && <div className="bg-monte-terracota/15 border border-monte-terracota/30 text-monte-terracota px-4 py-3 rounded-2xl text-sm mb-4">{error}</div>}
+            <div className="space-y-4">
               <input type="text" className="input" placeholder="Usuário" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} />
               <input type="email" className="input" placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
               <input type="password" className="input" placeholder="Senha (mín. 6 caracteres)" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />

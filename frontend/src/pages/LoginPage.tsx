@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Smartphone, Eye, EyeOff, Zap } from 'lucide-react';
+import { Eye, EyeOff, Zap } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -24,29 +24,35 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 via-white to-green-50">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-monte-verde via-monte-azul to-monte-verde">
       <div className="w-full max-w-md px-4">
-        <div className="card p-8 shadow-xl">
+        <div className="bg-white/20 backdrop-blur-xl rounded-4xl p-8 shadow-2xl border border-white/30">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-gradient-to-br from-brand-500 to-brand-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <Smartphone className="w-9 h-9 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">Monteiro Conecta</h1>
-            <p className="text-gray-500 mt-1 text-sm">Central de Atendimento Inteligente</p>
+            <img
+              src="/logo.png"
+              alt="Monteiro Conecta"
+              className="w-20 h-20 rounded-2xl mx-auto mb-4 shadow-lg object-cover"
+            />
+            <h1 className="text-3xl font-bold font-display text-white tracking-tight">
+              Monteiro Conecta
+            </h1>
+            <p className="text-white/50 mt-2 text-sm">
+              Central de Atendimento Inteligente
+            </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-red-500/20 backdrop-blur-sm border border-red-400/30 text-red-100 px-4 py-3 rounded-2xl text-sm">
                 {error}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Usuário</label>
+              <label className="block text-sm font-medium text-white/70 mb-2">Usuário</label>
               <input
                 type="text"
-                className="input"
+                className="w-full px-4 py-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-full text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-white/30 focus:bg-white/20 transition-all"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Digite seu usuário"
@@ -56,11 +62,11 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+              <label className="block text-sm font-medium text-white/70 mb-2">Senha</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  className="input pr-10"
+                  className="w-full px-4 pr-10 py-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-full text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-white/30 focus:bg-white/20 transition-all"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Digite sua senha"
@@ -69,7 +75,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -79,10 +85,10 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full py-2.5 flex items-center justify-center gap-2"
+              className="w-full bg-white hover:bg-white/90 text-monte-verde font-bold py-3 px-6 rounded-full transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2 text-sm"
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-monte-verde/30 border-t-monte-verde rounded-full animate-spin" />
               ) : (
                 <>
                   <Zap className="w-4 h-4" />
@@ -92,7 +98,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-xs text-gray-400 mt-6">
+          <p className="text-center text-xs text-white/30 mt-8">
             Monteiro Conecta v1.0 — Powered by Baileys
           </p>
         </div>

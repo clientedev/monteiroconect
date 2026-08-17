@@ -33,35 +33,35 @@ export default function LogsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Logs do Sistema</h2>
+    <div className="space-y-8">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="section-title">Logs do Sistema</h2>
         <div className="flex gap-2">
-          <select className="input w-auto" value={level} onChange={e => { setLevel(e.target.value); setPage(1); }}>
+          <select className="input-rect w-auto" value={level} onChange={e => { setLevel(e.target.value); setPage(1); }}>
             <option value="">Todos</option>
             <option value="info">INFO</option>
             <option value="warning">WARNING</option>
             <option value="error">ERROR</option>
           </select>
-          <button onClick={load} className="btn-secondary flex items-center gap-1"><RefreshCw className="w-4 h-4" /></button>
-          <button onClick={handleClear} className="btn-danger flex items-center gap-1"><Trash2 className="w-4 h-4" /> Limpar</button>
+          <button onClick={load} className="btn-secondary px-3 flex items-center gap-1"><RefreshCw className="w-4 h-4" /></button>
+          <button onClick={handleClear} className="btn-danger px-3 flex items-center gap-1"><Trash2 className="w-4 h-4" /> Limpar</button>
         </div>
       </div>
 
-      <div className="card">
+      <div className="card-static overflow-hidden">
         <div className="font-mono text-sm">
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-monte-sereno/10">
             {logs.map(log => (
-              <div key={log.id} className="px-5 py-2 flex items-start gap-3 hover:bg-gray-50">
+              <div key={log.id} className="px-5 py-2.5 flex items-start gap-3 hover:bg-monte-areiaSecao/40 transition-colors">
                 <span className={`flex-shrink-0 ${levelColors[log.level] || 'badge-gray'}`}>{log.level.toUpperCase()}</span>
-                <span className="text-gray-400 flex-shrink-0">{new Date(log.createdAt).toLocaleString('pt-BR')}</span>
-                {log.whatsapp && <span className="text-blue-500 flex-shrink-0">[{log.whatsapp.name}]</span>}
-                <span className="text-gray-700 flex-1">{log.message}</span>
+                <span className="text-monte-sereno flex-shrink-0 text-xs">{new Date(log.createdAt).toLocaleString('pt-BR')}</span>
+                {log.whatsapp && <span className="text-sky-500 flex-shrink-0 text-xs">[{log.whatsapp.name}]</span>}
+                <span className="text-monte-azul/80 flex-1">{log.message}</span>
               </div>
             ))}
             {logs.length === 0 && (
-              <div className="p-12 text-center text-gray-400">
-                <ScrollText className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <div className="p-12 text-center text-monte-sereno">
+                <ScrollText className="w-8 h-8 mx-auto mb-2 opacity-40" />
                 Nenhum log registrado
               </div>
             )}
@@ -70,9 +70,9 @@ export default function LogsPage() {
       </div>
 
       {total > 100 && (
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-3">
           <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="btn-secondary text-sm">Anterior</button>
-          <span className="text-sm text-gray-500">Página {page}</span>
+          <span className="text-sm text-monte-sereno">Página {page}</span>
           <button onClick={() => setPage(p => p + 1)} disabled={page * 100 >= total} className="btn-secondary text-sm">Próxima</button>
         </div>
       )}

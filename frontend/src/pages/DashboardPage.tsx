@@ -37,26 +37,28 @@ export default function DashboardPage() {
   if (loading) return <LoadingSkeleton />;
 
   const cards = [
-    { label: 'WhatsApps conectados', value: stats?.connectedCount || 0, icon: Smartphone, color: 'bg-green-500', textColor: 'text-green-600' },
-    { label: 'Conversas abertas', value: stats?.totalConversations || 0, icon: MessageSquare, color: 'bg-blue-500', textColor: 'text-blue-600' },
-    { label: 'Mensagens não lidas', value: stats?.unreadMessages || 0, icon: Mail, color: 'bg-amber-500', textColor: 'text-amber-600' },
-    { label: 'Mensagens hoje', value: stats?.messagesToday || 0, icon: TrendingUp, color: 'bg-purple-500', textColor: 'text-purple-600' },
+    { label: 'Whatsapps conectados', value: stats?.connectedCount || 0, icon: Smartphone, gradient: 'from-monte-verde to-emerald-600' },
+    { label: 'Conversas abertas', value: stats?.totalConversations || 0, icon: MessageSquare, gradient: 'from-monte-azul to-sky-600' },
+    { label: 'Mensagens não lidas', value: stats?.unreadMessages || 0, icon: Mail, gradient: 'from-monte-terracota to-red-500' },
+    { label: 'Mensagens hoje', value: stats?.messagesToday || 0, icon: TrendingUp, gradient: 'from-purple-600 to-indigo-600' },
   ];
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+    <div className="space-y-8">
+      <h2 className="section-title">Dashboard</h2>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {cards.map(card => (
-          <div key={card.label} className="card p-5">
+          <div key={card.label} className="stat-card">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">{card.label}</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{card.value}</p>
+                <p className="text-sm text-monte-sereno font-medium">{card.label}</p>
+                <p className="text-3xl font-bold font-display text-monte-azul mt-1 tracking-tight">
+                  {card.value}
+                </p>
               </div>
-              <div className={`w-12 h-12 ${card.color} rounded-xl flex items-center justify-center`}>
+              <div className={`w-14 h-14 bg-gradient-to-br ${card.gradient} rounded-2xl flex items-center justify-center shadow-lg`}>
                 <card.icon className="w-6 h-6 text-white" />
               </div>
             </div>
@@ -65,56 +67,61 @@ export default function DashboardPage() {
       </div>
 
       {/* Per account */}
-      <div className="card">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-900">WhatsApps Cadastrados</h3>
+      <div className="card-static overflow-hidden">
+        <div className="px-6 py-4 border-b border-monte-sereno/15">
+          <h3 className="font-bold font-display text-monte-azul text-lg">Whatsapps Cadastrados</h3>
         </div>
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-monte-sereno/10">
           {stats?.messagesPerAccount?.map((acc: any) => (
-            <div key={acc.id} className="px-5 py-3 flex items-center justify-between">
+            <div key={acc.id} className="px-6 py-4 flex items-center justify-between hover:bg-monte-areiaSecao/50 transition-colors">
               <div className="flex items-center gap-3">
-                <span className={`w-2.5 h-2.5 rounded-full ${acc.status === 'CONNECTED' ? 'bg-green-500' : acc.status === 'ERROR' ? 'bg-red-500' : 'bg-gray-400'}`} />
+                <span className={`w-2.5 h-2.5 rounded-full ${acc.status === 'CONNECTED' ? 'bg-emerald-500' : acc.status === 'ERROR' ? 'bg-monte-terracota' : 'bg-monte-sereno'}`} />
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{acc.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{acc.status}</p>
+                  <p className="text-sm font-semibold text-monte-azul">{acc.name}</p>
+                  <p className="text-xs text-monte-sereno capitalize">{acc.status}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-sm font-medium">{acc._count.conversations}</p>
-                <p className="text-xs text-gray-500">conversas</p>
+                <p className="text-sm font-semibold text-monte-azul">{acc._count.conversations}</p>
+                <p className="text-xs text-monte-sereno">conversas</p>
               </div>
             </div>
           ))}
           {(!stats?.messagesPerAccount?.length) && (
-            <div className="px-5 py-8 text-center text-gray-400 text-sm">
-              Nenhum WhatsApp cadastrado. <Link to="/whatsapp" className="text-brand-600 hover:underline">Adicionar</Link>
+            <div className="px-6 py-10 text-center text-monte-sereno text-sm">
+              Nenhum WhatsApp cadastrado.{' '}
+              <Link to="/whatsapp" className="text-monte-verde hover:text-monte-azul font-semibold transition-colors">
+                Adicionar
+              </Link>
             </div>
           )}
         </div>
       </div>
 
       {/* Recent conversations */}
-      <div className="card">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="font-semibold text-gray-900">Conversas Recentes</h3>
-          <Link to="/conversations" className="text-sm text-brand-600 hover:underline flex items-center gap-1">
+      <div className="card-static overflow-hidden">
+        <div className="px-6 py-4 border-b border-monte-sereno/15 flex items-center justify-between">
+          <h3 className="font-bold font-display text-monte-azul text-lg">Conversas Recentes</h3>
+          <Link to="/conversations" className="text-sm text-monte-verde hover:text-monte-azul font-semibold flex items-center gap-1 transition-colors">
             Ver todas <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-monte-sereno/10">
           {stats?.recentConversations?.slice(0, 5).map((conv: any) => (
-            <div key={conv.id} className="px-5 py-3 flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-sm font-bold text-gray-600">
+            <div key={conv.id} className="px-6 py-3.5 flex items-center gap-3 hover:bg-monte-areiaSecao/50 transition-colors">
+              <div className="w-11 h-11 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm">
                 {(conv.contact?.name || conv.contact?.phone || '?')[0].toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-900">{conv.contact?.name || conv.contact?.phone}</p>
+                  <p className="text-sm font-semibold text-monte-azul">{conv.contact?.name || conv.contact?.phone}</p>
                   {conv.unreadCount > 0 && (
-                    <span className="bg-brand-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{conv.unreadCount}</span>
+                    <span className="bg-monte-terracota text-white text-xs rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5 font-bold shadow-sm">
+                      {conv.unreadCount}
+                    </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 truncate">{conv.lastMessage || 'Sem mensagens'}</p>
+                <p className="text-xs text-monte-sereno truncate mt-0.5">{conv.lastMessage || 'Sem mensagens'}</p>
               </div>
             </div>
           ))}
@@ -126,13 +133,13 @@ export default function DashboardPage() {
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="h-8 bg-gray-200 rounded w-48 animate-pulse" />
-      <div className="grid grid-cols-4 gap-4">
+    <div className="space-y-8">
+      <div className="h-8 bg-monte-sereno/20 rounded-full w-48 animate-pulse" />
+      <div className="grid grid-cols-4 gap-5">
         {[1,2,3,4].map(i => (
-          <div key={i} className="card p-5">
-            <div className="h-4 bg-gray-200 rounded w-24 animate-pulse mb-3" />
-            <div className="h-8 bg-gray-200 rounded w-16 animate-pulse" />
+          <div key={i} className="stat-card">
+            <div className="h-4 bg-monte-sereno/15 rounded-full w-24 animate-pulse mb-3" />
+            <div className="h-8 bg-monte-sereno/15 rounded-full w-16 animate-pulse" />
           </div>
         ))}
       </div>
