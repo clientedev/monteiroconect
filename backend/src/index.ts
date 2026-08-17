@@ -72,6 +72,19 @@ async function bootstrap() {
     res.json({ status: 'ok', uptime: process.uptime() });
   });
 
+  // Serve frontend buildado (produção — mesma origem, sem CORS)
+  const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
+  try {
+    await fs.access(frontendDist);
+    app.use(express.static(frontendDist));
+    app.get(/^(?!\/api|\/uploads|\/ws).*/, (_req, res) => {
+      res.sendFile(path.join(frontendDist, 'index.html'));
+    });
+    logger.info(`Frontend servido de ${frontendDist}`);
+  } catch {
+    logger.info('Frontend dist não encontrado — modo API apenas');
+  }
+
   // Error handler
   app.use(errorHandler);
 
