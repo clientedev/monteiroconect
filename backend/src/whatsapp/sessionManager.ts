@@ -7,6 +7,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 import type { ConnectionState, WAMessage, MessageUpsertType } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
@@ -432,6 +433,24 @@ class WhatsAppSessionManager extends EventEmitter {
         content = `[${messageType}]`;
       }
 
+      // Download mídia se aplicável
+      let savedMediaUrl: string | null = null;
+      const msgContent = (msg.message as any)[messageType];
+      if (mediaType && msgContent && typeof msgContent === 'object' && msgContent.directPath) {
+        try {
+          const buffer = await downloadMediaMessage(msg, 'buffer', {});
+          if (buffer) {
+            const ext = mediaType === 'image' ? 'jpg' : mediaType === 'video' ? 'mp4' : mediaType === 'audio' ? 'ogg' : 'bin';
+            const fileName = `${Date.now()}-${msg.key.id}.${ext}`;
+            const filePath = path.join(env.uploadPath, fileName);
+            await fs.writeFile(filePath, buffer);
+            savedMediaUrl = `/uploads/${fileName}`;
+          }
+        } catch (mediaErr) {
+          logger.warn(`Falha ao baixar mídia (${accountId}):`, mediaErr);
+        }
+      }
+
       // Salvar mensagem
       const savedMessage = await prisma.message.create({
         data: {
@@ -440,6 +459,7 @@ class WhatsAppSessionManager extends EventEmitter {
           type: messageType === 'conversation' || messageType === 'extendedTextMessage' ? 'text' : (mediaType || messageType),
           content,
           mediaType,
+          mediaUrl: savedMediaUrl,
           isFromMe: false,
           messageId: msg.key.id,
           fromPhone: fromPhone,
@@ -472,6 +492,7 @@ class WhatsAppSessionManager extends EventEmitter {
           type: savedMessage.type,
           content,
           mediaType,
+          mediaUrl: savedMediaUrl,
           isFromMe: false,
           createdAt: savedMessage.createdAt,
         },
@@ -562,13 +583,14 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       }
 
-      await prisma.message.create({
+      const savedMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
           whatsappId: accountId,
           type,
           content,
           mediaUrl,
+          mediaType: type === 'text' ? null : type,
           isFromMe: true,
           messageId: result?.key?.id,
           fromPhone: '',
@@ -578,14 +600,25 @@ class WhatsAppSessionManager extends EventEmitter {
 
       await prisma.conversation.update({
         where: { id: conversation.id },
-        data: { lastMessage: content, lastMessageAt: new Date() },
+        data: {
+          lastMessage: content || (type !== 'text' ? `[${type}]` : ''),
+          lastMessageAt: new Date(),
+        },
       });
 
       this.emit('message-sent', {
         accountId,
         conversationId: conversation.id,
         contact,
-        message: { type, content, isFromMe: true, createdAt: new Date() },
+        message: {
+          id: savedMessage.id,
+          type: savedMessage.type,
+          content,
+          mediaType: savedMessage.mediaType,
+          mediaUrl,
+          isFromMe: true,
+          createdAt: savedMessage.createdAt,
+        },
       });
     } catch (err) {
       logger.error(`Erro ao salvar mensagem enviada (${accountId}):`, err);
