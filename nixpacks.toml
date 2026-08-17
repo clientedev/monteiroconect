@@ -1,0 +1,3 @@
+# Desabilita o auto-detect do Nixpacks — usamos Dockerfile
+[phases]
+# Vazio — nenhum phase customizado, força uso do Dockerfile
