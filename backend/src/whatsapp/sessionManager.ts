@@ -465,6 +465,12 @@ class WhatsAppSessionManager extends EventEmitter {
     this.contactAliases.set(accountId, aliases);
     this.contactNames.set(accountId, names);
 
+    // Versões antigas gravavam o próprio LID como nome. Ele é um identificador
+    // técnico e não deve aparecer para o atendente.
+    const cleaned = await prisma.contact.updateMany({
+      where: { whatsappId: accountId, name: { endsWith: '@lid' } },
+      data: { name: null },
+    });
     let changed = false;
     for (const item of contacts || []) {
       const rawAliases = [item?.id, item?.lid, item?.jid].filter((v): v is string => typeof v === 'string' && v.length > 0);
@@ -484,7 +490,7 @@ class WhatsAppSessionManager extends EventEmitter {
         }
       }
     }
-    if (changed) this.emit('contacts-updated', { accountId });
+    if (changed || cleaned.count > 0) this.emit('contacts-updated', { accountId });
   }
 
   /**

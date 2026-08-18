@@ -1,6 +1,11 @@
 import { prisma } from '../database/client.js';
 import { AppError } from '../utils/errors.js';
 
+function publicContactName(name: string | null, phone: string): string | null {
+  if (!name || name === phone || name.endsWith('@lid') || name.endsWith('@s.whatsapp.net')) return null;
+  return name;
+}
+
 interface ListConversationsOpts {
   whatsappId: string;
   search?: string;
@@ -53,7 +58,7 @@ export async function listConversations(opts: ListConversationsOpts) {
     conversations: visible.map(c => ({
       id: c.id,
       contactId: c.contact.id,
-      contactName: c.contact.name,
+      contactName: publicContactName(c.contact.name, c.contact.phone),
       contactPhone: c.contact.phone,
       contactAvatarUrl: c.contact.avatarUrl,
       lastMessage: c.lastMessage,

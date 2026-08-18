@@ -1,5 +1,10 @@
 import { prisma } from '../database/client.js';
 
+function publicContactName(name: string | null, phone: string): string | null {
+  if (!name || name === phone || name.endsWith('@lid') || name.endsWith('@s.whatsapp.net')) return null;
+  return name;
+}
+
 interface ListContactsOpts {
   whatsappId: string;
   search?: string;
@@ -31,7 +36,12 @@ export async function listContacts(opts: ListContactsOpts) {
     }),
   ]);
 
-  return { total, page, limit, contacts };
+  return {
+    total,
+    page,
+    limit,
+    contacts: contacts.map(contact => ({ ...contact, name: publicContactName(contact.name, contact.phone) })),
+  };
 }
 
 export async function updateContact(id: string, data: {
