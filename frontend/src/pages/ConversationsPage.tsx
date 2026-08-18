@@ -184,11 +184,14 @@ export default function ConversationsPage() {
 
     socket.on('message:new', onNewMsg);
     socket.on('message:sent', onSent);
+    const onHistory = () => loadConversations();
+    socket.on('history:imported', onHistory);
     return () => {
       socket.off('message:new', onNewMsg);
       socket.off('message:sent', onSent);
+      socket.off('history:imported', onHistory);
     };
-  }, [selectedAccountId, selectedConv]);
+  }, [selectedAccountId, selectedConv, loadConversations]);
 
   const handleSelectConv = (conv: ConvItem) => {
     setSelectedConv(conv);

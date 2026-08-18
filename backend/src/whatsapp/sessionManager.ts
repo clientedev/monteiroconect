@@ -48,6 +48,8 @@ function makeLogger() {
 
 class WhatsAppSessionManager extends EventEmitter {
   private sessions: Map<string, SessionInfo> = new Map();
+  private historyImporting = new Set<string>();
+  private historyQueue = new Map<string, any[]>();
 
   constructor() {
     super();
@@ -148,6 +150,10 @@ class WhatsAppSessionManager extends EventEmitter {
         printQRInTerminal: false,
         logger: makeLogger(),
         shouldIgnoreJid: () => false,
+        // Sincroniza o histórico completo, igual ao vincular um novo
+        // dispositivo no WhatsApp Web
+        syncFullHistory: true,
+        shouldSyncHistoryMessage: () => true,
       });
 
       session.socket = socket;
@@ -232,13 +238,28 @@ class WhatsAppSessionManager extends EventEmitter {
         }
       });
 
-      // Mensagens recebidas
+      // Mensagens recebidas E enviadas de outros dispositivos (celular) —
+      // comportamento igual ao WhatsApp Web, que espelha tudo
       socket.ev.on('messages.upsert', async (m: { type: MessageUpsertType; messages: WAMessage[] }) => {
         if (m.type === 'notify') {
           for (const msg of m.messages) {
-            if (msg.key.fromMe) continue;
-            await this.handleIncomingMessage(accountId, msg);
+            if (!msg.key.remoteJid || msg.key.remoteJid === 'status@broadcast') continue;
+            if (msg.key.fromMe) {
+              await this.handleOutgoingFromDevice(accountId, msg);
+            } else {
+              await this.handleIncomingMessage(accountId, msg);
+            }
           }
+        }
+      });
+
+      // Histórico sincronizado ao vincular dispositivo (como WhatsApp Web)
+      socket.ev.on('messaging-history.set', (data: any) => {
+        if (session.isDestroying) return;
+        const msgs = data?.messages || [];
+        if (msgs.length > 0) {
+          logger.info(`Histórico recebido: ${msgs.length} mensagens (${session.name})`);
+          this.enqueueHistory(accountId, data);
         }
       });
     } catch (err) {
@@ -405,6 +426,294 @@ class WhatsAppSessionManager extends EventEmitter {
     return jid; // grupos (@g.us) e LIDs (@lid) são mantidos íntegros
   }
 
+  /**
+   * Extrai texto/tipo de uma mensagem Baileys (compartilhado entre
+   * mensagens em tempo real e sincronização de histórico).
+   */
+  private extractContent(msg: WAMessage): { content: string; mediaType: string | null; messageType: string } {
+    const message = msg.message || {};
+    const messageType = Object.keys(message)[0] || 'unknown';
+    let content = '';
+    let mediaType: string | null = null;
+
+    const msgObj = (message as any)[messageType];
+    if (messageType === 'conversation') {
+      content = msgObj;
+    } else if (messageType === 'extendedTextMessage') {
+      content = msgObj?.text || '';
+    } else if (messageType === 'imageMessage') {
+      content = msgObj?.caption || '';
+      mediaType = 'image';
+    } else if (messageType === 'audioMessage') {
+      mediaType = 'audio';
+    } else if (messageType === 'videoMessage') {
+      content = msgObj?.caption || '';
+      mediaType = 'video';
+    } else if (messageType === 'documentMessage') {
+      content = msgObj?.fileName || '';
+      mediaType = 'document';
+    } else if (messageType === 'locationMessage') {
+      content = `📍 ${msgObj?.degreesLatitude}, ${msgObj?.degreesLongitude}`;
+      mediaType = 'location';
+    } else if (messageType === 'contactMessage') {
+      content = `👤 ${msgObj?.displayName}`;
+      mediaType = 'contact';
+    } else if (messageType === 'stickerMessage') {
+      mediaType = 'sticker';
+    } else {
+      content = `[${messageType}]`;
+    }
+
+    return { content, mediaType, messageType };
+  }
+
+  /** Converte messageTimestamp (segundos, podendo vir como Long) em Date */
+  private msgTimestamp(msg: WAMessage): Date {
+    const raw = msg.messageTimestamp as any;
+    const num = typeof raw === 'number' ? raw : Number(raw?.low ?? raw ?? 0);
+    return Number.isFinite(num) && num > 0 ? new Date(num * 1000) : new Date();
+  }
+
+  /**
+   * Mensagem enviada de outro dispositivo da conta (o celular) — espelhada
+   * no sistema, com dedupe do eco das mensagens enviadas pelo próprio sistema.
+   */
+  private async handleOutgoingFromDevice(accountId: string, msg: WAMessage): Promise<void> {
+    try {
+      const remoteJid = msg.key.remoteJid || '';
+      if (!remoteJid || remoteJid === 'status@broadcast') return;
+
+      const contactPhone = this.jidToContactPhone(remoteJid);
+      let contact = await prisma.contact.findUnique({
+        where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
+      });
+      if (!contact) {
+        contact = await prisma.contact.create({
+          data: { phone: contactPhone, name: msg.pushName || contactPhone, whatsappId: accountId },
+        });
+      }
+
+      let conversation = await prisma.conversation.findUnique({
+        where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
+      });
+      if (!conversation) {
+        conversation = await prisma.conversation.create({
+          data: { contactId: contact.id, whatsappId: accountId },
+        });
+      }
+
+      // Eco da mensagem enviada pelo próprio sistema — já está salva
+      if (msg.key.id) {
+        const exists = await prisma.message.findFirst({
+          where: { conversationId: conversation.id, messageId: msg.key.id },
+          select: { id: true },
+        });
+        if (exists) return;
+      }
+
+      const { content, mediaType, messageType } = this.extractContent(msg);
+      const ts = this.msgTimestamp(msg);
+
+      const savedMessage = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          whatsappId: accountId,
+          type: messageType === 'conversation' || messageType === 'extendedTextMessage' ? 'text' : (mediaType || messageType),
+          content,
+          mediaType,
+          mediaUrl: null,
+          isFromMe: true,
+          isRead: true,
+          messageId: msg.key.id,
+          fromPhone: '',
+          toPhone: contactPhone,
+          createdAt: ts,
+        },
+      });
+
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastMessage: content || `[${mediaType || messageType}]`,
+          ...(ts > (conversation.lastMessageAt || new Date(0)) ? { lastMessageAt: ts } : {}),
+        },
+      });
+
+      this.emit('message-sent', {
+        accountId,
+        conversationId: conversation.id,
+        contact,
+        message: {
+          id: savedMessage.id,
+          type: savedMessage.type,
+          content,
+          mediaType,
+          mediaUrl: null,
+          isFromMe: true,
+          createdAt: savedMessage.createdAt,
+        },
+      });
+    } catch (err) {
+      logger.error(`Erro ao espelhar mensagem enviada do celular (${accountId}):`, err);
+    }
+  }
+
+  /**
+   * Importa o histórico sincronizado pelo WhatsApp (messaging-history.set)
+   * para o banco — igual ao WhatsApp Web ao vincular um dispositivo novo.
+   * Chega em páginas; cada página entra na fila e é processada em sequência
+   * com dedupe por messageId.
+   */
+  private enqueueHistory(accountId: string, data: any): void {
+    const q = this.historyQueue.get(accountId) || [];
+    q.push(data);
+    this.historyQueue.set(accountId, q);
+
+    if (!this.historyImporting.has(accountId)) {
+      this.historyImporting.add(accountId);
+      this.processHistoryQueue(accountId).catch(() => {});
+    }
+  }
+
+  private async processHistoryQueue(accountId: string): Promise<void> {
+    let total = 0;
+    try {
+      for (;;) {
+        const q = this.historyQueue.get(accountId) || [];
+        const data = q.shift();
+        if (!data) break;
+        total += await this.importHistoryBatch(accountId, data);
+      }
+      if (total > 0) {
+        this.emit('history-imported', { accountId, total });
+      }
+    } finally {
+      this.historyImporting.delete(accountId);
+      this.historyQueue.delete(accountId);
+    }
+  }
+
+  private async importHistoryBatch(accountId: string, data: any): Promise<number> {
+    const limit = env.historyMessageLimit;
+    if (limit <= 0) return 0;
+
+    // Nomes de contato vindos do sync (jid -> nome)
+    const nameByJid = new Map<string, string>();
+    for (const c of data.contacts || []) {
+      if (c?.id) {
+        const name = String(c.name || c.notify || c.verifiedName || '').trim();
+        if (name) nameByJid.set(c.id, name);
+      }
+    }
+
+    // Agrupa mensagens por conversa
+    const byConversation = new Map<string, WAMessage[]>();
+    for (const m of data.messages || []) {
+      const jid = m.key?.remoteJid || '';
+      if (!jid || jid === 'status@broadcast') continue;
+      const arr = byConversation.get(jid) || [];
+      arr.push(m);
+      byConversation.set(jid, arr);
+    }
+
+    let imported = 0;
+    for (const [jid, msgs] of byConversation) {
+      const session = this.sessions.get(accountId);
+      if (session?.isDestroying) return imported;
+
+      msgs.sort((a: any, b: any) => Number(a.messageTimestamp || 0) - Number(b.messageTimestamp || 0));
+      const recent = limit > 0 ? msgs.slice(-limit) : msgs;
+
+      const contactPhone = this.jidToContactPhone(jid);
+      const displayName = nameByJid.get(jid) || null;
+
+      let contact = await prisma.contact.findUnique({
+        where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
+      });
+      if (!contact) {
+        contact = await prisma.contact.create({
+          data: { phone: contactPhone, name: displayName || contactPhone, whatsappId: accountId },
+        });
+      } else if (displayName && (!contact.name || contact.name === contact.phone)) {
+        contact = await prisma.contact.update({
+          where: { id: contact.id },
+          data: { name: displayName },
+        });
+      }
+
+      let conversation = await prisma.conversation.findUnique({
+        where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
+      });
+      if (!conversation) {
+        conversation = await prisma.conversation.create({
+          data: { contactId: contact.id, whatsappId: accountId },
+        });
+      }
+
+      const existing = new Set(
+        (await prisma.message.findMany({
+          where: { conversationId: conversation.id },
+          select: { messageId: true },
+        })).map(m => m.messageId)
+      );
+
+      const toCreate: any[] = [];
+      for (const m of recent) {
+        const mid = m.key?.id;
+        if (!mid || existing.has(mid)) continue;
+        existing.add(mid);
+
+        const { content, mediaType, messageType } = this.extractContent(m);
+        toCreate.push({
+          conversationId: conversation.id,
+          whatsappId: accountId,
+          type: messageType === 'conversation' || messageType === 'extendedTextMessage' ? 'text' : (mediaType || messageType),
+          content,
+          mediaType,
+          mediaUrl: null,
+          isFromMe: !!m.key.fromMe,
+          isRead: true,
+          messageId: mid,
+          fromPhone: m.key.fromMe ? '' : contactPhone,
+          toPhone: m.key.fromMe ? contactPhone : '',
+          createdAt: this.msgTimestamp(m),
+        });
+
+        if (toCreate.length >= 200) {
+          await prisma.message.createMany({ data: toCreate });
+          imported += toCreate.length;
+          toCreate.length = 0;
+        }
+      }
+      if (toCreate.length > 0) {
+        await prisma.message.createMany({ data: toCreate });
+        imported += toCreate.length;
+      }
+
+      // Atualiza a conversa apenas se o histórico trouxe algo mais recente
+      const lastMsg = recent[recent.length - 1];
+      const lastTs = this.msgTimestamp(lastMsg);
+      if (lastTs > (conversation.lastMessageAt || new Date(0))) {
+        const { content: lastContent, mediaType: lastMediaType } = this.extractContent(lastMsg);
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastMessage: lastContent || `[${lastMediaType || 'mídia'}]`,
+            lastMessageAt: lastTs,
+          },
+        });
+      }
+
+      // Libera o event loop entre conversas
+      await new Promise(r => setImmediate(r));
+    }
+
+    if (imported > 0) {
+      logger.info(`Histórico importado (${accountId}): ${imported} mensagens${data.isLatest ? ' — sincronização completa' : ''}`);
+    }
+    return imported;
+  }
+
   private async handleIncomingMessage(accountId: string, msg: WAMessage): Promise<void> {
     try {
       const remoteJid = msg.key.remoteJid || '';
@@ -448,38 +757,7 @@ class WhatsAppSessionManager extends EventEmitter {
       }
 
       // Extrair conteúdo da mensagem
-      const message = msg.message || {};
-      const messageType = Object.keys(message)[0] || 'unknown';
-      let content = '';
-      let mediaType: string | null = null;
-
-      const msgObj = (message as any)[messageType];
-      if (messageType === 'conversation') {
-        content = msgObj;
-      } else if (messageType === 'extendedTextMessage') {
-        content = msgObj?.text || '';
-      } else if (messageType === 'imageMessage') {
-        content = msgObj?.caption || '';
-        mediaType = 'image';
-      } else if (messageType === 'audioMessage') {
-        mediaType = 'audio';
-      } else if (messageType === 'videoMessage') {
-        content = msgObj?.caption || '';
-        mediaType = 'video';
-      } else if (messageType === 'documentMessage') {
-        content = msgObj?.fileName || '';
-        mediaType = 'document';
-      } else if (messageType === 'locationMessage') {
-        content = `📍 ${msgObj?.degreesLatitude}, ${msgObj?.degreesLongitude}`;
-        mediaType = 'location';
-      } else if (messageType === 'contactMessage') {
-        content = `👤 ${msgObj?.displayName}`;
-        mediaType = 'contact';
-      } else if (messageType === 'stickerMessage') {
-        mediaType = 'sticker';
-      } else {
-        content = `[${messageType}]`;
-      }
+      const { content, mediaType, messageType } = this.extractContent(msg);
 
       // Download mídia se aplicável
       let savedMediaUrl: string | null = null;
@@ -499,7 +777,15 @@ class WhatsAppSessionManager extends EventEmitter {
         }
       }
 
-      // Salvar mensagem
+      // Salvar mensagem — dedupe por messageId (histórico pode repetir)
+      if (msg.key.id) {
+        const exists = await prisma.message.findFirst({
+          where: { conversationId: conversation.id, messageId: msg.key.id },
+          select: { id: true },
+        });
+        if (exists) return;
+      }
+
       const savedMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
