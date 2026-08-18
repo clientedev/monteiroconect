@@ -200,13 +200,6 @@ export async function getGreetingForAccount(whatsappAccountId: string) {
   return chatbot?.greetingMessage || null;
 }
 
-export async function getGreetingForAccount(whatsappAccountId: string) {
-  const chatbot = await prisma.chatbot.findFirst({
-    where: { whatsappAccountId, isActive: true, greetingMessage: { not: null } },
-  });
-  return chatbot?.greetingMessage || null;
-}
-
 function matchesTrigger(triggerType: string, trigger: string, content: string): boolean {
   const normalizedContent = content.toLowerCase().trim();
   const normalizedTrigger = trigger.toLowerCase().trim();

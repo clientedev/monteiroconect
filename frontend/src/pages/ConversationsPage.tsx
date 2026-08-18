@@ -26,6 +26,9 @@ interface Msg {
   isRead: boolean;
   createdAt: string;
   fromPhone: string | null;
+  quotedMessageId?: string | null;
+  quotedContent?: string | null;
+  senderName?: string | null;
 }
 
 export default function ConversationsPage() {
@@ -151,6 +154,9 @@ export default function ConversationsPage() {
           isRead: false,
           createdAt: data.message.createdAt,
           fromPhone: data.contact?.phone,
+          quotedMessageId: data.message.quotedMessageId,
+          quotedContent: data.message.quotedContent,
+          senderName: data.message.senderName,
         }]);
         conversationApi.markRead(data.conversationId).then(() => {
           getSocket()?.emit('conversation-read', data.conversationId);
@@ -177,6 +183,8 @@ export default function ConversationsPage() {
           isRead: false,
           createdAt: data.message.createdAt,
           fromPhone: null,
+          quotedMessageId: data.message.quotedMessageId,
+          quotedContent: data.message.quotedContent,
         }]);
         scrollToBottom();
       }
@@ -344,7 +352,9 @@ export default function ConversationsPage() {
               </div>
               <div>
                 <p className="font-semibold text-monte-azul font-display">{selectedConv.contactName || selectedConv.contactPhone}</p>
-                <p className="text-xs text-monte-sereno">{selectedConv.contactPhone}</p>
+                <p className="text-xs text-monte-sereno">
+                  {selectedConv.contactPhone.includes('@g.us') ? '👥 Grupo' : selectedConv.contactPhone}
+                </p>
               </div>
             </div>
 
@@ -364,6 +374,20 @@ export default function ConversationsPage() {
                       ? 'bg-monte-verde text-white rounded-br-lg'
                       : 'bg-white/80 backdrop-blur-sm border border-monte-sereno/15 text-monte-azul rounded-bl-lg'
                   }`}>
+                    {/* Remetente (mensagens de grupo) */}
+                    {!msg.isFromMe && msg.senderName && (
+                      <p className="text-xs font-bold text-monte-terracota mb-1 truncate">{msg.senderName}</p>
+                    )}
+                    {/* Mensagem respondida (reply) */}
+                    {msg.quotedContent && (
+                      <div className={`mb-1.5 pl-2.5 border-l-[3px] rounded-md py-1 pr-2 ${
+                        msg.isFromMe
+                          ? 'border-white/70 bg-white/15 text-white/85'
+                          : 'border-monte-terracota bg-monte-terracota/8 text-monte-azul/80'
+                      }`}>
+                        <p className="text-xs line-clamp-3 break-words whitespace-pre-wrap">{msg.quotedContent}</p>
+                      </div>
+                    )}
                     {msg.mediaType === 'image' && msg.mediaUrl && (
                       <div className="mb-2 -mx-1 -mt-1 rounded-t-3xl overflow-hidden">
                         <img src={msg.mediaUrl} alt="Imagem" className="w-full object-cover cursor-pointer" loading="lazy" onClick={() => window.open(msg.mediaUrl!, '_blank')} />
