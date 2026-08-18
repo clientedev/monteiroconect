@@ -73,7 +73,10 @@ export async function getConversationMessages(
     prisma.message.count({ where: { conversationId } }),
     prisma.message.findMany({
       where: { conversationId },
-      orderBy: { createdAt: 'asc' },
+      // A primeira página deve trazer as mensagens mais recentes. Consultamos
+      // em ordem decrescente por eficiência e devolvemos em ordem cronológica
+      // para a interface de chat.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip,
       take: limit,
     }),
@@ -89,7 +92,7 @@ export async function getConversationMessages(
     data: { unreadCount: 0 },
   });
 
-  return { total, page, limit, messages };
+  return { total, page, limit, messages: messages.reverse() };
 }
 
 export async function markConversationRead(conversationId: string) {

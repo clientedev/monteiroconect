@@ -526,6 +526,15 @@ class WhatsAppSessionManager extends EventEmitter {
     return Number.isFinite(num) && num > 0 ? new Date(num * 1000) : new Date();
   }
 
+  /** Evita gravar telefone/JID como se fosse o nome do cliente. */
+  private usableContactName(value: unknown, phone: string): string | null {
+    const name = typeof value === 'string' ? value.trim() : '';
+    if (!name || name === phone || /@(?:s\.whatsapp\.net|g\.us|lid)$/.test(name)) return null;
+    // Números puros não são um nome de contato.
+    if (/^\+?[\d\s().-]{7,}$/.test(name)) return null;
+    return name.slice(0, 120);
+  }
+
   /** Nome real do grupo (subject), com cache para evitar chamadas repetidas */
   private groupNameCache = new Map<string, string>();
 
@@ -559,7 +568,9 @@ class WhatsAppSessionManager extends EventEmitter {
       });
       if (!contact) {
         contact = await prisma.contact.create({
-          data: { phone: contactPhone, name: msg.pushName || contactPhone, whatsappId: accountId },
+          // Em mensagens enviadas, pushName normalmente é o nome da própria
+          // conta, e não do destinatário.
+          data: { phone: contactPhone, whatsappId: accountId },
         });
       }
 
@@ -706,12 +717,12 @@ class WhatsAppSessionManager extends EventEmitter {
       });
       if (!contact) {
         contact = await prisma.contact.create({
-          data: { phone: contactPhone, name: displayName || contactPhone, whatsappId: accountId },
+          data: { phone: contactPhone, name: this.usableContactName(displayName, contactPhone), whatsappId: accountId },
         });
-      } else if (displayName && (!contact.name || contact.name === contact.phone)) {
+      } else if (this.usableContactName(displayName, contactPhone) && (!contact.name || contact.name === contact.phone)) {
         contact = await prisma.contact.update({
           where: { id: contact.id },
-          data: { name: displayName },
+          data: { name: this.usableContactName(displayName, contactPhone) },
         });
       }
 
@@ -781,6 +792,13 @@ class WhatsAppSessionManager extends EventEmitter {
             lastMessageAt: lastTs,
           },
         });
+        await prisma.contact.update({
+          where: { id: contact.id },
+          data: {
+            lastMessage: lastContent,
+            lastContact: lastTs,
+          },
+        });
       }
 
       // Libera o event loop entre conversas
@@ -800,7 +818,7 @@ class WhatsAppSessionManager extends EventEmitter {
 
       const isGroup = remoteJid.endsWith('@g.us');
       const fromPhone = this.jidToContactPhone(remoteJid);
-      const pushName = msg.pushName || fromPhone;
+      const pushName = this.usableContactName(msg.pushName, fromPhone);
 
       // Em grupo: contato = grupo (nome real via metadata); remetente fica
       // registrado em cada mensagem (senderName/senderJid)
@@ -810,7 +828,7 @@ class WhatsAppSessionManager extends EventEmitter {
       let contactName = pushName;
       if (isGroup) {
         const groupName = await this.getGroupName(accountId, remoteJid);
-        contactName = groupName || fromPhone;
+        contactName = this.usableContactName(groupName, fromPhone);
       }
 
       // Salvar/atualizar contato
@@ -829,10 +847,10 @@ class WhatsAppSessionManager extends EventEmitter {
       } else {
         // Só sobrescreve o nome se ainda for o fallback (telefone/JID),
         // preservando nomes editados manualmente
-        const shouldRename = !contact.name || contact.name === contact.phone || (!isGroup && pushName && contact.name !== pushName && contact.name === contact.phone);
+        const shouldRename = !!contactName && (!contact.name || contact.name === contact.phone);
         contact = await prisma.contact.update({
           where: { id: contact.id },
-          data: { name: shouldRename ? contactName : contact.name, lastContact: new Date() },
+          data: { name: shouldRename ? contactName : contact.name },
         });
       }
 
@@ -852,6 +870,7 @@ class WhatsAppSessionManager extends EventEmitter {
 
       // Extrair conteúdo da mensagem
       const { content, mediaType, messageType, quotedMessageId, quotedContent } = this.extractContent(msg);
+      const receivedAt = this.msgTimestamp(msg);
 
       // Download mídia se aplicável
       let savedMediaUrl: string | null = null;
@@ -896,6 +915,7 @@ class WhatsAppSessionManager extends EventEmitter {
           messageId: msg.key.id,
           fromPhone: fromPhone,
           toPhone: msg.key.participant || '',
+          createdAt: receivedAt,
         },
       });
 
@@ -904,7 +924,7 @@ class WhatsAppSessionManager extends EventEmitter {
         where: { id: conversation.id },
         data: {
           lastMessage: content || `[${mediaType || messageType}]`,
-          lastMessageAt: new Date(),
+          lastMessageAt: receivedAt,
           unreadCount: { increment: 1 },
         },
       });
@@ -940,7 +960,7 @@ class WhatsAppSessionManager extends EventEmitter {
       // Atualizar contato
       await prisma.contact.update({
         where: { id: contact.id },
-        data: { lastMessage: content, lastContact: new Date() },
+        data: { lastMessage: content, lastContact: receivedAt },
       });
 
       // Auto-resposta via Chatbot (IA Grok ou regras) — apenas conversas 1:1,
@@ -1036,6 +1056,16 @@ class WhatsAppSessionManager extends EventEmitter {
         conversation = await prisma.conversation.create({
           data: { contactId: contact.id, whatsappId: accountId },
         });
+      }
+
+      // O eco de uma mensagem enviada pode chegar antes desta rotina terminar.
+      // A verificação torna o armazenamento idempotente mesmo nesses casos.
+      if (result?.key?.id) {
+        const existing = await prisma.message.findFirst({
+          where: { conversationId: conversation.id, messageId: result.key.id },
+          select: { id: true },
+        });
+        if (existing) return;
       }
 
       const savedMessage = await prisma.message.create({

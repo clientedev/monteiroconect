@@ -1,6 +1,10 @@
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { whatsappApi, contactApi } from '../lib/api';
-import { Search, Users, Edit2, Save, X } from 'lucide-react';
+import { Search, Users, Edit2, Save, X, StickyNote } from 'lucide-react';
+
+const leadStatusLabels: Record<string, string> = {
+  NEW: 'Novo', QUALIFIED: 'Qualificado', NEGOTIATION: 'Negociação', WON: 'Ganho', LOST: 'Perdido',
+};
 
 export default function ContactsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -9,11 +13,13 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editLeadStatus, setEditLeadStatus] = useState<'NEW' | 'QUALIFIED' | 'NEGOTIATION' | 'WON' | 'LOST'>('NEW');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     whatsappApi.list().then(data => {
-      setAccounts(data.filter((a: any) => a.status === 'CONNECTED'));
+      setAccounts(data);
       if (data.length > 0) setSelectedAccountId(data[0].id);
     }).catch(() => {});
   }, []);
@@ -30,12 +36,14 @@ export default function ContactsPage() {
   const handleEdit = (contact: any) => {
     setEditingId(contact.id);
     setEditName(contact.name || '');
+    setEditNotes(contact.notes || '');
+    setEditLeadStatus(contact.leadStatus || 'NEW');
   };
 
   const handleSave = async (id: string) => {
     try {
-      await contactApi.update(id, { name: editName });
-      setContacts(prev => prev.map(c => c.id === id ? { ...c, name: editName } : c));
+      await contactApi.update(id, { name: editName.trim() || undefined, notes: editNotes, leadStatus: editLeadStatus });
+      setContacts(prev => prev.map(c => c.id === id ? { ...c, name: editName.trim() || null, notes: editNotes, leadStatus: editLeadStatus } : c));
       setEditingId(null);
     } catch {}
   };
@@ -65,6 +73,7 @@ export default function ContactsPage() {
               <tr>
                 <th className="table-header">Contato</th>
                 <th className="table-header">Telefone</th>
+                <th className="table-header">Lead</th>
                 <th className="table-header">Última Mensagem</th>
                 <th className="table-header">Último Contato</th>
                 <th className="table-header w-20">Ações</th>
@@ -72,7 +81,8 @@ export default function ContactsPage() {
             </thead>
             <tbody className="divide-y divide-monte-sereno/10">
               {contacts.map(c => (
-                <tr key={c.id} className="hover:bg-monte-areiaSecao/40 transition-colors">
+                <Fragment key={c.id}>
+                <tr className="hover:bg-monte-areiaSecao/40 transition-colors">
                   <td className="table-row">
                     {editingId === c.id ? (
                       <input type="text" className="input-rect text-sm py-1 w-full" value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave(c.id)} autoFocus />
@@ -81,11 +91,20 @@ export default function ContactsPage() {
                         <div className="w-8 h-8 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-xs font-bold text-white">
                           {(c.name || c.phone)[0].toUpperCase()}
                         </div>
-                        <span className="text-sm font-semibold text-monte-azul">{c.name || '—'}</span>
+                        <span className="text-sm font-semibold text-monte-azul">{c.name || 'Sem nome'}</span>
                       </div>
                     )}
                   </td>
                   <td className="table-row text-monte-sereno">{c.phone}</td>
+                  <td className="table-row">
+                    {editingId === c.id ? (
+                      <select className="input-rect text-sm py-1" value={editLeadStatus} onChange={e => setEditLeadStatus(e.target.value as typeof editLeadStatus)}>
+                        {Object.entries(leadStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-xs font-medium text-monte-azul">{leadStatusLabels[c.leadStatus] || leadStatusLabels.NEW}</span>
+                    )}
+                  </td>
                   <td className="table-row text-monte-sereno truncate max-w-[200px]">{c.lastMessage || '—'}</td>
                   <td className="table-row text-monte-sereno/70">{c.lastContact ? new Date(c.lastContact).toLocaleDateString('pt-BR') : '—'}</td>
                   <td className="table-row">
@@ -99,6 +118,17 @@ export default function ContactsPage() {
                     )}
                   </td>
                 </tr>
+                {editingId === c.id && (
+                  <tr className="bg-monte-areiaSecao/30">
+                    <td colSpan={6} className="px-4 pb-3">
+                      <label className="flex items-start gap-2 text-xs text-monte-sereno">
+                        <StickyNote className="w-4 h-4 mt-2" />
+                        <textarea className="input-rect text-sm min-h-16" placeholder="Anotações do lead: necessidade, próximo passo, origem..." value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+                      </label>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

@@ -70,7 +70,7 @@ cd wa-central
 ### 2. Instale as dependências
 
 ```bash
-npm install
+npm run install:all
 ```
 
 ### 3. Configure as variáveis de ambiente
@@ -91,10 +91,10 @@ JWT_SECRET=um-valor-aleatorio-bem-seguro
 ### 4. Inicialize o banco de dados
 
 ```bash
-cd backend
-npx prisma db push
-cd ..
+npm run db:push
 ```
+
+Para o banco local, inicie antes o PostgreSQL com `docker compose up -d postgres`.
 
 ### 5. Inicie em modo desenvolvimento
 
@@ -251,7 +251,7 @@ npm run build
 |---|---|---|
 | `PORT` | Porta do servidor backend | `3001` |
 | `NODE_ENV` | Ambiente (development/production) | `development` |
-| `DATABASE_URL` | URL do banco de dados | `file:./dev.db` |
+| `DATABASE_URL` | URL de conexão PostgreSQL | `postgresql://...` |
 | `JWT_SECRET` | Segredo para tokens JWT | — |
 | `JWT_EXPIRES_IN` | Expiração do token | `24h` |
 | `SESSIONS_PATH` | Pasta de sessões WhatsApp | `./sessions` |

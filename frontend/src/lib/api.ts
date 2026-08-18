@@ -128,7 +128,13 @@ export const conversationApi = {
 export const contactApi = {
   list: (whatsappId: string, search?: string) =>
     api.get<any>(`/contacts?whatsappId=${whatsappId}&search=${search || ''}`),
-  update: (id: string, data: { name?: string; notes?: string }) =>
+  update: (id: string, data: {
+    name?: string;
+    notes?: string;
+    leadStatus?: 'NEW' | 'QUALIFIED' | 'NEGOTIATION' | 'WON' | 'LOST';
+    leadValue?: number | null;
+    leadSource?: string;
+  }) =>
     api.put(`/contacts/${id}`, data),
 };
 

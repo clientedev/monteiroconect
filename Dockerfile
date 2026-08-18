@@ -2,8 +2,7 @@
 FROM node:20-alpine AS frontend-builder
 RUN apk add --no-cache git
 WORKDIR /app/frontend
-COPY frontend/_package.json frontend/package-lock.json* ./
-RUN mv _package.json package.json
+COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
 COPY frontend/ .
 RUN npm run build
@@ -12,9 +11,8 @@ RUN npm run build
 FROM node:20-alpine AS backend-builder
 RUN apk add --no-cache git openssl-dev
 WORKDIR /app/backend
-COPY backend/_package.json backend/package-lock.json* ./
+COPY backend/package.json backend/package-lock.json* ./
 COPY backend/prisma ./prisma/
-RUN mv _package.json package.json
 RUN npm install
 COPY backend/ .
 # Gera o client Prisma com target para Debian (estágio final é node:20-slim)

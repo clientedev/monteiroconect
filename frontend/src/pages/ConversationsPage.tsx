@@ -137,14 +137,13 @@ export default function ConversationsPage() {
     if (!socket) return;
 
     const onNewMsg = (data: any) => {
-      setConversations(prev => prev.map(c =>
-        c.id === data.conversationId
-          ? { ...c, lastMessage: data.message.content || `[${data.message.mediaType || 'mídia'}]`, lastMessageAt: data.message.createdAt, unreadCount: c.id === selectedConv?.id ? 0 : (c.unreadCount || 0) + 1 }
-          : c
-      ));
+      if (data.accountId !== selectedAccountId) return;
+      // Recarregar a lista evita conversas novas invisíveis, mantém o nome
+      // atualizado e preserva a ordenação pelo último evento real.
+      loadConversations();
 
       if (data.conversationId === selectedConv?.id) {
-        setMessages(prev => [...prev, {
+        setMessages(prev => prev.some(msg => msg.id === data.message.id) ? prev : [...prev, {
           id: data.message.id,
           type: data.message.type,
           content: data.message.content,
@@ -166,14 +165,11 @@ export default function ConversationsPage() {
     };
 
     const onSent = (data: any) => {
-      setConversations(prev => prev.map(c =>
-        c.id === data.conversationId
-          ? { ...c, lastMessage: data.message.content || `[${data.message.mediaType || data.message.type}]`, lastMessageAt: data.message.createdAt }
-          : c
-      ));
+      if (data.accountId !== selectedAccountId) return;
+      loadConversations();
 
       if (data.conversationId === selectedConv?.id) {
-        setMessages(prev => [...prev, {
+        setMessages(prev => prev.some(msg => msg.id === data.message.id) ? prev : [...prev, {
           id: data.message.id || `sent-${Date.now()}`,
           type: data.message.type,
           content: data.message.content,
@@ -192,7 +188,7 @@ export default function ConversationsPage() {
 
     socket.on('message:new', onNewMsg);
     socket.on('message:sent', onSent);
-    const onHistory = () => loadConversations();
+    const onHistory = (data: any) => { if (data.accountId === selectedAccountId) loadConversations(); };
     socket.on('history:imported', onHistory);
     return () => {
       socket.off('message:new', onNewMsg);

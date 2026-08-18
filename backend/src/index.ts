@@ -28,7 +28,9 @@ function syncDatabaseInBackground(): Promise<void> {
   return new Promise((resolve) => {
     logger.info('Sincronizando schema com banco de dados (prisma db push)...');
     const child = exec(
-      'npx prisma db push --skip-generate --accept-data-loss',
+      // Nunca aceite perda de dados automaticamente ao iniciar o servidor.
+      // Alterações destrutivas devem ser revisadas e executadas manualmente.
+      'npx prisma db push --skip-generate',
       { timeout: 120_000 },
       (err, stdout, stderr) => {
         if (err) {
