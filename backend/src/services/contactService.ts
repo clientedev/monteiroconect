@@ -36,9 +36,6 @@ export async function listContacts(opts: ListContactsOpts) {
 export async function updateContact(id: string, data: {
   name?: string;
   notes?: string;
-  leadStatus?: string;
-  leadValue?: number | null;
-  leadSource?: string;
 }) {
   return prisma.contact.update({ where: { id }, data });
 }

@@ -131,9 +131,6 @@ export const contactApi = {
   update: (id: string, data: {
     name?: string;
     notes?: string;
-    leadStatus?: 'NEW' | 'QUALIFIED' | 'NEGOTIATION' | 'WON' | 'LOST';
-    leadValue?: number | null;
-    leadSource?: string;
   }) =>
     api.put(`/contacts/${id}`, data),
 };

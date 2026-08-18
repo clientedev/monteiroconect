@@ -27,9 +27,6 @@ router.put('/:id', async (req, res, next) => {
     const body = z.object({
       name: z.string().trim().max(120).optional(),
       notes: z.string().max(5000).optional(),
-      leadStatus: z.enum(['NEW', 'QUALIFIED', 'NEGOTIATION', 'WON', 'LOST']).optional(),
-      leadValue: z.number().nonnegative().nullable().optional(),
-      leadSource: z.string().trim().max(120).optional(),
     }).parse(req.body);
     const contact = await updateContact(req.params.id, body);
     res.json(contact);

@@ -50,9 +50,6 @@ model Contact {
   lastMessage  String?
   lastContact  DateTime?
   notes        String?
-  leadStatus   String   @default("NEW") // NEW, QUALIFIED, NEGOTIATION, WON, LOST
-  leadValue    Decimal? @db.Decimal(12, 2)
-  leadSource   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -63,7 +60,6 @@ model Contact {
   @@unique([phone, whatsappId])
   @@index([whatsappId])
   @@index([phone])
-  @@index([leadStatus])
 }
 
 model Conversation {
@@ -114,7 +110,6 @@ model Message {
   @@index([whatsappId])
   @@index([createdAt])
   @@index([isRead])
-  @@unique([conversationId, messageId])
 }
 
 model Tag {
