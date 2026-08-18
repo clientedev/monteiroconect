@@ -66,7 +66,8 @@ export async function ensureAdminExists(): Promise<void> {
 
 export async function listUsers() {
   return prisma.user.findMany({
-    select: { id: true, username: true, email: true, role: true, isActive: true, createdAt: true },
+    select: { id: true, username: true, email: true, role: true, isActive: true, createdAt: true,
+      whatsappAssignments: { select: { whatsappId: true } }, },
     orderBy: { createdAt: 'asc' },
   });
 }

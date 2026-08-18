@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { login, createUser, listUsers, updateUser, deleteUser } from '../services/authService.js';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { z } from 'zod';
+import { setUserWhatsAppAssignments } from '../services/accessService.js';
 
 const router = Router();
 
@@ -58,6 +59,14 @@ router.put('/users/:id', authMiddleware, requireRole('admin'), async (req, res, 
   } catch (err) {
     next(err);
   }
+});
+
+router.put('/users/:id/whatsapps', authMiddleware, requireRole('admin'), async (req, res, next) => {
+  try {
+    const { whatsappIds } = z.object({ whatsappIds: z.array(z.string()).max(100) }).parse(req.body);
+    await setUserWhatsAppAssignments(String(req.params.id), whatsappIds);
+    res.json({ message: 'Contas atribuídas' });
+  } catch (err) { next(err); }
 });
 
 router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req, res, next) => {

@@ -100,6 +100,7 @@ export const authApi = {
   updateUser: (id: string, data: { role?: string; isActive?: boolean }) =>
     api.put(`/auth/users/${id}`, data),
   deleteUser: (id: string) => api.del(`/auth/users/${id}`),
+  setWhatsApps: (id: string, whatsappIds: string[]) => api.put(`/auth/users/${id}/whatsapps`, { whatsappIds }),
 };
 
 // WhatsApp

@@ -3,6 +3,26 @@ import { dashboardApi } from '../lib/api';
 import { Smartphone, MessageSquare, Mail, TrendingUp, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+/** Foto de perfil direta do WhatsApp, com fallback para inicial */
+function ConvAvatar({ contactId, name, phone }: { contactId?: string; name?: string | null; phone?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (!failed && contactId) {
+    return (
+      <img
+        src={`/api/contacts/${contactId}/avatar`}
+        alt=""
+        onError={() => setFailed(true)}
+        className="w-11 h-11 rounded-full object-cover flex-shrink-0 shadow-sm bg-monte-sereno/20"
+      />
+    );
+  }
+  return (
+    <div className="w-11 h-11 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm">
+      {(name || phone || '?')[0].toUpperCase()}
+    </div>
+  );
+}
+
 interface Stats {
   connectedCount: number;
   disconnectedCount: number;
@@ -109,9 +129,7 @@ export default function DashboardPage() {
         <div className="divide-y divide-monte-sereno/10">
           {stats?.recentConversations?.slice(0, 5).map((conv: any) => (
             <div key={conv.id} className="px-6 py-3.5 flex items-center gap-3 hover:bg-monte-areiaSecao/50 transition-colors">
-              <div className="w-11 h-11 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm">
-                {(conv.contact?.name || conv.contact?.phone || '?')[0].toUpperCase()}
-              </div>
+              <ConvAvatar contactId={conv.contact?.id} name={conv.contact?.name} phone={conv.contact?.phone} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-monte-azul">{conv.contact?.name || conv.contact?.phone}</p>

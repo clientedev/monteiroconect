@@ -3,6 +3,26 @@ import { whatsappApi, contactApi } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { Search, Users, Edit2, Save, X, StickyNote } from 'lucide-react';
 
+/** Foto de perfil direta do WhatsApp, com fallback para inicial */
+function ContactAvatar({ id, name, phone }: { id: string; name: string | null; phone: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!failed) {
+    return (
+      <img
+        src={`/api/contacts/${id}/avatar`}
+        alt=""
+        onError={() => setFailed(true)}
+        className="w-8 h-8 rounded-full object-cover flex-shrink-0 shadow-sm bg-monte-sereno/20"
+      />
+    );
+  }
+  return (
+    <div className="w-8 h-8 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-xs font-bold text-white">
+      {(name || phone || '?')[0].toUpperCase()}
+    </div>
+  );
+}
+
 export default function ContactsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
@@ -93,9 +113,7 @@ export default function ContactsPage() {
                       <input type="text" className="input-rect text-sm py-1 w-full" value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave(c.id)} autoFocus />
                     ) : (
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-xs font-bold text-white">
-                          {(c.name || c.phone)[0].toUpperCase()}
-                        </div>
+                        <ContactAvatar id={c.id} name={c.name} phone={c.phone} />
                         <span className="text-sm font-semibold text-monte-azul">{c.name || 'Sem nome'}</span>
                       </div>
                     )}

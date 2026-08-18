@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { listContacts, updateContact } from '../services/contactService.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { sessionManager } from '../whatsapp/sessionManager.js';
+import { prisma } from '../database/client.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -19,6 +21,29 @@ router.get('/', async (req, res, next) => {
     res.json(result);
   } catch (err) {
     next(err);
+  }
+});
+
+// Foto de perfil do contato, sempre fresca direto do WhatsApp.
+// Aceita telefone, @lid (privacidade) e @g.us (grupos) como JID do contato.
+router.get('/:id/avatar', async (req, res) => {
+  try {
+    const contact = await prisma.contact.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, phone: true, whatsappId: true, avatarUrl: true },
+    });
+    if (!contact) return res.status(404).json({ error: 'Contato não encontrado' });
+
+    const url = await sessionManager.getAvatarUrl(contact.whatsappId, contact.phone);
+    if (!url) return res.status(404).json({ error: 'Sem foto de perfil' });
+
+    if (url !== contact.avatarUrl) {
+      prisma.contact.update({ where: { id: contact.id }, data: { avatarUrl: url } }).catch(() => {});
+    }
+
+    return res.redirect(url);
+  } catch {
+    return res.status(404).json({ error: 'Sem foto de perfil' });
   }
 });
 

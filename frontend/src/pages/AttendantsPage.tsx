@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { authApi } from '../lib/api';
+import { authApi, whatsappApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Users, Plus, Trash2, Shield, Eye, UserCheck } from 'lucide-react';
 
@@ -9,12 +9,25 @@ export default function AttendantsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ username: '', email: '', password: '', role: 'attendant' });
   const [error, setError] = useState('');
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [assigningUser, setAssigningUser] = useState<any | null>(null);
+  const [assignedIds, setAssignedIds] = useState<string[]>([]);
 
   const load = async () => {
     try { setUsers(await authApi.listUsers()); } catch {}
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (user?.role === 'admin') whatsappApi.list().then(setAccounts).catch(() => {}); }, [user?.role]);
+
+  const openAssignments = (target: any) => {
+    setAssigningUser(target);
+    setAssignedIds((target.whatsappAssignments || []).map((a: any) => a.whatsappId));
+  };
+  const saveAssignments = async () => {
+    if (!assigningUser) return;
+    try { await authApi.setWhatsApps(assigningUser.id, assignedIds); setAssigningUser(null); load(); } catch (err: any) { alert(err.message); }
+  };
 
   const handleCreate = async () => {
     setError('');
@@ -59,6 +72,7 @@ export default function AttendantsPage() {
                 <th className="table-header">Email</th>
                 <th className="table-header">Função</th>
                 <th className="table-header">Status</th>
+                <th className="table-header">WhatsApps</th>
                 <th className="table-header w-20">Ações</th>
               </tr>
             </thead>
@@ -86,10 +100,16 @@ export default function AttendantsPage() {
                     </span>
                   </td>
                   <td className="table-row">
+                    {u.role === 'admin' ? <span className="text-xs text-monte-sereno">Todos</span> : (
+                      <span className="text-xs text-monte-sereno">{u.whatsappAssignments?.length || 0} atribuída(s)</span>
+                    )}
+                  </td>
+                  <td className="table-row">
                     {user?.role === 'admin' && u.id !== user.id && (
-                      <button onClick={() => handleDelete(u.id)} className="text-monte-sereno hover:text-monte-terracota transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={() => openAssignments(u)} className="text-monte-sereno hover:text-monte-verde transition-colors text-xs">Contas</button>
+                        <button onClick={() => handleDelete(u.id)} className="text-monte-sereno hover:text-monte-terracota transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -115,6 +135,21 @@ export default function AttendantsPage() {
               </select>
               <button onClick={handleCreate} disabled={!form.username || !form.email || !form.password} className="btn-primary w-full">Criar Usuário</button>
             </div>
+          </div>
+        </div>
+      )}
+      {assigningUser && (
+        <div className="fixed inset-0 z-50 bg-monte-azul/30 backdrop-blur-sm flex items-center justify-center" onClick={() => setAssigningUser(null)}>
+          <div className="bg-white rounded-4xl p-8 w-full max-w-md mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold font-display text-monte-azul mb-2">Contas de {assigningUser.username}</h3>
+            <p className="text-sm text-monte-sereno mb-5">Este usuário verá e poderá atender apenas as contas marcadas.</p>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {accounts.map(account => <label key={account.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-monte-areiaSecao cursor-pointer">
+                <input type="checkbox" checked={assignedIds.includes(account.id)} onChange={e => setAssignedIds(prev => e.target.checked ? [...prev, account.id] : prev.filter(id => id !== account.id))} />
+                <span className="text-sm font-medium text-monte-azul">{account.name}</span>
+              </label>)}
+            </div>
+            <div className="flex gap-3 mt-6"><button onClick={() => setAssigningUser(null)} className="btn-secondary flex-1">Cancelar</button><button onClick={saveAssignments} className="btn-primary flex-1">Salvar</button></div>
           </div>
         </div>
       )}

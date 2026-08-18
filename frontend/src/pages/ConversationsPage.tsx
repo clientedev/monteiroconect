@@ -31,6 +31,41 @@ interface Msg {
   senderName?: string | null;
 }
 
+/** Esconde identificadores técnicos (LID/JID de grupo) da exibição */
+function formatContactPhone(phone: string): string {
+  if (phone.includes('@g.us')) return 'Grupo';
+  if (phone.includes('@lid')) return 'Contato';
+  return phone;
+}
+
+/** Foto de perfil do contato direto do WhatsApp, com fallback para inicial */
+function Avatar({ contactId, name, phone, size = 'w-11 h-11', textClass = 'text-sm' }: {
+  contactId: string;
+  name: string | null;
+  phone: string;
+  size?: string;
+  textClass?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const label = (name || phone || '?')[0]?.toUpperCase() || '?';
+
+  if (!failed && contactId) {
+    return (
+      <img
+        src={`/api/contacts/${contactId}/avatar`}
+        alt=""
+        onError={() => setFailed(true)}
+        className={`${size} rounded-full object-cover flex-shrink-0 shadow-sm bg-monte-sereno/20`}
+      />
+    );
+  }
+  return (
+    <div className={`${size} rounded-full bg-gradient-to-br from-monte-verde to-monte-azul text-white flex items-center justify-center ${textClass} font-bold flex-shrink-0 shadow-sm`}>
+      {label}
+    </div>
+  );
+}
+
 export default function ConversationsPage() {
   const location = useLocation();
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -306,12 +341,10 @@ export default function ConversationsPage() {
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 shadow-sm">
-                  {(conv.contactName || conv.contactPhone || '?')[0].toUpperCase()}
-                </div>
+                <Avatar contactId={conv.contactId} name={conv.contactName} phone={conv.contactPhone} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-monte-azul truncate">{conv.contactName || conv.contactPhone}</p>
+                    <p className="text-sm font-semibold text-monte-azul truncate">{conv.contactName || formatContactPhone(conv.contactPhone)}</p>
                     {conv.lastMessageAt && (
                       <span className="text-[10px] text-monte-sereno flex-shrink-0 ml-2">{formatTime(conv.lastMessageAt)}</span>
                     )}
@@ -346,13 +379,15 @@ export default function ConversationsPage() {
               <button onClick={() => { setSelectedConv(null); setMessages([]); }} className="lg:hidden text-monte-azul hover:text-monte-verde">
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <div className="w-11 h-11 bg-gradient-to-br from-monte-verde to-monte-azul rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm">
-                {(selectedConv.contactName || selectedConv.contactPhone || '?')[0].toUpperCase()}
-              </div>
+              <Avatar contactId={selectedConv.contactId} name={selectedConv.contactName} phone={selectedConv.contactPhone} />
               <div>
-                <p className="font-semibold text-monte-azul font-display">{selectedConv.contactName || selectedConv.contactPhone}</p>
+                <p className="font-semibold text-monte-azul font-display">{selectedConv.contactName || formatContactPhone(selectedConv.contactPhone)}</p>
                 <p className="text-xs text-monte-sereno">
-                  {selectedConv.contactPhone.includes('@g.us') ? '👥 Grupo' : selectedConv.contactPhone}
+                  {selectedConv.contactPhone.includes('@g.us')
+                    ? '👥 Grupo'
+                    : selectedConv.contactPhone.includes('@lid')
+                      ? 'WhatsApp'
+                      : selectedConv.contactPhone}
                 </p>
               </div>
             </div>

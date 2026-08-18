@@ -101,6 +101,35 @@ class WhatsAppSessionManager extends EventEmitter {
     }
 
     logger.info(`WhatsAppSessionManager inicializado. ${this.sessions.size} contas carregadas.`);
+
+    // Remove mensagens mais antigas que a janela de sincronização — limpa a
+    // poluição de importações antigas que trouxeram anos de histórico
+    try {
+      const cutoff = new Date(Date.now() - Math.max(1, env.historySyncDays) * 24 * 60 * 60 * 1000);
+      const removed = await prisma.message.deleteMany({
+        where: { createdAt: { lt: cutoff } },
+      });
+      if (removed.count > 0) {
+        logger.info(`Limpeza de histórico: ${removed.count} mensagens antigas removidas (>${env.historySyncDays} dias)`);
+      }
+    } catch (err) {
+      logger.warn('Falha na limpeza de mensagens antigas:', err);
+    }
+  }
+
+  /**
+   * URL da foto de perfil de um JID (aceita telefone, @lid e @g.us).
+   * Salva no contato para uso em listas; a rota de avatar usa direto.
+   */
+  async getAvatarUrl(accountId: string, jid: string): Promise<string | null> {
+    const session = this.sessions.get(accountId);
+    if (!session?.socket || !jid) return null;
+    try {
+      return (await session.socket.profilePictureUrl(jid, 'image')) ?? null;
+    } catch {
+      // sem foto ou sem permissão — normal
+      return null;
+    }
   }
 
   async createSession(name: string): Promise<SessionInfo> {

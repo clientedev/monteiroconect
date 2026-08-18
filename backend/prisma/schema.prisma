@@ -19,6 +19,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   assignments ConversationAssignment[]
+  whatsappAssignments WhatsAppAssignment[]
 
   @@index([username])
   @@index([role])
@@ -38,8 +39,22 @@ model WhatsAppAccount {
   messages      Message[]
   logs          SystemLog[]
   chatbots      Chatbot[]
+  assignments   WhatsAppAssignment[]
 
   @@index([status])
+}
+
+model WhatsAppAssignment {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  whatsappId  String
+  whatsapp    WhatsAppAccount @relation(fields: [whatsappId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, whatsappId])
+  @@index([userId])
+  @@index([whatsappId])
 }
 
 model Contact {
