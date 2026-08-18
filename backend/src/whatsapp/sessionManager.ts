@@ -50,6 +50,8 @@ class WhatsAppSessionManager extends EventEmitter {
   private sessions: Map<string, SessionInfo> = new Map();
   private historyImporting = new Set<string>();
   private historyQueue = new Map<string, any[]>();
+  private contactAliases = new Map<string, Map<string, string>>();
+  private contactNames = new Map<string, Map<string, string>>();
 
   constructor() {
     super();
@@ -243,7 +245,7 @@ class WhatsAppSessionManager extends EventEmitter {
       socket.ev.on('messages.upsert', async (m: { type: MessageUpsertType; messages: WAMessage[] }) => {
         if (m.type === 'notify') {
           for (const msg of m.messages) {
-            if (!msg.key.remoteJid || msg.key.remoteJid === 'status@broadcast') continue;
+            if (!this.isUsableChatMessage(accountId, msg)) continue;
             if (msg.key.fromMe) {
               await this.handleOutgoingFromDevice(accountId, msg);
             } else {
@@ -261,6 +263,15 @@ class WhatsAppSessionManager extends EventEmitter {
           logger.info(`Histórico recebido: ${msgs.length} mensagens (${session.name})`);
           this.enqueueHistory(accountId, data);
         }
+      });
+
+      // Os dados de contato podem chegar depois das mensagens, sobretudo para
+      // contas que usam LID. Mantemos os aliases e preenchemos nomes faltantes.
+      socket.ev.on('contacts.upsert', (contacts: any[]) => {
+        this.syncContactNames(accountId, contacts).catch(err => logger.warn(`Falha ao sincronizar contatos (${accountId}):`, err));
+      });
+      socket.ev.on('contacts.update', (contacts: any[]) => {
+        this.syncContactNames(accountId, contacts).catch(err => logger.warn(`Falha ao atualizar contatos (${accountId}):`, err));
       });
     } catch (err) {
       logger.error(`Erro ao conectar sessão ${accountId}:`, err);
@@ -426,6 +437,56 @@ class WhatsAppSessionManager extends EventEmitter {
     return jid; // grupos (@g.us) e LIDs (@lid) são mantidos íntegros
   }
 
+  private canonicalJid(accountId: string, jid: string): string {
+    return this.contactAliases.get(accountId)?.get(jid) || jid;
+  }
+
+  private cachedContactName(accountId: string, jid: string): string | null {
+    const names = this.contactNames.get(accountId);
+    return names?.get(jid) || names?.get(this.canonicalJid(accountId, jid)) || null;
+  }
+
+  private isUsableChatMessage(accountId: string, msg: WAMessage): boolean {
+    const remoteJid = msg.key.remoteJid || '';
+    if (!remoteJid || remoteJid === 'status@broadcast') return false;
+    // Eventos de protocolo (incluindo sync de histórico), reações e recibos
+    // não são conversas e jamais devem aparecer como mensagens para si mesmo.
+    const body: any = msg.message || {};
+    if (body.protocolMessage || body.reactionMessage || body.senderKeyDistributionMessage) return false;
+    const session = this.sessions.get(accountId);
+    const selfPhone = session?.phone?.replace(/\D/g, '');
+    const remotePhone = this.jidToContactPhone(this.canonicalJid(accountId, remoteJid)).replace(/\D/g, '');
+    return !selfPhone || remotePhone !== selfPhone;
+  }
+
+  private async syncContactNames(accountId: string, contacts: any[]): Promise<void> {
+    const aliases = this.contactAliases.get(accountId) || new Map<string, string>();
+    const names = this.contactNames.get(accountId) || new Map<string, string>();
+    this.contactAliases.set(accountId, aliases);
+    this.contactNames.set(accountId, names);
+
+    let changed = false;
+    for (const item of contacts || []) {
+      const rawAliases = [item?.id, item?.lid, item?.jid].filter((v): v is string => typeof v === 'string' && v.length > 0);
+      if (!rawAliases.length) continue;
+      const canonical = item?.jid || aliases.get(item.id) || item.id;
+      const name = this.usableContactName(item?.name || item?.notify || item?.verifiedName, this.jidToContactPhone(canonical));
+      for (const alias of rawAliases) aliases.set(alias, canonical);
+      if (!name) continue;
+      for (const alias of [...rawAliases, canonical]) names.set(alias, name);
+
+      const phones = [...new Set([...rawAliases, canonical].map(jid => this.jidToContactPhone(jid)))];
+      const saved = await prisma.contact.findMany({ where: { whatsappId: accountId, phone: { in: phones } } });
+      for (const contact of saved) {
+        if (!contact.name || contact.name === contact.phone) {
+          await prisma.contact.update({ where: { id: contact.id }, data: { name } });
+          changed = true;
+        }
+      }
+    }
+    if (changed) this.emit('contacts-updated', { accountId });
+  }
+
   /**
    * Extrai texto/tipo de uma mensagem Baileys (compartilhado entre
    * mensagens em tempo real e sincronização de histórico).
@@ -559,7 +620,7 @@ class WhatsAppSessionManager extends EventEmitter {
    */
   private async handleOutgoingFromDevice(accountId: string, msg: WAMessage): Promise<void> {
     try {
-      const remoteJid = msg.key.remoteJid || '';
+      const remoteJid = this.canonicalJid(accountId, msg.key.remoteJid || '');
       if (!remoteJid || remoteJid === 'status@broadcast') return;
 
       const contactPhone = this.jidToContactPhone(remoteJid);
@@ -682,20 +743,26 @@ class WhatsAppSessionManager extends EventEmitter {
     const limit = env.historyMessageLimit;
     if (limit <= 0) return 0;
 
+    await this.syncContactNames(accountId, data.contacts || []);
+    const cutoff = new Date(Date.now() - Math.max(1, env.historySyncDays) * 24 * 60 * 60 * 1000);
+
     // Nomes de contato vindos do sync (jid -> nome)
     const nameByJid = new Map<string, string>();
     for (const c of data.contacts || []) {
       if (c?.id) {
         const name = String(c.name || c.notify || c.verifiedName || '').trim();
         if (name) nameByJid.set(c.id, name);
+        if (c.jid && name) nameByJid.set(c.jid, name);
+        if (c.lid && name) nameByJid.set(c.lid, name);
       }
     }
 
     // Agrupa mensagens por conversa
     const byConversation = new Map<string, WAMessage[]>();
     for (const m of data.messages || []) {
-      const jid = m.key?.remoteJid || '';
-      if (!jid || jid === 'status@broadcast') continue;
+      if (!this.isUsableChatMessage(accountId, m)) continue;
+      const jid = this.canonicalJid(accountId, m.key?.remoteJid || '');
+      if (this.msgTimestamp(m) < cutoff) continue;
       const arr = byConversation.get(jid) || [];
       arr.push(m);
       byConversation.set(jid, arr);
@@ -706,11 +773,13 @@ class WhatsAppSessionManager extends EventEmitter {
       const session = this.sessions.get(accountId);
       if (session?.isDestroying) return imported;
 
-      msgs.sort((a: any, b: any) => Number(a.messageTimestamp || 0) - Number(b.messageTimestamp || 0));
+      // Baileys usa Long/objeto para timestamp; Number(objeto) resulta em
+      // NaN e deixava o lote na ordem reversa (as mensagens mais antigas).
+      msgs.sort((a, b) => this.msgTimestamp(a).getTime() - this.msgTimestamp(b).getTime());
       const recent = limit > 0 ? msgs.slice(-limit) : msgs;
 
       const contactPhone = this.jidToContactPhone(jid);
-      const displayName = nameByJid.get(jid) || null;
+      const displayName = this.cachedContactName(accountId, jid) || nameByJid.get(jid) || null;
 
       let contact = await prisma.contact.findUnique({
         where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
@@ -813,12 +882,12 @@ class WhatsAppSessionManager extends EventEmitter {
 
   private async handleIncomingMessage(accountId: string, msg: WAMessage): Promise<void> {
     try {
-      const remoteJid = msg.key.remoteJid || '';
+      const remoteJid = this.canonicalJid(accountId, msg.key.remoteJid || '');
       if (!remoteJid || remoteJid === 'status@broadcast') return;
 
       const isGroup = remoteJid.endsWith('@g.us');
       const fromPhone = this.jidToContactPhone(remoteJid);
-      const pushName = this.usableContactName(msg.pushName, fromPhone);
+      const pushName = this.usableContactName(msg.pushName, fromPhone) || this.cachedContactName(accountId, remoteJid);
 
       // Em grupo: contato = grupo (nome real via metadata); remetente fica
       // registrado em cada mensagem (senderName/senderJid)
@@ -1036,7 +1105,7 @@ class WhatsAppSessionManager extends EventEmitter {
     result: any,
   ): Promise<void> {
     try {
-      const toPhone = this.jidToContactPhone(jid);
+      const toPhone = this.jidToContactPhone(this.canonicalJid(accountId, jid));
 
       let contact = await prisma.contact.findUnique({
         where: { phone_whatsappId: { phone: toPhone, whatsappId: accountId } },

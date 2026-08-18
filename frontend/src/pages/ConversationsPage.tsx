@@ -188,11 +188,14 @@ export default function ConversationsPage() {
 
     socket.on('message:new', onNewMsg);
     socket.on('message:sent', onSent);
+    const onContactsUpdated = (data: any) => { if (data.accountId === selectedAccountId) loadConversations(); };
+    socket.on('contacts:updated', onContactsUpdated);
     const onHistory = (data: any) => { if (data.accountId === selectedAccountId) loadConversations(); };
     socket.on('history:imported', onHistory);
     return () => {
       socket.off('message:new', onNewMsg);
       socket.off('message:sent', onSent);
+      socket.off('contacts:updated', onContactsUpdated);
       socket.off('history:imported', onHistory);
     };
   }, [selectedAccountId, selectedConv, loadConversations]);

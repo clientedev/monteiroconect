@@ -110,6 +110,10 @@ export function setupWebSocket(httpServer: HttpServer): Server {
     io.emit('history:imported', data);
   });
 
+  sessionManager.on('contacts-updated', (data) => {
+    io.emit('contacts:updated', data);
+  });
+
   sessionManager.on('reconnect-failed', (data) => {
     io.emit('whatsapp:reconnect-failed', data);
     createLog('error', `Reconexão falhou: ${data.accountId}`, 'whatsapp', data.accountId);

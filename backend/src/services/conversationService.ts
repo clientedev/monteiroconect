@@ -21,6 +21,10 @@ export async function listConversations(opts: ListConversationsOpts) {
     ];
   }
 
+  const account = await prisma.whatsAppAccount.findUnique({
+    where: { id: whatsappId },
+    select: { phone: true },
+  });
   const [total, conversations] = await Promise.all([
     prisma.conversation.count({ where }),
     prisma.conversation.findMany({
@@ -35,11 +39,18 @@ export async function listConversations(opts: ListConversationsOpts) {
     }),
   ]);
 
+  // Nunca exibe a conversa técnica da própria conta ou os eventos de
+  // protocolo que possam ter sido gravados por versões antigas.
+  const visible = conversations.filter(c =>
+    c.contact.phone !== account?.phone &&
+    !c.lastMessage?.includes('protocolMessage')
+  );
+
   return {
-    total,
+    total: total - (conversations.length - visible.length),
     page,
     limit,
-    conversations: conversations.map(c => ({
+    conversations: visible.map(c => ({
       id: c.id,
       contactId: c.contact.id,
       contactName: c.contact.name,

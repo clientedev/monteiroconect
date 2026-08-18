@@ -11,7 +11,8 @@ export async function listContacts(opts: ListContactsOpts) {
   const { whatsappId, search, page = 1, limit = 50 } = opts;
   const skip = (page - 1) * limit;
 
-  const where: any = { whatsappId };
+  // Grupos pertencem à caixa de conversas, não à base de leads/contatos.
+  const where: any = { whatsappId, NOT: { phone: { endsWith: '@g.us' } } };
   if (search) {
     where.OR = [
       { name: { contains: search } },

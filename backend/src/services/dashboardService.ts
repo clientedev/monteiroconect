@@ -27,14 +27,13 @@ export async function getDashboardStats() {
     prisma.conversation.findMany({
       orderBy: { lastMessageAt: 'desc' },
       take: 10,
-      include: { contact: true, whatsapp: true },
+      include: { contact: true, whatsapp: { select: { id: true, name: true, phone: true } } },
       where: { isOpen: true },
     }),
     prisma.conversation.findMany({
       where: { unreadCount: { gt: 0 } },
       orderBy: { lastMessageAt: 'desc' },
-      take: 15,
-      include: { contact: true, whatsapp: { select: { id: true, name: true } } },
+      include: { contact: true, whatsapp: { select: { id: true, name: true, phone: true } } },
     }),
     prisma.whatsAppAccount.findMany({
       select: {
@@ -46,15 +45,20 @@ export async function getDashboardStats() {
     }),
   ]);
 
+  const isVisibleConversation = (conversation: any) =>
+    conversation.contact.phone !== conversation.whatsapp?.phone &&
+    !conversation.lastMessage?.includes('protocolMessage');
+  const visibleUnreadConversations = unreadConversations.filter(isVisibleConversation);
+
   return {
     connectedCount,
     disconnectedCount,
     totalConversations,
-    unreadMessages: unreadMessages._sum.unreadCount || 0,
+    unreadMessages: visibleUnreadConversations.reduce((sum, c) => sum + c.unreadCount, 0),
     messagesToday,
     recentMessages,
-    recentConversations,
-    unreadConversations,
+    recentConversations: recentConversations.filter(isVisibleConversation),
+    unreadConversations: visibleUnreadConversations.slice(0, 15),
     messagesPerAccount,
   };
 }

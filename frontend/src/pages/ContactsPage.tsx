@@ -1,5 +1,6 @@
 import { Fragment, useState, useEffect } from 'react';
 import { whatsappApi, contactApi } from '../lib/api';
+import { getSocket } from '../lib/socket';
 import { Search, Users, Edit2, Save, X, StickyNote } from 'lucide-react';
 
 export default function ContactsPage() {
@@ -26,6 +27,17 @@ export default function ContactsPage() {
       .then(data => setContacts(data.contacts || []))
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, [selectedAccountId, search]);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !selectedAccountId) return;
+    const refresh = (data: { accountId: string }) => {
+      if (data.accountId !== selectedAccountId) return;
+      contactApi.list(selectedAccountId, search).then(data => setContacts(data.contacts || [])).catch(() => {});
+    };
+    socket.on('contacts:updated', refresh);
+    return () => { socket.off('contacts:updated', refresh); };
   }, [selectedAccountId, search]);
 
   const handleEdit = (contact: any) => {
