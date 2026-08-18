@@ -31,6 +31,52 @@ ASSUNTOS PROIBIDOS:
 EXEMPLO DE TOM:
 "Olá! Que ótimo ter você por aqui 😊 A Monteiro Corretora trabalha com as principais seguradoras do país. Para eu te ajudar melhor: é para veículo, residência, vida ou plano de saúde?"`;
 
+/**
+ * Modelos de fallback — se o modelo configurado não existir mais na xAI
+ * (404/400), tenta o próximo. O primeiro que responder é usado.
+ */
+const FALLBACK_MODELS = ['grok-4-fast-non-reasoning', 'grok-3-mini', 'grok-2-latest'];
+
+async function callGrok(
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+): Promise<{ ok: true; reply: string } | { ok: false; status: number; body: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+
+  try {
+    const res = await fetch(`${env.xaiBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.xaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.4,
+        max_tokens: 400,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { ok: false, status: res.status, body: body.slice(0, 500) };
+    }
+
+    const data = await res.json() as any;
+    const reply: string | undefined = data.choices?.[0]?.message?.content?.trim();
+    if (!reply) return { ok: false, status: 502, body: 'Resposta vazia da API' };
+    return { ok: true, reply };
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return { ok: false, status: 408, body: 'Timeout de 30s' };
+    return { ok: false, status: 0, body: err?.message || String(err) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function generateAiReply(conversationId: string, incomingText: string): Promise<string | null> {
   if (!env.xaiApiKey) {
     logger.warn('XAI_API_KEY não configurada — IA do chatbot desativada');
@@ -63,44 +109,41 @@ export async function generateAiReply(conversationId: string, incomingText: stri
       messages.push({ role: 'user', content: incomingText.slice(0, 2000) });
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30_000);
-
-    const res = await fetch(`${env.xaiBaseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.xaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: env.xaiModel,
-        messages,
-        temperature: 0.4,
-        max_tokens: 400,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      logger.error(`Grok API respondeu ${res.status}: ${body.slice(0, 300)}`);
-      return null;
-    }
-
-    const data = await res.json() as any;
-    const reply: string | undefined = data.choices?.[0]?.message?.content?.trim();
-    if (!reply) {
-      logger.error('Grok API retornou resposta vazia');
-      return null;
-    }
-    return reply;
-  } catch (err: any) {
-    if (err?.name === 'AbortError') {
-      logger.error('Grok API: timeout de 30s');
-    } else {
-      logger.error('Erro ao chamar Grok API:', err?.message || err);
+    const models = [env.xaiModel, ...FALLBACK_MODELS.filter(m => m !== env.xaiModel)];
+    for (const model of models) {
+      const r = await callGrok(model, messages);
+      if (r.ok) return r.reply;
+      if (r.status === 404 || r.status === 400) {
+        logger.error(`Grok modelo "${model}" indisponível (HTTP ${r.status}): ${r.body.slice(0, 200)} — tentando próximo modelo`);
+        continue;
+      }
+      logger.error(`Grok API erro ${r.status}: ${r.body.slice(0, 200)}`);
+      return null; // erro de auth/servidor — outros modelos não vão ajudar
     }
     return null;
+  } catch (err: any) {
+    logger.error('Erro ao chamar Grok API:', err?.message || err);
+    return null;
   }
+}
+
+/**
+ * Testa a conexão com a xAI — usado pelo botão "Testar IA" no painel.
+ */
+export async function testAiConnection(): Promise<{ ok: boolean; model?: string; error?: string }> {
+  if (!env.xaiApiKey) {
+    return { ok: false, error: 'XAI_API_KEY não configurada no servidor. Adicione a variável no Railway.' };
+  }
+
+  const models = [env.xaiModel, ...FALLBACK_MODELS.filter(m => m !== env.xaiModel)];
+  let lastError = '';
+  for (const model of models) {
+    const r = await callGrok(model, [{ role: 'user', content: 'Responda apenas: ok' }]);
+    if (r.ok) return { ok: true, model };
+    lastError = `HTTP ${r.status}: ${r.body.slice(0, 200)}`;
+    if (r.status === 401 || r.status === 403) {
+      return { ok: false, error: 'Chave da API inválida ou sem permissão. Verifique a XAI_API_KEY.' };
+    }
+  }
+  return { ok: false, error: lastError || 'Falha desconhecida' };
 }

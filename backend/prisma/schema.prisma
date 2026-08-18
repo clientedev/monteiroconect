@@ -97,6 +97,10 @@ model Message {
   caption        String?
   isFromMe       Boolean  @default(false)
   isRead         Boolean  @default(false)
+  quotedMessageId String?
+  quotedContent   String?
+  senderName      String?
+  senderJid       String?
   messageId      String?
   fromPhone      String?
   toPhone        String?

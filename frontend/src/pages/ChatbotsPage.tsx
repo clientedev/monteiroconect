@@ -63,7 +63,25 @@ export default function ChatbotsPage() {
     { triggerType: 'contains', trigger: '', reply: '', mediaType: 'text', mediaUrl: '' },
   ]);
   const [creating, setCreating] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
   const [editForm, setEditForm] = useState({ triggerType: '', trigger: '', reply: '' });
+
+  const handleTestAi = async () => {
+    setTestingAi(true);
+    try {
+      const { chatbotApi } = await import('../lib/api');
+      const r = await chatbotApi.testAi();
+      if (r.ok) {
+        alert(`✅ IA da Grok funcionando!\n\nModelo em uso: ${r.model}\n\nA IA já está respondendo nos chatbots com o toggle ✨ ativado.`);
+      } else {
+        alert(`❌ IA da Grok com problema:\n\n${r.error}`);
+      }
+    } catch (err: any) {
+      alert('❌ Erro ao testar IA: ' + (err.message || 'tente novamente'));
+    } finally {
+      setTestingAi(false);
+    }
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -161,9 +179,15 @@ export default function ChatbotsPage() {
           <h2 className="section-title">Chatbots & Auto-respostas</h2>
           <p className="text-sm text-monte-sereno mt-1">Configure respostas automáticas e chatbots inteligentes</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Novo Chatbot
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleTestAi} disabled={testingAi} className="btn-secondary flex items-center gap-2">
+            <Sparkles className={`w-4 h-4 ${testingAi ? 'animate-spin' : ''}`} />
+            {testingAi ? 'Testando...' : 'Testar IA'}
+          </button>
+          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Novo Chatbot
+          </button>
+        </div>
       </div>
 
       <div className="space-y-5">

@@ -183,13 +183,21 @@ export async function findMatchingReply(whatsappAccountId: string, messageConten
 }
 
 /**
- * Retorna o primeiro chatbot ativo da conta (para saudação, IA e modo de gatilho).
+ * Primeiro chatbot ATIVO com IA habilitada — é ele que responde com Grok.
  */
-export async function getFirstActiveChatbot(whatsappAccountId: string) {
+export async function getAiChatbot(whatsappAccountId: string) {
   return prisma.chatbot.findFirst({
-    where: { whatsappAccountId, isActive: true },
+    where: { whatsappAccountId, isActive: true, useAi: true },
     orderBy: { createdAt: 'asc' },
   });
+}
+
+export async function getGreetingForAccount(whatsappAccountId: string) {
+  const chatbot = await prisma.chatbot.findFirst({
+    where: { whatsappAccountId, isActive: true, greetingMessage: { not: null } },
+    orderBy: { createdAt: 'asc' },
+  });
+  return chatbot?.greetingMessage || null;
 }
 
 export async function getGreetingForAccount(whatsappAccountId: string) {

@@ -171,6 +171,7 @@ export const chatbotApi = {
   update: (id: string, data: any) => api.put(`/chatbots/${id}`, data),
   delete: (id: string) => api.del(`/chatbots/${id}`),
   toggle: (id: string) => api.post(`/chatbots/${id}/toggle`),
+  testAi: () => api.post<{ ok: boolean; model?: string; error?: string }>('/chatbots/test-ai'),
   addReply: (chatbotId: string, data: any) => api.post(`/chatbots/${chatbotId}/replies`, data),
   updateReply: (replyId: string, data: any) => api.put(`/chatbots/replies/${replyId}`, data),
   deleteReply: (replyId: string) => api.del(`/chatbots/replies/${replyId}`),

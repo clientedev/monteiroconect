@@ -16,7 +16,7 @@ import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { AppError } from '../utils/errors.js';
 import { calculateBackoff, sleep } from '../utils/helpers.js';
-import { findMatchingReply, getFirstActiveChatbot } from '../services/chatbotService.js';
+import { findMatchingReply, getGreetingForAccount, getAiChatbot } from '../services/chatbotService.js';
 import { generateAiReply } from '../services/aiService.js';
 
 type SessionStatus = 'CONNECTING' | 'QR_CODE' | 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING' | 'ERROR';
@@ -429,14 +429,41 @@ class WhatsAppSessionManager extends EventEmitter {
   /**
    * Extrai texto/tipo de uma mensagem Baileys (compartilhado entre
    * mensagens em tempo real e sincronização de histórico).
+   * Desembrulha tipos wrapper (efêmeras, visualizar 1x, editadas) e
+   * captura o contexto de resposta (reply) quando existir.
    */
-  private extractContent(msg: WAMessage): { content: string; mediaType: string | null; messageType: string } {
-    const message = msg.message || {};
-    const messageType = Object.keys(message)[0] || 'unknown';
+  private extractContent(msg: WAMessage): {
+    content: string;
+    mediaType: string | null;
+    messageType: string;
+    quotedMessageId: string | null;
+    quotedContent: string | null;
+  } {
+    let m: any = msg.message || {};
+    let messageType = Object.keys(m)[0] || 'unknown';
+
+    // Desembrulha wrappers que o WhatsApp usa em respostas/mensagens efêmeras
+    const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage', 'editedMessage'];
+    for (let i = 0; i < 3 && WRAPPERS.includes(messageType); i++) {
+      const inner = m[messageType]?.message;
+      if (!inner) break;
+      m = inner;
+      messageType = Object.keys(m)[0] || 'unknown';
+    }
+
+    const msgObj = m[messageType];
     let content = '';
     let mediaType: string | null = null;
 
-    const msgObj = (message as any)[messageType];
+    // Contexto de resposta (mensagem citada)
+    let quotedMessageId: string | null = null;
+    let quotedContent: string | null = null;
+    const contextInfo = msgObj?.contextInfo;
+    if (contextInfo?.stanzaId) {
+      quotedMessageId = String(contextInfo.stanzaId);
+      quotedContent = this.protoToText(contextInfo.quotedMessage);
+    }
+
     if (messageType === 'conversation') {
       content = msgObj;
     } else if (messageType === 'extendedTextMessage') {
@@ -464,7 +491,32 @@ class WhatsAppSessionManager extends EventEmitter {
       content = `[${messageType}]`;
     }
 
-    return { content, mediaType, messageType };
+    return { content, mediaType, messageType, quotedMessageId, quotedContent };
+  }
+
+  /** Converte uma mensagem citada (proto) em texto curto para preview */
+  private protoToText(quoted: any): string | null {
+    if (!quoted) return null;
+    let q = quoted;
+    let t = Object.keys(q)[0];
+    const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage', 'editedMessage'];
+    for (let i = 0; i < 3 && WRAPPERS.includes(t); i++) {
+      q = q[t]?.message;
+      if (!q) return null;
+      t = Object.keys(q)[0];
+    }
+    const o = q?.[t];
+    if (!o) return null;
+    if (t === 'conversation') return String(o).slice(0, 300);
+    if (t === 'extendedTextMessage') return String(o?.text || '').slice(0, 300) || 'Mensagem';
+    if (t === 'imageMessage') return o?.caption ? String(o.caption).slice(0, 300) : '📷 Imagem';
+    if (t === 'videoMessage') return o?.caption ? String(o.caption).slice(0, 300) : '🎥 Vídeo';
+    if (t === 'audioMessage') return '🎵 Áudio';
+    if (t === 'stickerMessage') return '🎭 Figurinha';
+    if (t === 'documentMessage') return o?.fileName ? String(o.fileName) : '📄 Documento';
+    if (t === 'locationMessage') return '📍 Localização';
+    if (t === 'contactMessage') return o?.displayName ? `👤 ${o.displayName}` : '👤 Contato';
+    return 'Mensagem';
   }
 
   /** Converte messageTimestamp (segundos, podendo vir como Long) em Date */
@@ -472,6 +524,24 @@ class WhatsAppSessionManager extends EventEmitter {
     const raw = msg.messageTimestamp as any;
     const num = typeof raw === 'number' ? raw : Number(raw?.low ?? raw ?? 0);
     return Number.isFinite(num) && num > 0 ? new Date(num * 1000) : new Date();
+  }
+
+  /** Nome real do grupo (subject), com cache para evitar chamadas repetidas */
+  private groupNameCache = new Map<string, string>();
+
+  private async getGroupName(accountId: string, jid: string): Promise<string | null> {
+    const cached = this.groupNameCache.get(jid);
+    if (cached) return cached;
+    try {
+      const session = this.sessions.get(accountId);
+      if (!session?.socket) return null;
+      const meta = await session.socket.groupMetadata(jid);
+      const subject = meta?.subject || null;
+      if (subject) this.groupNameCache.set(jid, subject);
+      return subject;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -511,7 +581,7 @@ class WhatsAppSessionManager extends EventEmitter {
         if (exists) return;
       }
 
-      const { content, mediaType, messageType } = this.extractContent(msg);
+      const { content, mediaType, messageType, quotedMessageId, quotedContent } = this.extractContent(msg);
       const ts = this.msgTimestamp(msg);
 
       const savedMessage = await prisma.message.create({
@@ -524,6 +594,8 @@ class WhatsAppSessionManager extends EventEmitter {
           mediaUrl: null,
           isFromMe: true,
           isRead: true,
+          quotedMessageId,
+          quotedContent,
           messageId: msg.key.id,
           fromPhone: '',
           toPhone: contactPhone,
@@ -550,6 +622,8 @@ class WhatsAppSessionManager extends EventEmitter {
           mediaType,
           mediaUrl: null,
           isFromMe: true,
+          quotedMessageId,
+          quotedContent,
           createdAt: savedMessage.createdAt,
         },
       });
@@ -663,7 +737,8 @@ class WhatsAppSessionManager extends EventEmitter {
         if (!mid || existing.has(mid)) continue;
         existing.add(mid);
 
-        const { content, mediaType, messageType } = this.extractContent(m);
+        const { content, mediaType, messageType, quotedMessageId, quotedContent } = this.extractContent(m);
+        const isGroupHist = jid.endsWith('@g.us');
         toCreate.push({
           conversationId: conversation.id,
           whatsappId: accountId,
@@ -673,6 +748,10 @@ class WhatsAppSessionManager extends EventEmitter {
           mediaUrl: null,
           isFromMe: !!m.key.fromMe,
           isRead: true,
+          quotedMessageId,
+          quotedContent,
+          senderName: isGroupHist ? (m.pushName || null) : null,
+          senderJid: isGroupHist ? (m.key.participant || null) : null,
           messageId: mid,
           fromPhone: m.key.fromMe ? '' : contactPhone,
           toPhone: m.key.fromMe ? contactPhone : '',
@@ -719,8 +798,20 @@ class WhatsAppSessionManager extends EventEmitter {
       const remoteJid = msg.key.remoteJid || '';
       if (!remoteJid || remoteJid === 'status@broadcast') return;
 
+      const isGroup = remoteJid.endsWith('@g.us');
       const fromPhone = this.jidToContactPhone(remoteJid);
       const pushName = msg.pushName || fromPhone;
+
+      // Em grupo: contato = grupo (nome real via metadata); remetente fica
+      // registrado em cada mensagem (senderName/senderJid)
+      const senderJid = isGroup ? (msg.key.participant || null) : null;
+      const senderName = isGroup ? (msg.pushName || (senderJid ? this.jidToContactPhone(senderJid) : null)) : null;
+
+      let contactName = pushName;
+      if (isGroup) {
+        const groupName = await this.getGroupName(accountId, remoteJid);
+        contactName = groupName || fromPhone;
+      }
 
       // Salvar/atualizar contato
       let contact = await prisma.contact.findUnique({
@@ -731,14 +822,17 @@ class WhatsAppSessionManager extends EventEmitter {
         contact = await prisma.contact.create({
           data: {
             phone: fromPhone,
-            name: pushName,
+            name: contactName,
             whatsappId: accountId,
           },
         });
       } else {
+        // Só sobrescreve o nome se ainda for o fallback (telefone/JID),
+        // preservando nomes editados manualmente
+        const shouldRename = !contact.name || contact.name === contact.phone || (!isGroup && pushName && contact.name !== pushName && contact.name === contact.phone);
         contact = await prisma.contact.update({
           where: { id: contact.id },
-          data: { name: pushName || contact.name, lastContact: new Date() },
+          data: { name: shouldRename ? contactName : contact.name, lastContact: new Date() },
         });
       }
 
@@ -757,7 +851,7 @@ class WhatsAppSessionManager extends EventEmitter {
       }
 
       // Extrair conteúdo da mensagem
-      const { content, mediaType, messageType } = this.extractContent(msg);
+      const { content, mediaType, messageType, quotedMessageId, quotedContent } = this.extractContent(msg);
 
       // Download mídia se aplicável
       let savedMediaUrl: string | null = null;
@@ -795,6 +889,10 @@ class WhatsAppSessionManager extends EventEmitter {
           mediaType,
           mediaUrl: savedMediaUrl,
           isFromMe: false,
+          quotedMessageId,
+          quotedContent,
+          senderName,
+          senderJid,
           messageId: msg.key.id,
           fromPhone: fromPhone,
           toPhone: msg.key.participant || '',
@@ -828,6 +926,9 @@ class WhatsAppSessionManager extends EventEmitter {
           mediaType,
           mediaUrl: savedMediaUrl,
           isFromMe: false,
+          quotedMessageId,
+          quotedContent,
+          senderName,
           createdAt: savedMessage.createdAt,
         },
         conversation: {
@@ -842,56 +943,58 @@ class WhatsAppSessionManager extends EventEmitter {
         data: { lastMessage: content, lastContact: new Date() },
       });
 
-      // Auto-resposta via Chatbot (IA Grok ou regras de palavras-chave)
+      // Auto-resposta via Chatbot (IA Grok ou regras) — apenas conversas 1:1,
+      // nunca em grupos
       const session = this.sessions.get(accountId);
-      if (session?.socket && content) {
+      if (session?.socket && content && !isGroup) {
         try {
-          const bot = await getFirstActiveChatbot(accountId);
-          if (bot) {
-            const contactMsgCount = await prisma.message.count({
-              where: {
-                conversationId: conversation.id,
-                isFromMe: false,
-              },
-            });
+          const contactMsgCount = await prisma.message.count({
+            where: {
+              conversationId: conversation.id,
+              isFromMe: false,
+            },
+          });
 
-            // Saudação na primeira mensagem do contato
-            if (contactMsgCount === 1 && bot.greetingMessage) {
-              await session.socket.sendMessage(remoteJid, { text: bot.greetingMessage });
-              await this.saveOutgoingMessage(accountId, remoteJid, bot.greetingMessage, 'text', null, { key: { id: `greeting-${Date.now()}` } });
-              logger.info(`Saudação enviada para ${fromPhone} via chatbot "${bot.name}"`);
+          // Saudação na primeira mensagem do contato
+          if (contactMsgCount === 1) {
+            const greeting = await getGreetingForAccount(accountId);
+            if (greeting) {
+              await session.socket.sendMessage(remoteJid, { text: greeting });
+              await this.saveOutgoingMessage(accountId, remoteJid, greeting, 'text', null, { key: { id: `greeting-${Date.now()}` } });
+              logger.info(`Saudação enviada para ${fromPhone} via chatbot`);
+            }
+          }
+
+          const aiBot = await getAiChatbot(accountId);
+          const firstMessageOnly = !!aiBot && aiBot.triggerMode === 'first_message';
+          if (!firstMessageOnly || contactMsgCount === 1) {
+            let replied = false;
+
+            // IA (Grok) tem prioridade quando habilitada
+            if (aiBot) {
+              const aiReply = await generateAiReply(conversation.id, content);
+              if (aiReply) {
+                const aiResult = await session.socket.sendMessage(remoteJid, { text: aiReply });
+                await this.saveOutgoingMessage(accountId, remoteJid, aiReply, 'text', null, aiResult);
+                logger.info(`Resposta IA (Grok) enviada para ${fromPhone}`);
+                replied = true;
+              } else {
+                logger.warn(`Grok não respondeu para ${fromPhone} — usando regras de auto-resposta`);
+              }
             }
 
-            // Modo "primeira mensagem" não responde além da saudação
-            if (bot.triggerMode !== 'first_message' || contactMsgCount === 1) {
-              let replied = false;
-
-              // IA (Grok) tem prioridade quando habilitada
-              if (bot.useAi) {
-                const aiReply = await generateAiReply(conversation.id, content);
-                if (aiReply) {
-                  const aiResult = await session.socket.sendMessage(remoteJid, { text: aiReply });
-                  await this.saveOutgoingMessage(accountId, remoteJid, aiReply, 'text', null, aiResult);
-                  logger.info(`Resposta IA (Grok) enviada para ${fromPhone}`);
-                  replied = true;
+            // Regras de palavras-chave (fallback da IA ou modo sem IA)
+            if (!replied) {
+              const match = await findMatchingReply(accountId, content);
+              if (match) {
+                let sendResult: any;
+                if (match.mediaType === 'image' && match.mediaUrl) {
+                  sendResult = await session.socket.sendMessage(remoteJid, { image: { url: match.mediaUrl }, caption: match.reply });
                 } else {
-                  logger.warn(`Grok não respondeu para ${fromPhone} — usando regras de auto-resposta`);
+                  sendResult = await session.socket.sendMessage(remoteJid, { text: match.reply });
                 }
-              }
-
-              // Regras de palavras-chave (fallback da IA ou modo sem IA)
-              if (!replied) {
-                const match = await findMatchingReply(accountId, content);
-                if (match) {
-                  let sendResult: any;
-                  if (match.mediaType === 'image' && match.mediaUrl) {
-                    sendResult = await session.socket.sendMessage(remoteJid, { image: { url: match.mediaUrl }, caption: match.reply });
-                  } else {
-                    sendResult = await session.socket.sendMessage(remoteJid, { text: match.reply });
-                  }
-                  await this.saveOutgoingMessage(accountId, remoteJid, match.reply, match.mediaType, match.mediaUrl ?? null, sendResult);
-                  logger.info(`Auto-resposta enviada para ${fromPhone} via chatbot "${match.chatbotName}"`);
-                }
+                await this.saveOutgoingMessage(accountId, remoteJid, match.reply, match.mediaType, match.mediaUrl ?? null, sendResult);
+                logger.info(`Auto-resposta enviada para ${fromPhone} via chatbot "${match.chatbotName}"`);
               }
             }
           }

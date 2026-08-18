@@ -1,9 +1,18 @@
 import { Router } from 'express';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import * as chatbotService from '../services/chatbotService.js';
+import { testAiConnection } from '../services/aiService.js';
 
 const router = Router();
 router.use(authMiddleware);
+
+// Testa a conexão com a IA da Grok — antes das rotas /:id
+router.post('/test-ai', async (_req, res, next) => {
+  try {
+    const result = await testAiConnection();
+    res.json(result);
+  } catch (err) { next(err); }
+});
 
 router.get('/', async (req, res, next) => {
   try {
