@@ -6,25 +6,10 @@ import { prisma } from '../database/client.js';
 import { z } from 'zod';
 
 const router = Router();
-router.use(authMiddleware);
-
-router.get('/', async (req, res, next) => {
-  try {
-    const whatsappId = req.query.whatsappId as string;
-    if (!whatsappId) throw new Error('whatsappId é obrigatório');
-    const result = await listContacts({
-      whatsappId,
-      search: req.query.search as string,
-      page: parseInt(req.query.page as string) || 1,
-      limit: parseInt(req.query.limit as string) || 50,
-    });
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
 
 // Foto de perfil do contato, sempre fresca direto do WhatsApp.
+// ROTA PÚBLICA: tags <img> não enviam header de autorização — exigir JWT
+// aqui fazia toda foto falhar com 401. O ID do contato (cuid) é inviolável.
 // Aceita telefone, @lid (privacidade) e @g.us (grupos) como JID do contato.
 router.get('/:id/avatar', async (req, res) => {
   try {
@@ -44,6 +29,24 @@ router.get('/:id/avatar', async (req, res) => {
     return res.redirect(url);
   } catch {
     return res.status(404).json({ error: 'Sem foto de perfil' });
+  }
+});
+
+router.use(authMiddleware);
+
+router.get('/', async (req, res, next) => {
+  try {
+    const whatsappId = req.query.whatsappId as string;
+    if (!whatsappId) throw new Error('whatsappId é obrigatório');
+    const result = await listContacts({
+      whatsappId,
+      search: req.query.search as string,
+      page: parseInt(req.query.page as string) || 1,
+      limit: parseInt(req.query.limit as string) || 50,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
   }
 });
 

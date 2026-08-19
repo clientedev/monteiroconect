@@ -125,7 +125,7 @@ class WhatsAppSessionManager extends EventEmitter {
     const session = this.sessions.get(accountId);
     if (!session?.socket || !jid) return null;
     try {
-      return (await session.socket.profilePictureUrl(jid, 'image')) ?? null;
+      return (await session.socket.profilePictureUrl(jid, 'image', 10_000)) ?? null;
     } catch {
       // sem foto ou sem permissão — normal
       return null;
@@ -510,6 +510,15 @@ class WhatsAppSessionManager extends EventEmitter {
       if (!name) continue;
       for (const alias of [...rawAliases, canonical]) names.set(alias, name);
 
+      // Reconcilia LID ↔ telefone real: quando o WhatsApp revela o par,
+      // une contatos/conversas duplicadas criadas antes do mapeamento
+      if (typeof item?.id === 'string' && item.id.endsWith('@s.whatsapp.net') &&
+          typeof item?.lid === 'string' && item.lid.endsWith('@lid')) {
+        if (await this.unifySplitContact(accountId, this.jidToContactPhone(item.id), this.jidToContactPhone(item.lid), name)) {
+          changed = true;
+        }
+      }
+
       const phones = [...new Set([...rawAliases, canonical].map(jid => this.jidToContactPhone(jid)))];
       const saved = await prisma.contact.findMany({ where: { whatsappId: accountId, phone: { in: phones } } });
       for (const contact of saved) {
@@ -520,6 +529,64 @@ class WhatsAppSessionManager extends EventEmitter {
       }
     }
     if (changed || cleaned.count > 0) this.emit('contacts-updated', { accountId });
+  }
+
+  /**
+   * Une o contato criado sob LID com o contato do telefone real. Corrige a
+   * "outra versão da conversa": histórico chega pelo telefone, mensagens em
+   * tempo real podem chegar pelo LID — sem isso viram duas threads.
+   */
+  private async unifySplitContact(accountId: string, phone: string, lid: string, name: string | null): Promise<boolean> {
+    try {
+      const phoneContact = await prisma.contact.findUnique({
+        where: { phone_whatsappId: { phone, whatsappId: accountId } },
+      });
+      const lidContact = await prisma.contact.findUnique({
+        where: { phone_whatsappId: { phone: lid, whatsappId: accountId } },
+      });
+      if (!lidContact) return false;
+
+      if (!phoneContact) {
+        // Contato existe só sob LID — assume o telefone real
+        await prisma.contact.update({
+          where: { id: lidContact.id },
+          data: { phone, ...(name ? { name } : {}) },
+        });
+        logger.info(`Contato ${lid} unificado para o telefone real`);
+        return true;
+      }
+
+      const keep = await prisma.conversation.findUnique({
+        where: { contactId_whatsappId: { contactId: phoneContact.id, whatsappId: accountId } },
+      });
+      const drop = await prisma.conversation.findUnique({
+        where: { contactId_whatsappId: { contactId: lidContact.id, whatsappId: accountId } },
+      });
+
+      await prisma.$transaction(async (tx) => {
+        if (keep && drop) {
+          await tx.message.updateMany({ where: { conversationId: drop.id }, data: { conversationId: keep.id } });
+          const newer = !keep.lastMessageAt || !!(drop.lastMessageAt && drop.lastMessageAt > keep.lastMessageAt);
+          await tx.conversation.update({
+            where: { id: keep.id },
+            data: {
+              unreadCount: { increment: drop.unreadCount },
+              ...(newer && drop.lastMessage ? { lastMessage: drop.lastMessage, lastMessageAt: drop.lastMessageAt } : {}),
+            },
+          });
+          await tx.conversation.delete({ where: { id: drop.id } });
+        } else if (drop) {
+          await tx.conversation.update({ where: { id: drop.id }, data: { contactId: phoneContact.id } });
+        }
+        await tx.contact.delete({ where: { id: lidContact.id } });
+      });
+
+      logger.info(`Conversas de ${lid} unificadas no contato ${phone}`);
+      return true;
+    } catch (err) {
+      logger.warn(`Falha ao unificar contato ${lid} → ${phone}:`, err);
+      return false;
+    }
   }
 
   /**
