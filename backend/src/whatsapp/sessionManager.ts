@@ -9,7 +9,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   downloadMediaMessage,
 } from '@whiskeysockets/baileys';
-import type { ConnectionState, WAMessage, MessageUpsertType } from '@whiskeysockets/baileys';
+import type { ConnectionState, WAMessage, MessageUpsertType, proto } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { prisma } from '../database/client.js';
 import { env } from '../config/env.js';
@@ -181,10 +181,19 @@ class WhatsAppSessionManager extends EventEmitter {
         printQRInTerminal: false,
         logger: makeLogger(),
         shouldIgnoreJid: () => false,
-        // Sincroniza o histórico completo, igual ao vincular um novo
-        // dispositivo no WhatsApp Web
-        syncFullHistory: true,
-        shouldSyncHistoryMessage: () => true,
+        // Histórico RECENTE apenas: o sync completo anos atrás fazia o painel
+        // exibir "outra versão" das conversas (threads antigas em vez das
+        // atuais). Mensagens em tempo real continuam chegando normalmente.
+        syncFullHistory: false,
+        shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
+          // A sonda inicial (syncType RECENT, sem timestamp) precisa passar,
+          // senão o Baileys desativa o sync por completo. Nos chunks, threadTs
+          // (segundos, da mensagem mais antiga do chunk) decide se vale a pena.
+          const ts = Number((msg as any).threadTs) || 0;
+          if (!ts) return true;
+          const cutoff = Date.now() / 1000 - Math.max(1, env.historySyncDays) * 86400;
+          return ts >= cutoff;
+        },
       });
 
       session.socket = socket;
@@ -1315,6 +1324,31 @@ class WhatsAppSessionManager extends EventEmitter {
       socket: null,
       qrCode: s.status === 'QR_CODE' ? s.qrCode : null,
     }));
+  }
+
+  /**
+   * Ressincronização manual: repassa o cache de contatos do WhatsApp
+   * (nomes, LID ↔ telefone, unificação de conversas duplicadas) e avisa
+   * o frontend para recarregar as listas.
+   */
+  async syncNow(accountId: string): Promise<{ contacts: number }> {
+    const session = this.sessions.get(accountId);
+    if (!session) throw new AppError('Sessão não encontrada', 404);
+    if (!session.socket || session.status !== 'CONNECTED') {
+      throw new AppError('WhatsApp não está conectado', 409);
+    }
+
+    // O Baileys mantém { jid: { id, name, notify, lid, ... } } atualizado
+    // pelos eventos contacts.upsert/update — é a fonte mais fresca possível.
+    const cache = (session.socket as any).contacts || {};
+    const contacts = Object.values(cache) as any[];
+    if (contacts.length > 0) {
+      await this.syncContactNames(accountId, contacts);
+    }
+
+    this.emit('contacts-updated', { accountId });
+    this.emit('history-imported', { accountId, count: 0 });
+    return { contacts: contacts.length };
   }
 
   async refreshQRCode(accountId: string): Promise<string> {

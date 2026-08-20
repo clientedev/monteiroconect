@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { whatsappApi, conversationApi } from '../lib/api';
 import { getSocket } from '../lib/socket';
-import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff } from 'lucide-react';
+import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw } from 'lucide-react';
 
 interface ConvItem {
   id: string;
@@ -77,6 +77,7 @@ export default function ConversationsPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pendingConvId = useRef<string | null>(null);
 
@@ -235,6 +236,18 @@ export default function ConversationsPage() {
     };
   }, [selectedAccountId, selectedConv, loadConversations]);
 
+  const handleSync = async () => {
+    if (!selectedAccountId || syncing) return;
+    setSyncing(true);
+    try {
+      await whatsappApi.sync(selectedAccountId);
+    } catch {}
+    finally {
+      await loadConversations();
+      setSyncing(false);
+    }
+  };
+
   const handleSelectConv = (conv: ConvItem) => {
     setSelectedConv(conv);
     setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
@@ -322,11 +335,19 @@ export default function ConversationsPage() {
           </div>
         )}
 
-        <div className="p-3 border-b border-monte-sereno/15">
-          <div className="relative">
+        <div className="p-3 border-b border-monte-sereno/15 flex items-center gap-2">
+          <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-monte-sereno" />
             <input type="text" className="input-rect pl-10 text-sm" placeholder="Buscar conversa..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <button
+            onClick={handleSync}
+            disabled={syncing || !selectedAccountId}
+            title="Sincronizar conversas e contatos agora"
+            className="p-2.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-monte-verde/10 transition-colors disabled:opacity-50 flex-shrink-0"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">

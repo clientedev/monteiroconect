@@ -146,12 +146,22 @@ export default function ContactsPage() {
               ))}
             </tbody>
           </table>
-          {contacts.length === 0 && !loading && (
-            <div className="p-12 text-center text-monte-sereno text-sm">
-              <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              Nenhum contato encontrado
-            </div>
-          )}
+              {loading && (
+                <tr>
+                  <td colSpan={5} className="p-10 text-center">
+                    <div className="w-7 h-7 border-2 border-monte-verde border-t-transparent rounded-full animate-spin mx-auto" />
+                    <p className="text-xs text-monte-sereno mt-3">Carregando contatos...</p>
+                  </td>
+                </tr>
+              )}
+              {contacts.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={5} className="p-12 text-center text-monte-sereno text-sm">
+                    <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    Nenhum contato encontrado
+                  </td>
+                </tr>
+              )}
         </div>
       </div>
     </div>

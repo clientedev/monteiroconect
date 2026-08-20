@@ -6,6 +6,7 @@ import {
   disconnectWhatsApp,
   removeWhatsApp,
   refreshQRCode,
+  syncWhatsApp,
 } from '../services/whatsappService.js';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { z } from 'zod';
@@ -68,6 +69,16 @@ router.post('/:id/refresh-qr', async (req: AuthRequest, res, next) => {
   try {
     const { qrCode } = await refreshQRCode(String(req.params.id), req.user!);
     res.json({ qrCode });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Ressincronização manual: contatos (nomes/LID) + recarrega listas no frontend
+router.post('/:id/sync', async (req: AuthRequest, res, next) => {
+  try {
+    const result = await syncWhatsApp(String(req.params.id), req.user!);
+    res.json(result);
   } catch (err) {
     next(err);
   }
