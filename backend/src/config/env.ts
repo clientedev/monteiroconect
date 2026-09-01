@@ -19,7 +19,7 @@ export const env = {
   historyMessageLimit: parseInt(process.env.HISTORY_MESSAGE_LIMIT || '100', 10),
   // O WhatsApp pode oferecer anos de histórico ao vincular um dispositivo.
   // A central trabalha com atendimento recente, não com uma importação infinita.
-  historySyncDays: parseInt(process.env.HISTORY_SYNC_DAYS || '7', 10),
+  historySyncDays: parseInt(process.env.HISTORY_SYNC_DAYS || '30', 10),
   uploadPath: process.env.UPLOAD_PATH || './uploads',
   maxUploadSize: process.env.MAX_UPLOAD_SIZE || '50MB',
   logLevel: process.env.LOG_LEVEL || 'info',

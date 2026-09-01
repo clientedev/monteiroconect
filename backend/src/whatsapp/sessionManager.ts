@@ -895,6 +895,37 @@ class WhatsAppSessionManager extends EventEmitter {
       }
     }
 
+    // Processa data.chats para registrar todas as conversas ativas (1:1 e grupos)
+    for (const chat of data.chats || []) {
+      if (!chat?.id || chat.id === 'status@broadcast') continue;
+      const jid = this.canonicalJid(accountId, chat.id);
+      const contactPhone = this.jidToContactPhone(jid);
+      const displayName = this.cachedContactName(accountId, jid) || nameByJid.get(jid) || chat.name || null;
+
+      let contact = await prisma.contact.findUnique({
+        where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
+      });
+      if (!contact) {
+        contact = await prisma.contact.create({
+          data: { phone: contactPhone, name: this.usableContactName(displayName, contactPhone), whatsappId: accountId },
+        });
+      } else if (this.usableContactName(displayName, contactPhone) && (!contact.name || contact.name === contact.phone)) {
+        await prisma.contact.update({
+          where: { id: contact.id },
+          data: { name: this.usableContactName(displayName, contactPhone) },
+        });
+      }
+
+      let conversation = await prisma.conversation.findUnique({
+        where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
+      });
+      if (!conversation) {
+        await prisma.conversation.create({
+          data: { contactId: contact.id, whatsappId: accountId },
+        });
+      }
+    }
+
     // Agrupa mensagens por conversa
     const byConversation = new Map<string, WAMessage[]>();
     for (const m of data.messages || []) {

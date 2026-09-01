@@ -38,7 +38,10 @@ export async function listConversations(opts: ListConversationsOpts) {
         contact: true,
         tags: { include: { tag: true } },
       },
-      orderBy: { lastMessageAt: 'desc' },
+      orderBy: [
+        { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+        { updatedAt: 'desc' },
+      ],
       skip,
       take: limit,
     }),
