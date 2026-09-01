@@ -77,7 +77,7 @@ export async function refreshQRCode(id: string, user: SessionUser) {
 export async function syncWhatsApp(id: string, user: SessionUser) {
   await assertAccountAccess(user, id);
   const result = await sessionManager.syncNow(id);
-  logger.info(`Sincronização manual concluída (${id}): ${result.contacts} contatos`);
+  logger.info(`Sincronização manual concluída (${id}): ${result.contacts} contatos, ${result.groups} grupos`);
   return result;
 }
 

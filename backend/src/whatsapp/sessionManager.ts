@@ -190,19 +190,10 @@ class WhatsAppSessionManager extends EventEmitter {
         printQRInTerminal: false,
         logger: makeLogger(),
         shouldIgnoreJid: () => false,
-        // Histórico RECENTE apenas: o sync completo anos atrás fazia o painel
-        // exibir "outra versão" das conversas (threads antigas em vez das
-        // atuais). Mensagens em tempo real continuam chegando normalmente.
-        syncFullHistory: false,
-        shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
-          // A sonda inicial (syncType RECENT, sem timestamp) precisa passar,
-          // senão o Baileys desativa o sync por completo. Nos chunks, threadTs
-          // (segundos, da mensagem mais antiga do chunk) decide se vale a pena.
-          const ts = Number((msg as any).threadTs) || 0;
-          if (!ts) return true;
-          const cutoff = Date.now() / 1000 - Math.max(1, env.historySyncDays) * 86400;
-          return ts >= cutoff;
-        },
+        // Habilita sincronização de histórico do WhatsApp Web para trazer
+        // todas as conversas e contatos ativos ao conectar.
+        syncFullHistory: true,
+        shouldSyncHistoryMessage: () => true,
       });
 
       session.socket = socket;
@@ -255,6 +246,9 @@ class WhatsAppSessionManager extends EventEmitter {
           this.emitStatus(accountId);
           this.emit('connected', { accountId, phone, name: session.name });
           logger.info(`WhatsApp conectado: ${session.name} (${phone})`);
+
+          // Sincroniza grupos e contatos automaticamente ao conectar
+          this.syncNow(accountId).catch(err => logger.warn(`Sincronização pós-conexão (${accountId}):`, err));
         }
 
         if (update.connection === 'close') {
@@ -1482,24 +1476,66 @@ class WhatsAppSessionManager extends EventEmitter {
    * (nomes, LID ↔ telefone, unificação de conversas duplicadas) e avisa
    * o frontend para recarregar as listas.
    */
-  async syncNow(accountId: string): Promise<{ contacts: number }> {
+  async syncNow(accountId: string): Promise<{ contacts: number; groups: number }> {
     const session = this.sessions.get(accountId);
     if (!session) throw new AppError('Sessão não encontrada', 404);
     if (!session.socket || session.status !== 'CONNECTED') {
       throw new AppError('WhatsApp não está conectado', 409);
     }
 
-    // O Baileys mantém { jid: { id, name, notify, lid, ... } } atualizado
-    // pelos eventos contacts.upsert/update — é a fonte mais fresca possível.
+    // 1. Sincroniza contatos da memória do Baileys
     const cache = (session.socket as any).contacts || {};
     const contacts = Object.values(cache) as any[];
     if (contacts.length > 0) {
       await this.syncContactNames(accountId, contacts);
     }
 
+    // 2. Busca TODOS os grupos em que a conta participa e garante contatos e conversas
+    let groupsCount = 0;
+    try {
+      const groupsMap = await session.socket.groupFetchAllParticipating();
+      const groupsList = Object.values(groupsMap || {});
+      groupsCount = groupsList.length;
+
+      for (const g of groupsList) {
+        if (!g.id) continue;
+        const groupJid = g.id;
+        const groupName = g.subject || 'Grupo';
+        this.groupNameCache.set(groupJid, groupName);
+
+        const contactPhone = this.jidToContactPhone(groupJid);
+        let contact = await prisma.contact.findUnique({
+          where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
+        });
+
+        if (!contact) {
+          contact = await prisma.contact.create({
+            data: { phone: contactPhone, name: groupName, whatsappId: accountId },
+          });
+        } else if (!contact.name || contact.name === contact.phone) {
+          contact = await prisma.contact.update({
+            where: { id: contact.id },
+            data: { name: groupName },
+          });
+        }
+
+        let conversation = await prisma.conversation.findUnique({
+          where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
+        });
+        if (!conversation) {
+          await prisma.conversation.create({
+            data: { contactId: contact.id, whatsappId: accountId },
+          });
+        }
+      }
+      logger.info(`Sincronização de grupos (${accountId}): ${groupsCount} grupos encontrados e atualizados.`);
+    } catch (groupErr) {
+      logger.warn(`Falha ao buscar grupos em syncNow (${accountId}):`, groupErr);
+    }
+
     this.emit('contacts-updated', { accountId });
-    this.emit('history-imported', { accountId, count: 0 });
-    return { contacts: contacts.length };
+    this.emit('history-imported', { accountId, count: contacts.length });
+    return { contacts: contacts.length, groups: groupsCount };
   }
 
   async refreshQRCode(accountId: string): Promise<string> {
