@@ -69,8 +69,18 @@ function Avatar({ contactId, name, phone, size = 'w-11 h-11', textClass = 'text-
 
 /** Retorna o timestamp mais relevante de uma mensagem para ordenação */
 function msgTime(msg: Msg): number {
-  return new Date(msg.timestamp || msg.createdAt).getTime();
+  const raw = msg.timestamp || msg.createdAt;
+  if (!raw) return 0;
+  const t = new Date(raw).getTime();
+  return Number.isNaN(t) ? 0 : t;
 }
+
+const formatTime = (date?: string | null) => {
+  if (!date) return '';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+};
 
 export default function ConversationsPage() {
   const location = useLocation();
@@ -446,10 +456,6 @@ export default function ConversationsPage() {
       setSending(false);
       e.target.value = '';
     }
-  };
-
-  const formatTime = (date: string) => {
-    return new Date(date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
   const renderContent = (text: string | null) => {
