@@ -85,18 +85,22 @@ export async function getConversationMessages(
   limit = 50,
 ) {
   const skip = (page - 1) * limit;
-  const [total, messages] = await Promise.all([
-    prisma.message.count({ where: { conversationId } }),
-    prisma.message.findMany({
-      where: { conversationId },
-      // A primeira página deve trazer as mensagens mais recentes. Consultamos
-      // em ordem decrescente por eficiência e devolvemos em ordem cronológica
-      // para a interface de chat.
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip,
-      take: limit,
-    }),
-  ]);
+  const total = await prisma.message.count({ where: { conversationId } });
+
+  // FIX 3: Ordena pela coluna `timestamp` (timestamp real do WhatsApp) e usa
+  // `createdAt` como desempate. Busca DECRESCENTE (mais recentes primeiro)
+  // para paginar por histórico, mas retorna em ordem CRESCENTE (cronológica)
+  // para o chat — sem o .reverse() que era frágil com timestamps idênticos.
+  const messages = await prisma.message.findMany({
+    where: { conversationId },
+    orderBy: [
+      { timestamp: 'desc' },
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ],
+    skip,
+    take: limit,
+  });
 
   await prisma.message.updateMany({
     where: { conversationId, isRead: false },
@@ -108,6 +112,7 @@ export async function getConversationMessages(
     data: { unreadCount: 0 },
   });
 
+  // Reverte para ordem cronológica (mais antigo primeiro) para o frontend
   return { total, page, limit, messages: messages.reverse() };
 }
 

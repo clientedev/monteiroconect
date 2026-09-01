@@ -116,13 +116,22 @@ model Message {
   quotedContent   String?
   senderName      String?
   senderJid       String?
+  /// ID original da mensagem no WhatsApp (ex: key.id do Baileys).
+  /// Usado como chave de deduplicação garantida pelo banco.
+  waMsgId        String?
+  /// Timestamp REAL da mensagem conforme o WhatsApp (messageTimestamp).
+  /// Usado para ordenação cronológica correta. Nunca use createdAt para isso.
+  timestamp      DateTime?
+  /// Legado — mantido para compatibilidade com dados existentes.
   messageId      String?
   fromPhone      String?
   toPhone        String?
   createdAt      DateTime @default(now())
 
+  @@unique([conversationId, waMsgId])
   @@index([conversationId])
   @@index([whatsappId])
+  @@index([timestamp])
   @@index([createdAt])
   @@index([isRead])
 }

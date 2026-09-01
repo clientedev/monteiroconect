@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { whatsappApi, conversationApi } from '../lib/api';
-import { getSocket } from '../lib/socket';
-import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw } from 'lucide-react';
+import { connectSocket, getSocket } from '../lib/socket';
+import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp } from 'lucide-react';
 
 interface ConvItem {
   id: string;
@@ -25,6 +25,7 @@ interface Msg {
   isFromMe: boolean;
   isRead: boolean;
   createdAt: string;
+  timestamp?: string | null;
   fromPhone: string | null;
   quotedMessageId?: string | null;
   quotedContent?: string | null;
@@ -66,67 +67,136 @@ function Avatar({ contactId, name, phone, size = 'w-11 h-11', textClass = 'text-
   );
 }
 
+/** Retorna o timestamp mais relevante de uma mensagem para ordenação */
+function msgTime(msg: Msg): number {
+  return new Date(msg.timestamp || msg.createdAt).getTime();
+}
+
 export default function ConversationsPage() {
   const location = useLocation();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [conversations, setConversations] = useState<ConvItem[]>([]);
   const [selectedConv, setSelectedConv] = useState<ConvItem | null>(null);
-  const [messages, setMessages] = useState<Msg[]>([]);
+  // FIX 6.1: Map com id como chave garante deduplicação sem duplicatas visuais
+  const [messages, setMessages] = useState<Map<string, Msg>>(new Map());
   const [newMessage, setNewMessage] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const pendingConvId = useRef<string | null>(null);
+  // FIX 6.2: Paginação de histórico
+  const [msgPage, setMsgPage] = useState(1);
+  const [msgTotal, setMsgTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const MSG_LIMIT = 50;
 
-  const scrollToBottom = () => {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesTopRef = useRef<HTMLDivElement>(null);
+  const pendingConvId = useRef<string | null>(null);
+  const selectedConvRef = useRef<ConvItem | null>(null);
+  const selectedAccountIdRef = useRef<string>('');
+
+  // Sincroniza refs para closure segura nos handlers de WebSocket
+  useEffect(() => { selectedConvRef.current = selectedConv; }, [selectedConv]);
+  useEffect(() => { selectedAccountIdRef.current = selectedAccountId; }, [selectedAccountId]);
+
+  /** Converte o Map de mensagens em array ordenado cronologicamente */
+  const sortedMessages = (): Msg[] => {
+    return Array.from(messages.values()).sort((a, b) => msgTime(a) - msgTime(b));
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current?.scrollIntoView({ behavior });
     }, 100);
   };
 
   const loadAccounts = useCallback(async () => {
     try {
       const data = await whatsappApi.list();
-      // Mostra TODAS as contas (conectadas primeiro) — conversas não somem ao desconectar
       const sorted = [...data].sort((a: any, b: any) =>
         (b.status === 'CONNECTED' ? 1 : 0) - (a.status === 'CONNECTED' ? 1 : 0)
       );
       setAccounts(sorted);
-      if (sorted.length > 0 && !selectedAccountId) {
+      if (sorted.length > 0 && !selectedAccountIdRef.current) {
         setSelectedAccountId(sorted[0].id);
       }
     } catch {}
-  }, [selectedAccountId]);
+  }, []);
 
   const loadConversations = useCallback(async () => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountIdRef.current) return;
     try {
-      const data = await conversationApi.list(selectedAccountId, search);
+      const data = await conversationApi.list(selectedAccountIdRef.current, search);
       setConversations(data.conversations || []);
     } catch {}
     finally { setLoading(false); }
-  }, [selectedAccountId, search]);
+  }, [search]);
 
-  const loadMessages = useCallback(async (convId: string) => {
+  /** Carrega as mensagens de uma conversa. page=1 substitui tudo; page>1 prepend. */
+  const loadMessages = useCallback(async (convId: string, page = 1) => {
     try {
-      const data = await conversationApi.messages(convId);
-      setMessages(data.messages || []);
-      await conversationApi.markRead(convId);
-      // Zera o badge de notificações em todas as telas abertas
-      getSocket()?.emit('conversation-read', convId);
-      scrollToBottom();
+      const data = await conversationApi.messages(convId, page);
+      const fetched: Msg[] = data.messages || [];
+      setMsgTotal(data.total || 0);
+      setMsgPage(page);
+
+      setMessages(prev => {
+        if (page === 1) {
+          // Substitui completamente — FIX 6.1: usa Map para garantir unicidade
+          const map = new Map<string, Msg>();
+          for (const m of fetched) map.set(m.id, m);
+          return map;
+        } else {
+          // Prepend (histórico mais antigo) — preserva mensagens existentes
+          const map = new Map<string, Msg>(prev);
+          for (const m of fetched) {
+            if (!map.has(m.id)) map.set(m.id, m);
+          }
+          return map;
+        }
+      });
+
+      if (page === 1) {
+        await conversationApi.markRead(convId);
+        getSocket()?.emit('conversation-read', convId);
+        scrollToBottom('instant');
+      }
     } catch {}
   }, []);
+
+  /** FIX 6.2: Carrega página anterior (histórico mais antigo) */
+  const loadMoreMessages = async () => {
+    if (!selectedConv || loadingMore) return;
+    const nextPage = msgPage + 1;
+    const hasMore = messages.size < msgTotal;
+    if (!hasMore) return;
+
+    setLoadingMore(true);
+    // Salva posição do scroll antes de adicionar mensagens acima
+    const container = messagesTopRef.current?.parentElement;
+    const prevScrollHeight = container?.scrollHeight || 0;
+
+    await loadMessages(selectedConv.id, nextPage);
+    setLoadingMore(false);
+
+    // Mantém a posição visual após prepend
+    requestAnimationFrame(() => {
+      if (container) {
+        container.scrollTop = container.scrollHeight - prevScrollHeight;
+      }
+    });
+  };
 
   useEffect(() => { loadAccounts(); }, []);
   useEffect(() => { loadConversations(); }, [loadConversations]);
   useEffect(() => {
     if (selectedAccountId) {
       setSelectedConv(null);
-      setMessages([]);
+      setMessages(new Map());
+      setMsgPage(1);
+      setMsgTotal(0);
     }
   }, [selectedAccountId]);
 
@@ -173,26 +243,58 @@ export default function ConversationsPage() {
     if (!socket) return;
 
     const onNewMsg = (data: any) => {
-      if (data.accountId !== selectedAccountId) return;
-      // Recarregar a lista evita conversas novas invisíveis, mantém o nome
-      // atualizado e preserva a ordenação pelo último evento real.
-      loadConversations();
+      const currentAccountId = selectedAccountIdRef.current;
+      const currentConv = selectedConvRef.current;
 
-      if (data.conversationId === selectedConv?.id) {
-        setMessages(prev => prev.some(msg => msg.id === data.message.id) ? prev : [...prev, {
-          id: data.message.id,
-          type: data.message.type,
-          content: data.message.content,
-          mediaUrl: data.message.mediaUrl,
-          mediaType: data.message.mediaType,
-          isFromMe: false,
-          isRead: false,
-          createdAt: data.message.createdAt,
-          fromPhone: data.contact?.phone,
-          quotedMessageId: data.message.quotedMessageId,
-          quotedContent: data.message.quotedContent,
-          senderName: data.message.senderName,
-        }]);
+      if (data.accountId !== currentAccountId) return;
+
+      // FIX 6.3: Atualização cirúrgica da conversa na lista (sem reload completo)
+      setConversations(prev => {
+        const idx = prev.findIndex(c => c.id === data.conversationId);
+        if (idx === -1) {
+          // Conversa nova — recarrega a lista completa
+          loadConversations();
+          return prev;
+        }
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          lastMessage: data.conversation?.lastMessage ?? data.message.content,
+          lastMessageAt: data.conversation?.lastMessageAt ?? data.message.createdAt,
+          unreadCount: currentConv?.id === data.conversationId
+            ? 0
+            : (updated[idx].unreadCount || 0) + 1,
+        };
+        // Reordena: conversa mais recente primeiro
+        updated.sort((a, b) =>
+          new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime()
+        );
+        return updated;
+      });
+
+      if (currentConv?.id === data.conversationId) {
+        // FIX 6.1: Adiciona ao Map — impossível duplicar
+        setMessages(prev => {
+          if (prev.has(data.message.id)) return prev;
+          const map = new Map(prev);
+          map.set(data.message.id, {
+            id: data.message.id,
+            type: data.message.type,
+            content: data.message.content,
+            mediaUrl: data.message.mediaUrl,
+            mediaType: data.message.mediaType,
+            isFromMe: false,
+            isRead: false,
+            createdAt: data.message.createdAt,
+            timestamp: data.message.timestamp,
+            fromPhone: data.contact?.phone,
+            quotedMessageId: data.message.quotedMessageId,
+            quotedContent: data.message.quotedContent,
+            senderName: data.message.senderName,
+          });
+          return map;
+        });
+        setMsgTotal(t => t + 1);
         conversationApi.markRead(data.conversationId).then(() => {
           getSocket()?.emit('conversation-read', data.conversationId);
         }).catch(() => {});
@@ -201,40 +303,78 @@ export default function ConversationsPage() {
     };
 
     const onSent = (data: any) => {
-      if (data.accountId !== selectedAccountId) return;
-      loadConversations();
+      const currentAccountId = selectedAccountIdRef.current;
+      const currentConv = selectedConvRef.current;
 
-      if (data.conversationId === selectedConv?.id) {
-        setMessages(prev => prev.some(msg => msg.id === data.message.id) ? prev : [...prev, {
-          id: data.message.id || `sent-${Date.now()}`,
-          type: data.message.type,
-          content: data.message.content,
-          mediaUrl: data.message.mediaUrl,
-          mediaType: data.message.mediaType,
-          isFromMe: true,
-          isRead: false,
-          createdAt: data.message.createdAt,
-          fromPhone: null,
-          quotedMessageId: data.message.quotedMessageId,
-          quotedContent: data.message.quotedContent,
-        }]);
+      if (data.accountId !== currentAccountId) return;
+
+      // FIX 6.3: Atualização cirúrgica da lista de conversas para mensagens enviadas
+      setConversations(prev => {
+        const idx = prev.findIndex(c => c.id === data.conversationId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          lastMessage: data.message.content || updated[idx].lastMessage,
+          lastMessageAt: data.message.createdAt,
+        };
+        updated.sort((a, b) =>
+          new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime()
+        );
+        return updated;
+      });
+
+      if (currentConv?.id === data.conversationId) {
+        // FIX 6.1: Map — não duplica mensagem enviada
+        setMessages(prev => {
+          if (prev.has(data.message.id)) return prev;
+          const map = new Map(prev);
+          map.set(data.message.id, {
+            id: data.message.id || `sent-${Date.now()}`,
+            type: data.message.type,
+            content: data.message.content,
+            mediaUrl: data.message.mediaUrl,
+            mediaType: data.message.mediaType,
+            isFromMe: true,
+            isRead: false,
+            createdAt: data.message.createdAt,
+            timestamp: data.message.timestamp,
+            fromPhone: null,
+            quotedMessageId: data.message.quotedMessageId,
+            quotedContent: data.message.quotedContent,
+          });
+          return map;
+        });
+        setMsgTotal(t => t + 1);
         scrollToBottom();
       }
     };
 
+    const onContactsUpdated = (data: any) => {
+      if (data.accountId === selectedAccountIdRef.current) loadConversations();
+    };
+    const onHistory = (data: any) => {
+      if (data.accountId === selectedAccountIdRef.current) loadConversations();
+    };
+    const onConvRead = (data: { conversationId: string }) => {
+      setConversations(prev =>
+        prev.map(c => c.id === data.conversationId ? { ...c, unreadCount: 0 } : c)
+      );
+    };
+
     socket.on('message:new', onNewMsg);
     socket.on('message:sent', onSent);
-    const onContactsUpdated = (data: any) => { if (data.accountId === selectedAccountId) loadConversations(); };
     socket.on('contacts:updated', onContactsUpdated);
-    const onHistory = (data: any) => { if (data.accountId === selectedAccountId) loadConversations(); };
     socket.on('history:imported', onHistory);
+    socket.on('conversation:read', onConvRead);
     return () => {
       socket.off('message:new', onNewMsg);
       socket.off('message:sent', onSent);
       socket.off('contacts:updated', onContactsUpdated);
       socket.off('history:imported', onHistory);
+      socket.off('conversation:read', onConvRead);
     };
-  }, [selectedAccountId, selectedConv, loadConversations]);
+  }, [loadConversations]);
 
   const handleSync = async () => {
     if (!selectedAccountId || syncing) return;
@@ -251,7 +391,10 @@ export default function ConversationsPage() {
   const handleSelectConv = (conv: ConvItem) => {
     setSelectedConv(conv);
     setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
-    loadMessages(conv.id);
+    setMessages(new Map());
+    setMsgPage(1);
+    setMsgTotal(0);
+    loadMessages(conv.id, 1);
   };
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
@@ -318,6 +461,9 @@ export default function ConversationsPage() {
       return <span key={i}>{part}</span>;
     });
   };
+
+  const msgs = sortedMessages();
+  const hasMoreHistory = messages.size < msgTotal;
 
   return (
     <div className="flex h-[calc(100vh-8rem)] -m-4 lg:-m-6 rounded-3xl overflow-hidden shadow-lg border border-monte-sereno/15">
@@ -397,7 +543,7 @@ export default function ConversationsPage() {
           <>
             {/* Header */}
             <div className="bg-white/80 backdrop-blur-md border-b border-monte-sereno/15 px-4 py-3 flex items-center gap-3">
-              <button onClick={() => { setSelectedConv(null); setMessages([]); }} className="lg:hidden text-monte-azul hover:text-monte-verde">
+              <button onClick={() => { setSelectedConv(null); setMessages(new Map()); }} className="lg:hidden text-monte-azul hover:text-monte-verde">
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <Avatar contactId={selectedConv.contactId} name={selectedConv.contactName} phone={selectedConv.contactPhone} />
@@ -422,8 +568,25 @@ export default function ConversationsPage() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {messages.map((msg, i) => (
-                <div key={msg.id || i} className={`flex ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
+              {/* FIX 6.2: Botão "carregar mais" no topo */}
+              <div ref={messagesTopRef} />
+              {hasMoreHistory && (
+                <div className="flex justify-center mb-2">
+                  <button
+                    onClick={loadMoreMessages}
+                    disabled={loadingMore}
+                    className="flex items-center gap-1.5 text-xs text-monte-sereno hover:text-monte-azul bg-white/70 border border-monte-sereno/20 rounded-full px-4 py-1.5 transition-colors disabled:opacity-50"
+                  >
+                    {loadingMore
+                      ? <div className="w-3.5 h-3.5 border-2 border-monte-sereno border-t-transparent rounded-full animate-spin" />
+                      : <ChevronUp className="w-3.5 h-3.5" />}
+                    {loadingMore ? 'Carregando...' : `Ver mensagens anteriores (${msgTotal - messages.size} restantes)`}
+                  </button>
+                </div>
+              )}
+
+              {msgs.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] rounded-3xl px-4 py-2.5 shadow-sm ${
                     msg.isFromMe
                       ? 'bg-monte-verde text-white rounded-br-lg'
@@ -474,7 +637,9 @@ export default function ConversationsPage() {
                     )}
 
                     <div className={`flex items-center gap-1 mt-1 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
-                      <span className={`text-[10px] ${msg.isFromMe ? 'text-white/50' : 'text-monte-sereno'}`}>{formatTime(msg.createdAt)}</span>
+                      <span className={`text-[10px] ${msg.isFromMe ? 'text-white/50' : 'text-monte-sereno'}`}>
+                        {formatTime(msg.timestamp || msg.createdAt)}
+                      </span>
                       {msg.isFromMe && (
                         msg.isRead
                           ? <CheckCheck className="w-3.5 h-3.5 text-white/60" />
@@ -484,7 +649,7 @@ export default function ConversationsPage() {
                   </div>
                 </div>
               ))}
-              {messages.length === 0 && (
+              {msgs.length === 0 && (
                 <div className="flex items-center justify-center h-full text-monte-sereno">
                   <div className="text-center">
                     <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-20" />
