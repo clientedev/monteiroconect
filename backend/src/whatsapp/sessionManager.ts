@@ -190,8 +190,6 @@ class WhatsAppSessionManager extends EventEmitter {
         printQRInTerminal: false,
         logger: makeLogger(),
         shouldIgnoreJid: () => false,
-        // syncFullHistory: false impede que a conexão do Baileys trave aguardando
-        // históricos massivos de anos anteriores, mantendo envio/recebimento instantâneo.
         syncFullHistory: false,
         shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
           const ts = Number((msg as any).threadTs) || 0;
@@ -199,6 +197,11 @@ class WhatsAppSessionManager extends EventEmitter {
           const cutoff = Date.now() / 1000 - Math.max(1, env.historySyncDays) * 86400;
           return ts >= cutoff;
         },
+        // Configurações para manter a sessão online 24/7 sem cair
+        keepAliveIntervalMs: 25000,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        markOnlineOnConnect: true,
       });
 
       session.socket = socket;
@@ -252,20 +255,17 @@ class WhatsAppSessionManager extends EventEmitter {
           this.emit('connected', { accountId, phone, name: session.name });
           logger.info(`WhatsApp conectado: ${session.name} (${phone})`);
 
-          // Sincroniza grupos e contatos automaticamente ao conectar
+          // Sincroniza grupos e contatos automaticamente ao conectar (idêntico ao WhatsApp Web)
           this.syncNow(accountId).catch(err => logger.warn(`Sincronização pós-conexão (${accountId}):`, err));
         }
 
         if (update.connection === 'close') {
           const statusCode = (update.lastDisconnect?.error as any)?.output?.statusCode as number;
-          const shouldReconnect =
-            statusCode !== DisconnectReason.loggedOut &&
-            statusCode !== DisconnectReason.badSession &&
-            !session.isDestroying;
+          const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-          logger.warn(`Conexão fechada ${session.name}: code=${statusCode}, shouldReconnect=${shouldReconnect}`);
+          logger.warn(`Conexão fechada ${session.name}: code=${statusCode}, isLoggedOut=${isLoggedOut}`);
 
-          // FIX 1 (close handler): limpa listeners do socket atual para não acumular em reconexões
+          // Limpa socket atual antes de reconectar
           const closedSocket = session.socket;
           session.socket = null;
           session.qrCode = null;
@@ -274,7 +274,9 @@ class WhatsAppSessionManager extends EventEmitter {
             try { (closedSocket as any).end?.(undefined); } catch {}
           }
 
-          if (shouldReconnect) {
+          // A sessão SÓ desconecta se o usuário efetivamente deslogou pelo WhatsApp ou pelo painel.
+          // Qualquer outro motivo (queda de rede, timeout, restart de servidor) tenta reconectar INDEFINIDAMENTE.
+          if (!isLoggedOut && !session.isDestroying) {
             this.attemptReconnect(accountId);
           } else {
             session.status = 'DISCONNECTED';
@@ -311,8 +313,9 @@ class WhatsAppSessionManager extends EventEmitter {
       socket.ev.on('messaging-history.set', (data: any) => {
         if (session.isDestroying) return;
         const msgs = data?.messages || [];
-        if (msgs.length > 0) {
-          logger.info(`Histórico recebido: ${msgs.length} mensagens (${session.name})`);
+        const chats = data?.chats || [];
+        if (msgs.length > 0 || chats.length > 0) {
+          logger.info(`Histórico recebido: ${msgs.length} mensagens, ${chats.length} conversas (${session.name})`);
           this.enqueueHistory(accountId, data);
         }
       });
@@ -344,15 +347,6 @@ class WhatsAppSessionManager extends EventEmitter {
   private async attemptReconnect(accountId: string): Promise<void> {
     const session = this.sessions.get(accountId);
     if (!session || session.isDestroying) return;
-
-    if (session.reconnectAttempts >= env.maxReconnectAttempts) {
-      logger.error(`Máximo de tentativas de reconexão atingido: ${session.name}`);
-      session.status = 'ERROR';
-      await this.updateAccountStatus(accountId, 'ERROR');
-      this.emitStatus(accountId);
-      this.emit('reconnect-failed', { accountId });
-      return;
-    }
 
     const delay = calculateBackoff(
       session.reconnectAttempts,
@@ -504,14 +498,9 @@ class WhatsAppSessionManager extends EventEmitter {
   private isUsableChatMessage(accountId: string, msg: WAMessage): boolean {
     const remoteJid = msg.key.remoteJid || '';
     if (!remoteJid || remoteJid === 'status@broadcast') return false;
-    // Eventos de protocolo (incluindo sync de histórico), reações e recibos
-    // não são conversas e jamais devem aparecer como mensagens para si mesmo.
     const body: any = msg.message || {};
     if (body.protocolMessage || body.reactionMessage || body.senderKeyDistributionMessage) return false;
-    const session = this.sessions.get(accountId);
-    const selfPhone = session?.phone?.replace(/\D/g, '');
-    const remotePhone = this.jidToContactPhone(this.canonicalJid(accountId, remoteJid)).replace(/\D/g, '');
-    return !selfPhone || remotePhone !== selfPhone;
+    return true;
   }
 
   private async syncContactNames(accountId: string, contacts: any[]): Promise<void> {
