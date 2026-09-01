@@ -190,10 +190,15 @@ class WhatsAppSessionManager extends EventEmitter {
         printQRInTerminal: false,
         logger: makeLogger(),
         shouldIgnoreJid: () => false,
-        // Habilita sincronização de histórico do WhatsApp Web para trazer
-        // todas as conversas e contatos ativos ao conectar.
-        syncFullHistory: true,
-        shouldSyncHistoryMessage: () => true,
+        // syncFullHistory: false impede que a conexão do Baileys trave aguardando
+        // históricos massivos de anos anteriores, mantendo envio/recebimento instantâneo.
+        syncFullHistory: false,
+        shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
+          const ts = Number((msg as any).threadTs) || 0;
+          if (!ts) return true;
+          const cutoff = Date.now() / 1000 - Math.max(1, env.historySyncDays) * 86400;
+          return ts >= cutoff;
+        },
       });
 
       session.socket = socket;
@@ -777,32 +782,8 @@ class WhatsAppSessionManager extends EventEmitter {
         ? 'text'
         : (mediaType || messageType);
 
-      // FIX 2: upsert garante idempotência mesmo com race conditions.
-      // Se waMsgId for null (edge case), faz insert simples.
       let savedMessage: any;
-      if (waMsgId && conversation.id) {
-        savedMessage = await prisma.message.upsert({
-          where: { conversationId_waMsgId: { conversationId: conversation.id, waMsgId } },
-          update: {}, // já existe — não altera
-          create: {
-            conversationId: conversation.id,
-            whatsappId: accountId,
-            type: msgType,
-            content,
-            mediaType,
-            mediaUrl: null,
-            isFromMe: true,
-            isRead: true,
-            quotedMessageId,
-            quotedContent,
-            waMsgId,
-            messageId: waMsgId, // legado
-            timestamp: ts,       // FIX 3: timestamp real
-            fromPhone: '',
-            toPhone: contactPhone,
-          },
-        });
-      } else {
+      try {
         savedMessage = await prisma.message.create({
           data: {
             conversationId: conversation.id,
@@ -822,9 +803,11 @@ class WhatsAppSessionManager extends EventEmitter {
             toPhone: contactPhone,
           },
         });
+      } catch (dbErr: any) {
+        if (dbErr?.code === 'P2002') return; // Já gravado
+        throw dbErr;
       }
 
-      // FIX 6: usa timestamp real para manter a lista de conversas em ordem.
       if (ts > (conversation.lastMessageAt || new Date(0))) {
         await prisma.conversation.update({
           where: { id: conversation.id },
@@ -1056,10 +1039,13 @@ class WhatsAppSessionManager extends EventEmitter {
   /**
    * FIX 4 + FIX 5: Tenta baixar mídia de uma mensagem do Baileys.
    *
-   * Remove o check frágil de `directPath` que bloqueava a maioria dos downloads.
-   * Qualquer mensagem com mediaType definido é tentada; erros são silenciosos.
+   * Restringe o download apenas para mídias válidas (imagem, vídeo, áudio, doc, sticker).
+   * Evita chamar downloadMediaMessage para localização/contato/texto, o que travava o processo.
    */
   private async tryDownloadMedia(msg: WAMessage, msgId: string, mediaType: string): Promise<string | null> {
+    const DOWNLOADABLE = ['image', 'video', 'audio', 'document', 'sticker'];
+    if (!mediaType || !DOWNLOADABLE.includes(mediaType)) return null;
+
     try {
       const buffer = await downloadMediaMessage(msg, 'buffer', {});
       if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) return null;
@@ -1077,8 +1063,6 @@ class WhatsAppSessionManager extends EventEmitter {
       await fs.writeFile(filePath, buffer);
       return `/uploads/${fileName}`;
     } catch {
-      // Mídia pode ter expirado nos servidores do WhatsApp (> ~30 dias)
-      // ou não estar disponível para download neste contexto. É normal.
       return null;
     }
   }
@@ -1148,55 +1132,13 @@ class WhatsAppSessionManager extends EventEmitter {
         ? 'text'
         : (mediaType || messageType);
 
-      // FIX 4: Download de mídia mais robusto.
-      // Remove o check frágil de `directPath` — tenta para qualquer mensagem
-      // com mediaType, deixando o Baileys decidir se consegue baixar.
+      // Download mídia seguro
       const savedMediaUrl = mediaType ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType) : null;
 
-      // FIX 2: Deduplicação atômica via upsert com waMsgId.
-      // Elimina a race condition do findFirst + create anterior.
+      // Deduplicação atômica via constraint de banco.
+      // Se a mensagem já existe (P2002 no waMsgId), ignora a duplicata com segurança.
       let savedMessage: any;
-      if (waMsgId) {
-        savedMessage = await prisma.message.upsert({
-          where: { conversationId_waMsgId: { conversationId: conversation.id, waMsgId } },
-          update: {
-            // Atualiza a URL da mídia se o download falhou antes mas funcionou agora
-            ...(savedMediaUrl ? { mediaUrl: savedMediaUrl } : {}),
-          },
-          create: {
-            conversationId: conversation.id,
-            whatsappId: accountId,
-            type: msgType,
-            content,
-            mediaType,
-            mediaUrl: savedMediaUrl,
-            isFromMe: false,
-            quotedMessageId,
-            quotedContent,
-            senderName,
-            senderJid,
-            waMsgId,
-            messageId: waMsgId, // legado
-            timestamp: receivedAt, // FIX 3: timestamp real
-            fromPhone: fromPhone,
-            toPhone: msg.key.participant || '',
-          },
-        });
-
-        // Se a mensagem já existia (update path), não reemite evento
-        // nem atualiza contadores — seria duplicata.
-        const isNewMessage = !savedMessage.updatedAt ||
-          savedMessage.createdAt.getTime() === savedMessage.updatedAt?.getTime() ||
-          (new Date().getTime() - savedMessage.createdAt.getTime()) < 5000;
-
-        // Heurística: se criada há menos de 5s, é nova. Senão, era duplicata.
-        const justCreated = (Date.now() - savedMessage.createdAt.getTime()) < 5000;
-        if (!justCreated) {
-          // Era duplicata, sai silenciosamente
-          return;
-        }
-      } else {
-        // Sem waMsgId (edge case raro), usa insert simples
+      try {
         savedMessage = await prisma.message.create({
           data: {
             conversationId: conversation.id,
@@ -1210,16 +1152,19 @@ class WhatsAppSessionManager extends EventEmitter {
             quotedContent,
             senderName,
             senderJid,
-            waMsgId: null,
-            messageId: null,
+            waMsgId,
+            messageId: waMsgId,
             timestamp: receivedAt,
             fromPhone: fromPhone,
             toPhone: msg.key.participant || '',
           },
         });
+      } catch (dbErr: any) {
+        if (dbErr?.code === 'P2002') return; // Duplicata já gravada no banco
+        throw dbErr;
       }
 
-      // FIX 6: usa timestamp real do WhatsApp para lastMessageAt
+      // Atualizar conversa com o timestamp real da mensagem
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -1363,30 +1308,8 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       }
 
-      // FIX 2: upsert atômico — o eco do celular pode chegar antes desta
-      // rotina terminar. O upsert garante idempotência sem race condition.
       let savedMessage: any;
-      if (waMsgId) {
-        savedMessage = await prisma.message.upsert({
-          where: { conversationId_waMsgId: { conversationId: conversation.id, waMsgId } },
-          update: {},
-          create: {
-            conversationId: conversation.id,
-            whatsappId: accountId,
-            type,
-            content,
-            mediaUrl,
-            mediaType: type === 'text' ? null : type,
-            isFromMe: true,
-            isRead: true,
-            waMsgId,
-            messageId: waMsgId,
-            timestamp: now, // FIX 3: timestamp do envio
-            fromPhone: '',
-            toPhone: toPhone,
-          },
-        });
-      } else {
+      try {
         savedMessage = await prisma.message.create({
           data: {
             conversationId: conversation.id,
@@ -1397,13 +1320,16 @@ class WhatsAppSessionManager extends EventEmitter {
             mediaType: type === 'text' ? null : type,
             isFromMe: true,
             isRead: true,
-            waMsgId: null,
-            messageId: null,
+            waMsgId,
+            messageId: waMsgId,
             timestamp: now,
             fromPhone: '',
             toPhone: toPhone,
           },
         });
+      } catch (dbErr: any) {
+        if (dbErr?.code === 'P2002') return; // Já enviado/gravado
+        throw dbErr;
       }
 
       // FIX 6: usa timestamp real para lastMessageAt
