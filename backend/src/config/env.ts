@@ -16,10 +16,9 @@ export const env = {
   maxReconnectAttempts: parseInt(process.env.MAX_RECONNECT_ATTEMPTS || '100', 10),
   reconnectInitialDelay: parseInt(process.env.RECONNECT_INITIAL_DELAY || '5000', 10),
   reconnectMaxDelay: parseInt(process.env.RECONNECT_MAX_DELAY || '60000', 10),
-  historyMessageLimit: parseInt(process.env.HISTORY_MESSAGE_LIMIT || '100', 10),
-  // O WhatsApp pode oferecer anos de histórico ao vincular um dispositivo.
-  // A central trabalha com atendimento recente, não com uma importação infinita.
-  historySyncDays: parseInt(process.env.HISTORY_SYNC_DAYS || '30', 10),
+  historyMessageLimit: parseInt(process.env.HISTORY_MESSAGE_LIMIT || '0', 10),
+  // 0 = sem limite. Use variável de ambiente para restringir se necessário.
+  historySyncDays: parseInt(process.env.HISTORY_SYNC_DAYS || '365', 10),
   uploadPath: process.env.UPLOAD_PATH || './uploads',
   maxUploadSize: process.env.MAX_UPLOAD_SIZE || '50MB',
   logLevel: process.env.LOG_LEVEL || 'info',

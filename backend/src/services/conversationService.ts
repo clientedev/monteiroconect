@@ -47,18 +47,11 @@ export async function listConversations(opts: ListConversationsOpts) {
     }),
   ]);
 
-  // Nunca exibe a conversa técnica da própria conta ou os eventos de
-  // protocolo que possam ter sido gravados por versões antigas.
-  const visible = conversations.filter(c =>
-    c.contact.phone !== account?.phone &&
-    !c.lastMessage?.includes('protocolMessage')
-  );
-
   return {
-    total: total - (conversations.length - visible.length),
+    total,
     page,
     limit,
-    conversations: visible.map(c => ({
+    conversations: conversations.map(c => ({
       id: c.id,
       contactId: c.contact.id,
       contactName: publicContactName(c.contact.name, c.contact.phone),

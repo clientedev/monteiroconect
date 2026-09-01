@@ -176,7 +176,7 @@ export default function ConversationsPage() {
     } catch {}
   }, []);
 
-  /** FIX 6.2: Carrega página anterior (histórico mais antigo) */
+  /** FIX 6.2: Carrega pagina anterior (historico mais antigo) */
   const loadMoreMessages = async () => {
     if (!selectedConv || loadingMore) return;
     const nextPage = msgPage + 1;
@@ -184,20 +184,36 @@ export default function ConversationsPage() {
     if (!hasMore) return;
 
     setLoadingMore(true);
-    // Salva posição do scroll antes de adicionar mensagens acima
+    // Salva posicao do scroll antes de adicionar mensagens acima
     const container = messagesTopRef.current?.parentElement;
     const prevScrollHeight = container?.scrollHeight || 0;
 
     await loadMessages(selectedConv.id, nextPage);
     setLoadingMore(false);
 
-    // Mantém a posição visual após prepend
+    // Mantem a posicao visual apos prepend
     requestAnimationFrame(() => {
       if (container) {
         container.scrollTop = container.scrollHeight - prevScrollHeight;
       }
     });
   };
+
+  // Recarrega mensagens da conversa aberta periodicamente para garantir exibicao
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (!selectedConv) {
+      if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+      return;
+    }
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    pollIntervalRef.current = setInterval(() => {
+      if (selectedConvRef.current) loadMessages(selectedConvRef.current.id, 1);
+    }, 5000); // polling a cada 5s como fallback
+    return () => {
+      if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+    };
+  }, [selectedConv, loadMessages]);
 
   useEffect(() => { loadAccounts(); }, []);
   useEffect(() => { loadConversations(); }, [loadConversations]);
@@ -364,7 +380,13 @@ export default function ConversationsPage() {
       if (data.accountId === selectedAccountIdRef.current) loadConversations();
     };
     const onHistory = (data: any) => {
-      if (data.accountId === selectedAccountIdRef.current) loadConversations();
+      if (data.accountId === selectedAccountIdRef.current) {
+        loadConversations();
+        // Recarrega mensagens da conversa aberta se houver
+        if (selectedConvRef.current) {
+          loadMessages(selectedConvRef.current.id, 1);
+        }
+      }
     };
     const onConvRead = (data: { conversationId: string }) => {
       setConversations(prev =>
@@ -417,7 +439,10 @@ export default function ConversationsPage() {
     setNewMessage('');
     try {
       await conversationApi.send(selectedAccountId, selectedConv.contactPhone, text);
-      await loadMessages(selectedConv.id, 1);
+      // Recarrega mensagens para garantir que a mensagem enviada apareca
+      setTimeout(() => {
+        if (selectedConvRef.current) loadMessages(selectedConvRef.current.id, 1);
+      }, 500);
     } catch (err: any) {
       setNewMessage(text);
       alert('Erro ao enviar: ' + (err.message || 'tente novamente'));

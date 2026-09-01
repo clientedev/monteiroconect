@@ -853,11 +853,18 @@ class WhatsAppSessionManager extends EventEmitter {
         const q = this.historyQueue.get(accountId) || [];
         const data = q.shift();
         if (!data) break;
-        total += await this.importHistoryBatch(accountId, data);
+        try {
+          total += await this.importHistoryBatch(accountId, data);
+        } catch (batchErr) {
+          logger.error(`[${accountId}] Erro ao importar lote de histórico:`, batchErr);
+        }
       }
       if (total > 0) {
         this.emit('history-imported', { accountId, total });
+        logger.info(`[${accountId}] Histórico completo importado: ${total} mensagens`);
       }
+    } catch (err) {
+      logger.error(`[${accountId}] Erro fatal na fila de histórico:`, err);
     } finally {
       this.historyImporting.delete(accountId);
       this.historyQueue.delete(accountId);
@@ -865,14 +872,11 @@ class WhatsAppSessionManager extends EventEmitter {
   }
 
   private async importHistoryBatch(accountId: string, data: any): Promise<number> {
-    const limit = env.historyMessageLimit;
-    if (limit <= 0) return 0;
-
-    await this.syncContactNames(accountId, data.contacts || []);
+    const limit = env.historyMessageLimit; // 0 = sem limite
     const cutoff = new Date(Date.now() - Math.max(1, env.historySyncDays) * 24 * 60 * 60 * 1000);
-    // FIX 5: janela para download de mídia do histórico (24h)
     const mediaCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+    await this.syncContactNames(accountId, data.contacts || []);
     // Nomes de contato vindos do sync (jid -> nome)
     const nameByJid = new Map<string, string>();
     for (const c of data.contacts || []) {
@@ -962,68 +966,104 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       }
 
-      // FIX 2: Carrega waMsgIds existentes para deduplicação (não messageId legado)
-      const existingWaMsgIds = new Set(
-        (await prisma.message.findMany({
-          where: { conversationId: conversation.id, waMsgId: { not: null } },
-          select: { waMsgId: true },
-        })).map(m => m.waMsgId as string)
-      );
-      // Também verifica messageId legado para dados já existentes
-      const existingLegacyIds = new Set(
-        (await prisma.message.findMany({
-          where: { conversationId: conversation.id, waMsgId: null, messageId: { not: null } },
+      // Carrega IDs ja existentes para deduplicacao (usa messageId que sempre existiu)
+      const existingMessageIds = new Set<string>();
+      try {
+        const existing = await prisma.message.findMany({
+          where: { conversationId: conversation.id, messageId: { not: null } },
           select: { messageId: true },
-        })).map(m => m.messageId as string)
-      );
+        });
+        existing.forEach(m => { if (m.messageId) existingMessageIds.add(m.messageId); });
+      } catch (dedupeErr) {
+        logger.warn(`[${accountId}] Nao foi possivel carregar IDs existentes para dedup: ${dedupeErr}`);
+      }
 
-      const toCreate: any[] = [];
+      // Tenta insert em lote com schema completo; faz fallback para schema minimo
+      const toCreateFull: any[] = [];
+      const toCreateMin: any[] = [];
+
       for (const m of recent) {
         const mid = m.key?.id;
         if (!mid) continue;
-        if (existingWaMsgIds.has(mid) || existingLegacyIds.has(mid)) continue;
-        existingWaMsgIds.add(mid);
+        if (existingMessageIds.has(mid)) continue;
+        existingMessageIds.add(mid);
 
         const { content, mediaType, messageType, quotedMessageId, quotedContent } = this.extractContent(m);
         const ts = this.msgTimestamp(m);
         const isGroupHist = jid.endsWith('@g.us');
 
-        // FIX 5: Tenta baixar mídia de mensagens recentes do histórico (24h)
         let histMediaUrl: string | null = null;
         if (mediaType && ts >= mediaCutoff) {
           histMediaUrl = await this.tryDownloadMedia(m, mid, mediaType);
         }
 
-        toCreate.push({
+        const msgType = messageType === 'conversation' || messageType === 'extendedTextMessage'
+          ? 'text' : (mediaType || messageType);
+
+        toCreateFull.push({
           conversationId: conversation.id,
           whatsappId: accountId,
-          type: messageType === 'conversation' || messageType === 'extendedTextMessage' ? 'text' : (mediaType || messageType),
+          type: msgType,
           content,
           mediaType,
-          mediaUrl: histMediaUrl,  // FIX 5: mídia baixada quando disponível
+          mediaUrl: histMediaUrl,
           isFromMe: !!m.key.fromMe,
           isRead: true,
           quotedMessageId,
           quotedContent,
           senderName: isGroupHist ? (m.pushName || null) : null,
           senderJid: isGroupHist ? (m.key.participant || null) : null,
-          waMsgId: mid,            // FIX 2: campo de deduplicação
-          messageId: mid,           // legado
-          timestamp: ts,            // FIX 3: timestamp real
+          waMsgId: mid,
+          messageId: mid,
+          timestamp: ts,
           fromPhone: m.key.fromMe ? '' : contactPhone,
           toPhone: m.key.fromMe ? contactPhone : '',
         });
 
-        if (toCreate.length >= 200) {
-          await prisma.message.createMany({ data: toCreate, skipDuplicates: true });
-          imported += toCreate.length;
-          toCreate.length = 0;
+        toCreateMin.push({
+          conversationId: conversation.id,
+          whatsappId: accountId,
+          type: msgType,
+          content,
+          mediaType,
+          mediaUrl: histMediaUrl,
+          isFromMe: !!m.key.fromMe,
+          isRead: true,
+          quotedMessageId,
+          quotedContent,
+          messageId: mid,
+          fromPhone: m.key.fromMe ? '' : contactPhone,
+        });
+
+        if (toCreateFull.length >= 200) {
+          const batchMin = toCreateMin.slice();
+          toCreateFull.length = 0;
+          toCreateMin.length = 0;
+          try {
+            await prisma.message.createMany({ data: toCreateFull.slice(), skipDuplicates: true });
+            imported += batchMin.length;
+          } catch {
+            logger.warn(`[${accountId}] Fallback compativel no lote de 200`);
+            for (const row of batchMin) {
+              try { await prisma.message.create({ data: row }); imported++; } catch { /* duplicate ok */ }
+            }
+          }
         }
       }
-      if (toCreate.length > 0) {
-        await prisma.message.createMany({ data: toCreate, skipDuplicates: true });
-        imported += toCreate.length;
+
+      if (toCreateFull.length > 0) {
+        const batchMin = toCreateMin.slice();
+        try {
+          await prisma.message.createMany({ data: toCreateFull, skipDuplicates: true });
+          imported += batchMin.length;
+        } catch {
+          logger.warn(`[${accountId}] Fallback compativel no lote final`);
+          for (const row of batchMin) {
+            try { await prisma.message.create({ data: row }); imported++; } catch { /* duplicate ok */ }
+          }
+        }
       }
+
 
       // FIX 6: usa timestamp real para lastMessageAt
       const lastMsg = recent[recent.length - 1];
@@ -1082,7 +1122,8 @@ class WhatsAppSessionManager extends EventEmitter {
       const filePath = path.join(env.uploadPath, fileName);
       await fs.writeFile(filePath, buffer);
       return `/uploads/${fileName}`;
-    } catch {
+    } catch (err) {
+      logger.warn(`Erro ao baixar mídia para mensagem ${msgId}:`, err);
       return null;
     }
   }
@@ -1095,20 +1136,17 @@ class WhatsAppSessionManager extends EventEmitter {
       const waMsgId = msg.key.id || null;
       const isGroup = remoteJid.endsWith('@g.us');
       const fromPhone = this.jidToContactPhone(remoteJid);
-      const pushName = this.usableContactName(msg.pushName, fromPhone) || this.cachedContactName(accountId, remoteJid);
+      const pushName = this.usableContactName(msg.pushName || '', fromPhone) || this.cachedContactName(accountId, remoteJid);
 
-      // Em grupo: contato = grupo (nome real via metadata); remetente fica
-      // registrado em cada mensagem (senderName/senderJid)
       const senderJid = isGroup ? (msg.key.participant || null) : null;
       const senderName = isGroup ? (msg.pushName || (senderJid ? this.jidToContactPhone(senderJid) : null)) : null;
 
       let contactName = pushName;
       if (isGroup) {
         const groupName = await this.getGroupName(accountId, remoteJid);
-        contactName = this.usableContactName(groupName, fromPhone);
+        contactName = this.usableContactName(groupName || '', fromPhone);
       }
 
-      // Salvar/atualizar contato
       let contact = await prisma.contact.findUnique({
         where: { phone_whatsappId: { phone: fromPhone, whatsappId: accountId } },
       });
@@ -1117,13 +1155,11 @@ class WhatsAppSessionManager extends EventEmitter {
         contact = await prisma.contact.create({
           data: {
             phone: fromPhone,
-            name: contactName,
+            name: contactName || fromPhone,
             whatsappId: accountId,
           },
         });
       } else {
-        // Só sobrescreve o nome se ainda for o fallback (telefone/JID),
-        // preservando nomes editados manualmente
         const shouldRename = !!contactName && (!contact.name || contact.name === contact.phone);
         contact = await prisma.contact.update({
           where: { id: contact.id },
@@ -1131,7 +1167,6 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       }
 
-      // Buscar ou criar conversa
       let conversation = await prisma.conversation.findUnique({
         where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
       });
@@ -1145,18 +1180,14 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       }
 
-      // Extrair conteúdo da mensagem
       const { content, mediaType, messageType, quotedMessageId, quotedContent } = this.extractContent(msg);
       const receivedAt = this.msgTimestamp(msg);
       const msgType = messageType === 'conversation' || messageType === 'extendedTextMessage'
         ? 'text'
         : (mediaType || messageType);
 
-      // Download mídia seguro
       const savedMediaUrl = mediaType ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType) : null;
 
-      // Deduplicação atômica via constraint de banco.
-      // Se a mensagem já existe (P2002 no waMsgId), ignora a duplicata com segurança.
       let savedMessage: any;
       try {
         savedMessage = await prisma.message.create({
@@ -1180,11 +1211,30 @@ class WhatsAppSessionManager extends EventEmitter {
           },
         });
       } catch (dbErr: any) {
-        if (dbErr?.code === 'P2002') return; // Duplicata já gravada no banco
-        throw dbErr;
+        if (dbErr?.code === 'P2002') return;
+        logger.warn(`[${accountId}] Salvando mensagem em modo compatível: ${dbErr?.message?.slice(0, 120)}`);
+        try {
+          savedMessage = await prisma.message.create({
+            data: {
+              conversationId: conversation.id,
+              whatsappId: accountId,
+              type: msgType,
+              content,
+              mediaType,
+              mediaUrl: savedMediaUrl,
+              isFromMe: false,
+              quotedMessageId,
+              quotedContent,
+              messageId: waMsgId,
+              fromPhone: fromPhone,
+            },
+          });
+        } catch (fallbackErr: any) {
+          logger.error(`[${accountId}] ERRO CRÍTICO ao salvar mensagem incoming:`, fallbackErr);
+          return;
+        }
       }
 
-      // Atualizar conversa com o timestamp real da mensagem
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -1194,7 +1244,6 @@ class WhatsAppSessionManager extends EventEmitter {
         },
       });
 
-      // Emitir via WebSocket
       this.emit('message', {
         accountId,
         conversationId: conversation.id,
@@ -1225,7 +1274,6 @@ class WhatsAppSessionManager extends EventEmitter {
         },
       });
 
-      // Atualizar contato
       await prisma.contact.update({
         where: { id: contact.id },
         data: { lastMessage: content, lastContact: receivedAt },
@@ -1349,7 +1397,27 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       } catch (dbErr: any) {
         if (dbErr?.code === 'P2002') return; // Já enviado/gravado
-        throw dbErr;
+        // Fallback: schema sem campos novos
+        logger.warn(`[${accountId}] saveOutgoingMessage modo compatível: ${dbErr?.message?.slice(0, 120)}`);
+        try {
+          savedMessage = await prisma.message.create({
+            data: {
+              conversationId: conversation.id,
+              whatsappId: accountId,
+              type,
+              content,
+              mediaUrl,
+              mediaType: type === 'text' ? null : type,
+              isFromMe: true,
+              isRead: true,
+              messageId: waMsgId,
+              toPhone: toPhone,
+            },
+          });
+        } catch (fallbackErr: any) {
+          logger.error(`[${accountId}] ERRO CRÍTICO ao salvar mensagem saída:`, fallbackErr);
+          return;
+        }
       }
 
       // FIX 6: usa timestamp real para lastMessageAt
