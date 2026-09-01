@@ -97,7 +97,6 @@ export async function getConversationMessages(
   const messages = await prisma.message.findMany({
     where: { conversationId },
     orderBy: [
-      { timestamp: 'desc' },
       { createdAt: 'desc' },
       { id: 'desc' },
     ],

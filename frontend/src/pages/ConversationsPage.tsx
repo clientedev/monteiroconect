@@ -407,6 +407,7 @@ export default function ConversationsPage() {
     setNewMessage('');
     try {
       await conversationApi.send(selectedAccountId, selectedConv.contactPhone, text);
+      await loadMessages(selectedConv.id, 1);
     } catch (err: any) {
       setNewMessage(text);
       alert('Erro ao enviar: ' + (err.message || 'tente novamente'));
@@ -437,6 +438,7 @@ export default function ConversationsPage() {
       else if (mime.startsWith('audio/')) type = 'audio';
 
       await conversationApi.send(selectedAccountId, selectedConv.contactPhone, '', type, url);
+      await loadMessages(selectedConv.id, 1);
     } catch (err: any) {
       alert('Erro ao enviar arquivo: ' + (err.message || 'tente novamente'));
     }

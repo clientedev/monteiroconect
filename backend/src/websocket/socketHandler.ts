@@ -64,13 +64,9 @@ export function setupWebSocket(httpServer: HttpServer): Server {
   });
 
   // Forward session manager events to WebSocket clients
-  // FIX 4: Emite eventos por room específica em vez de broadcast global.
-  // Com múltiplos WhatsApps, um broadcast para todos os clientes é desnecessário
-  // e pode causar atualizações cruzadas entre contas diferentes.
-
   sessionManager.on('status-change', (data) => {
+    io.emit('whatsapp:status', data);
     io.to(`account:${data.accountId}`).emit('whatsapp:status', data);
-    io.to('app').emit('whatsapp:status', data); // admins veem tudo
     createLog(
       data.status === 'CONNECTED' ? 'info' : data.status === 'ERROR' ? 'error' : 'warning',
       `WhatsApp "${data.name}" status: ${data.status}`,
@@ -80,26 +76,22 @@ export function setupWebSocket(httpServer: HttpServer): Server {
   });
 
   sessionManager.on('qr-code', (data) => {
+    io.emit('whatsapp:qr', data);
     io.to(`account:${data.accountId}`).emit('whatsapp:qr', data);
-    io.to('app').emit('whatsapp:qr', data);
   });
 
   sessionManager.on('connected', (data) => {
-    io.to(`account:${data.accountId}`).emit('whatsapp:connected', data);
-    io.to('app').emit('whatsapp:connected', data);
+    io.emit('whatsapp:connected', data);
     createLog('info', `WhatsApp "${data.name}" conectado (${data.phone})`, 'whatsapp', data.accountId);
   });
 
   sessionManager.on('disconnected', (data) => {
-    io.to(`account:${data.accountId}`).emit('whatsapp:disconnected', data);
-    io.to('app').emit('whatsapp:disconnected', data);
+    io.emit('whatsapp:disconnected', data);
     createLog('warning', `WhatsApp desconectado: ${data.accountId} (${data.reason})`, 'whatsapp', data.accountId);
   });
 
   sessionManager.on('message', (data) => {
-    // Emite para a room da conta (lista de conversas) e da conversa específica
-    io.to(`account:${data.accountId}`).emit('message:new', data);
-    io.to(`conversation:${data.conversationId}`).emit('message:new', data);
+    io.emit('message:new', data);
 
     prisma.notification.create({
       data: {
@@ -111,22 +103,19 @@ export function setupWebSocket(httpServer: HttpServer): Server {
   });
 
   sessionManager.on('message-sent', (data) => {
-    io.to(`account:${data.accountId}`).emit('message:sent', data);
-    io.to(`conversation:${data.conversationId}`).emit('message:sent', data);
+    io.emit('message:sent', data);
   });
 
   sessionManager.on('history-imported', (data) => {
-    io.to(`account:${data.accountId}`).emit('history:imported', data);
-    io.to('app').emit('history:imported', data);
+    io.emit('history:imported', data);
   });
 
   sessionManager.on('contacts-updated', (data) => {
-    io.to(`account:${data.accountId}`).emit('contacts:updated', data);
+    io.emit('contacts:updated', data);
   });
 
   sessionManager.on('reconnect-failed', (data) => {
-    io.to(`account:${data.accountId}`).emit('whatsapp:reconnect-failed', data);
-    io.to('app').emit('whatsapp:reconnect-failed', data);
+    io.emit('whatsapp:reconnect-failed', data);
     createLog('error', `Reconexão falhou: ${data.accountId}`, 'whatsapp', data.accountId);
   });
 
