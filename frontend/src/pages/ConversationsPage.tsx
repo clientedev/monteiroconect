@@ -134,14 +134,16 @@ export default function ConversationsPage() {
   }, []);
 
   const loadConversations = useCallback(async (accountId?: string) => {
-    const accId = accountId || selectedAccountIdRef.current;
+    const accId = accountId || selectedAccountIdRef.current || selectedAccountId;
     if (!accId) return;
     try {
       const data = await conversationApi.list(accId, search);
       setConversations(data.conversations || []);
-    } catch {}
+    } catch (err) {
+      console.error('Erro ao carregar conversas:', err);
+    }
     finally { setLoading(false); }
-  }, [search]);
+  }, [search, selectedAccountId]);
 
   /** Carrega as mensagens de uma conversa. page=1 substitui tudo; page>1 prepend. */
   const loadMessages = useCallback(async (convId: string, page = 1) => {

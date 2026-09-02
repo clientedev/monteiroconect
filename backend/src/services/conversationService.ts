@@ -39,7 +39,7 @@ export async function listConversations(opts: ListConversationsOpts) {
         tags: { include: { tag: true } },
       },
       orderBy: [
-        { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+        { lastMessageAt: 'desc' },
         { updatedAt: 'desc' },
       ],
       skip,
@@ -87,10 +87,12 @@ export async function getConversationMessages(
     include: { contact: true },
   });
 
+  if (!currentConv) throw new AppError('Conversa não encontrada', 404);
+
   let targetConvIds = [conversationId];
 
-  if (currentConv?.contact) {
-    const rawPhone = currentConv.contact.phone;
+  const rawPhone = currentConv.contact?.phone;
+  if (rawPhone) {
     const cleanPhone = rawPhone.replace('@s.whatsapp.net', '').replace(/:\d+$/, '');
 
     const matchingConversations = await prisma.conversation.findMany({
