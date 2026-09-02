@@ -1173,7 +1173,8 @@ class WhatsAppSessionManager extends EventEmitter {
     const byConversation = new Map<string, WAMessage[]>();
     for (const m of data.messages || []) {
       if (!this.isUsableChatMessage(accountId, m)) continue;
-      const jid = this.canonicalJid(accountId, m.key?.remoteJid || '');
+      const jid = this.canonicalJid(accountId, this.messageRemoteJid(m));
+      if (!jid) continue;
       if (this.msgTimestamp(m) < cutoff) continue;
       const arr = byConversation.get(jid) || [];
       arr.push(m);
@@ -1262,12 +1263,12 @@ class WhatsAppSessionManager extends EventEmitter {
           quotedMessageId,
           quotedContent,
           senderName: isGroupHist ? (m.pushName || null) : null,
-          senderJid: isGroupHist ? (m.key.participant || null) : null,
+           senderJid: isGroupHist ? this.messageParticipantJid(m) : null,
           waMsgId: mid,
           messageId: mid,
           timestamp: ts,
-          fromPhone: m.key.fromMe ? '' : contactPhone,
-          toPhone: m.key.fromMe ? contactPhone : '',
+           fromPhone: m.key.fromMe ? '' : contactPhone,
+           toPhone: m.key.fromMe ? contactPhone : '',
         });
 
         toCreateMin.push({
