@@ -50,6 +50,7 @@ export async function listContacts(opts: ListContactsOpts) {
     contacts: contacts.map(contact => ({
       id: contact.id,
       name: publicContactName(contact.name, contact.phone),
+      phone: contact.phone,
       conversationId: contact.conversations[0]?.id || null,
       conversationCount: contact.conversations.length,
     })),

@@ -18,7 +18,7 @@ import {
 interface Contact {
   id: string;
   name: string | null;
-  phone: string;
+  phone: string | null;
   conversationId: string | null;
 }
 
@@ -77,7 +77,7 @@ export default function BroadcastPage() {
   const connected = selectedAccount?.status === 'CONNECTED';
   const visibleIds = useMemo(() => contacts.map(contact => contact.id), [contacts]);
   const selectedContacts = useMemo(
-    () => contacts.filter(contact => selectedIds.has(contact.id)),
+    () => contacts.filter(contact => selectedIds.has(contact.id) && !!contact.phone?.trim()),
     [contacts, selectedIds],
   );
 
@@ -175,7 +175,9 @@ export default function BroadcastPage() {
     try {
       const response = await conversationApi.broadcast(
         accountId,
-        selectedContacts.map(contact => contact.phone),
+        selectedContacts
+          .map(contact => contact.phone)
+          .filter((phone): phone is string => !!phone?.trim()),
         attachment?.type === 'document' ? (message.trim() || attachment.originalName) : message.trim(),
         attachment?.type || 'text',
         attachment?.url,
@@ -251,7 +253,7 @@ export default function BroadcastPage() {
               />
             </div>
             <div className="flex items-center justify-between text-xs text-monte-sereno">
-              <span>{selectedIds.size} selecionado(s) de {contacts.length}</span>
+               <span>{selectedContacts.length} selecionado(s) de {contacts.length}</span>
               <button type="button" className="font-semibold text-monte-verde hover:underline" onClick={toggleVisible} disabled={!contacts.length}>
                 {visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id)) ? 'Desmarcar visíveis' : 'Selecionar visíveis'}
               </button>
@@ -283,7 +285,7 @@ export default function BroadcastPage() {
                   </div>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-monte-azul truncate">{displayContact(contact)}</span>
-                    <span className="block text-xs text-monte-sereno truncate">{contact.phone}</span>
+                     <span className="block text-xs text-monte-sereno truncate">{contact.phone || 'Telefone indisponível'}</span>
                   </span>
                 </button>
               );
@@ -328,7 +330,7 @@ export default function BroadcastPage() {
           </div>
 
           <div className="rounded-2xl bg-monte-areiaSecao p-3 text-xs text-monte-sereno">
-            <p><strong className="text-monte-azul">{selectedIds.size}</strong> contato(s) receberão esta mensagem.</p>
+             <p><strong className="text-monte-azul">{selectedContacts.length}</strong> contato(s) receberão esta mensagem.</p>
             {!message.trim() && !attachment && <p className="mt-1 text-amber-700">Digite uma mensagem ou adicione um arquivo.</p>}
           </div>
 
@@ -336,7 +338,7 @@ export default function BroadcastPage() {
             type="button"
             className="btn-primary w-full flex items-center justify-center gap-2"
             onClick={handleSend}
-            disabled={!connected || selectedIds.size === 0 || (!message.trim() && !attachment) || uploading || sending}
+             disabled={!connected || selectedContacts.length === 0 || (!message.trim() && !attachment) || uploading || sending}
           >
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             {sending ? 'Enviando disparo...' : 'Enviar para selecionados'}
