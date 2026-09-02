@@ -1,7 +1,7 @@
 import { prisma } from '../database/client.js';
 import { AppError } from '../utils/errors.js';
 
-export interface SessionUser { id: string; role: string; }
+export interface SessionUser { id: string; username?: string; role: string; }
 
 export async function accessibleAccountIds(user: SessionUser): Promise<string[] | null> {
   if (user.role === 'admin') return null;

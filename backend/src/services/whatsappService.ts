@@ -103,7 +103,7 @@ export async function sendWhatsAppMessage(
   user?: SessionUser,
 ) {
   if (user) await assertAccountAccess(user, accountId);
-  return sessionManager.sendMessage(accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName);
+  return sessionManager.sendMessage(accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName, user?.username);
 }
 
 export async function broadcastWhatsAppMessages(
@@ -132,6 +132,7 @@ export async function broadcastWhatsAppMessages(
         data.mediaUrl,
         data.mediaMimeType,
         data.mediaFileName,
+        user.username,
       );
       results.push({ to, ok: true });
     } catch (err: any) {

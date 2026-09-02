@@ -551,6 +551,7 @@ class WhatsAppSessionManager extends EventEmitter {
     mediaUrl?: string,
     mediaMimeType?: string,
     mediaFileName?: string,
+    senderName?: string,
   ): Promise<any> {
     const session = this.sessions.get(accountId);
     if (!session?.socket) {
@@ -596,7 +597,7 @@ class WhatsAppSessionManager extends EventEmitter {
       result = await session.socket.sendMessage(jid, { text: content });
     }
 
-    await this.saveOutgoingMessage(accountId, jid, content, type, mediaUrl ?? null, result);
+    await this.saveOutgoingMessage(accountId, jid, content, type, mediaUrl ?? null, result, senderName);
     return result;
   }
 
@@ -1709,6 +1710,7 @@ class WhatsAppSessionManager extends EventEmitter {
     type: string,
     mediaUrl: string | null,
     result: any,
+    senderName?: string,
   ): Promise<void> {
     try {
       const toPhone = this.jidToContactPhone(this.canonicalJid(accountId, jid));
@@ -1747,6 +1749,7 @@ class WhatsAppSessionManager extends EventEmitter {
             mediaType: type === 'text' ? null : type,
             isFromMe: true,
             isRead: true,
+            senderName: senderName || null,
             waMsgId,
             messageId: waMsgId,
             timestamp: now,
@@ -1772,6 +1775,7 @@ class WhatsAppSessionManager extends EventEmitter {
                 mediaType: type === 'text' ? null : type,
                 isFromMe: true,
                 isRead: true,
+                senderName: senderName || null,
                 messageId: waMsgId,
                 toPhone: toPhone,
               },
@@ -1789,6 +1793,12 @@ class WhatsAppSessionManager extends EventEmitter {
         }
       }
       if (!savedMessage) return;
+      if (senderName && !savedMessage.senderName) {
+        savedMessage = await prisma.message.update({
+          where: { id: savedMessage.id },
+          data: { senderName },
+        });
+      }
 
       // FIX 6: usa timestamp real para lastMessageAt
       await prisma.conversation.update({
@@ -1810,6 +1820,7 @@ class WhatsAppSessionManager extends EventEmitter {
           mediaType: savedMessage.mediaType,
           mediaUrl,
           isFromMe: true,
+          senderName: savedMessage.senderName || senderName || null,
           timestamp: now,
           createdAt: savedMessage.createdAt,
         },

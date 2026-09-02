@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api, whatsappApi, conversationApi } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff } from 'lucide-react';
 
 interface ConvItem {
@@ -94,6 +95,7 @@ const formatTime = (date?: string | null) => {
 
 export default function ConversationsPage() {
   const { socket } = useSocket();
+  const { user } = useAuth();
   const location = useLocation();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
@@ -409,6 +411,7 @@ export default function ConversationsPage() {
             fromPhone: null,
             quotedMessageId: data.message.quotedMessageId,
             quotedContent: data.message.quotedContent,
+            senderName: data.message.senderName || user?.username || null,
           });
           return map;
         });
@@ -459,7 +462,7 @@ export default function ConversationsPage() {
       socket.off('sync:progress', onSyncProgress);
       socket.off('conversation:read', onConvRead);
     };
-  }, [socket, loadConversations, loadMessages, scheduleConversationsRefresh]);
+  }, [socket, loadConversations, loadMessages, scheduleConversationsRefresh, user]);
 
   const handleSync = async () => {
     if (!selectedAccountId || syncing) return;
@@ -775,9 +778,11 @@ export default function ConversationsPage() {
                       ? 'bg-monte-verde text-white rounded-br-lg'
                       : 'bg-white/80 backdrop-blur-sm border border-monte-sereno/15 text-monte-azul rounded-bl-lg'
                   }`}>
-                    {/* Remetente (mensagens de grupo) */}
-                    {!msg.isFromMe && msg.senderName && (
-                      <p className="text-xs font-bold text-monte-terracota mb-1 truncate">{msg.senderName}</p>
+                    {/* Remetente: atendente logado nas mensagens do painel ou contato em grupos */}
+                    {msg.senderName && (
+                      <p className={`text-xs font-bold mb-1 truncate ${msg.isFromMe ? 'text-white/80' : 'text-monte-terracota'}`}>
+                        {msg.senderName}
+                      </p>
                     )}
                     {/* Mensagem respondida (reply) */}
                     {msg.quotedContent && (
