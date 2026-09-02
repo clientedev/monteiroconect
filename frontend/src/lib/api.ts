@@ -112,6 +112,7 @@ export const whatsappApi = {
   remove: (id: string) => api.del(`/whatsapp/${id}`),
   refreshQR: (id: string) => api.post<{ qrCode: string }>(`/whatsapp/${id}/refresh-qr`),
   sync: (id: string) => api.post<{ contacts: number; groups: number }>(`/whatsapp/${id}/sync`),
+  syncProgress: (id: string) => api.get<any>(`/whatsapp/${id}/sync-progress`),
 };
 
 // Conversations
@@ -129,7 +130,7 @@ export const conversationApi = {
 // Contacts
 export const contactApi = {
   list: (whatsappId: string, search?: string) =>
-    api.get<any>(`/contacts?whatsappId=${whatsappId}&search=${search || ''}`),
+    api.get<any>(`/contacts?whatsappId=${encodeURIComponent(whatsappId)}&search=${encodeURIComponent(search || '')}`),
   update: (id: string, data: {
     name?: string;
     notes?: string;

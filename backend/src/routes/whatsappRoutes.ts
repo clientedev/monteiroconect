@@ -7,6 +7,7 @@ import {
   removeWhatsApp,
   refreshQRCode,
   syncWhatsApp,
+  getWhatsAppSyncProgress,
 } from '../services/whatsappService.js';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { z } from 'zod';
@@ -79,6 +80,15 @@ router.post('/:id/sync', async (req: AuthRequest, res, next) => {
   try {
     const result = await syncWhatsApp(String(req.params.id), req.user!);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/sync-progress', async (req: AuthRequest, res, next) => {
+  try {
+    const progress = await getWhatsAppSyncProgress(String(req.params.id), req.user!);
+    res.json(progress);
   } catch (err) {
     next(err);
   }

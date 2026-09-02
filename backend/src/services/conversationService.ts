@@ -2,8 +2,14 @@ import { prisma } from '../database/client.js';
 import { AppError } from '../utils/errors.js';
 
 function publicContactName(name: string | null, phone: string): string | null {
-  if (!name || name === phone || name.endsWith('@lid') || name.endsWith('@s.whatsapp.net')) return null;
-  return name;
+  const value = name?.trim() || '';
+  if (
+    !value ||
+    value === phone ||
+    /@(?:lid|s\.whatsapp\.net|g\.us)$/.test(value) ||
+    /^\+?[\d\s().-]{7,}$/.test(value)
+  ) return null;
+  return value;
 }
 
 interface ListConversationsOpts {

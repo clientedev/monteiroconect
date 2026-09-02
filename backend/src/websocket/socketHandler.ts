@@ -110,6 +110,11 @@ export function setupWebSocket(httpServer: HttpServer): Server {
     io.emit('history:imported', data);
   });
 
+  sessionManager.on('sync-progress', (data) => {
+    io.emit('sync:progress', data);
+    io.to(`account:${data.accountId}`).emit('sync:progress', data);
+  });
+
   sessionManager.on('contacts-updated', (data) => {
     io.emit('contacts:updated', data);
   });

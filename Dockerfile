@@ -3,7 +3,7 @@ FROM node:20-alpine AS frontend-builder
 RUN apk add --no-cache git
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
+RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
@@ -13,7 +13,7 @@ RUN apk add --no-cache git openssl-dev
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json* ./
 COPY backend/prisma ./prisma/
-RUN npm install
+RUN npm ci
 COPY backend/ .
 # Gera o client Prisma com target para Debian (estágio final é node:20-slim)
 RUN npx prisma generate --no-hints

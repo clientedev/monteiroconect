@@ -16,6 +16,16 @@ interface ConvItem {
   tags: any[];
 }
 
+interface SyncProgress {
+  status: 'syncing' | 'completed' | 'error';
+  percent: number;
+  remainingPercent: number;
+  processedMessages: number;
+  totalMessages: number;
+  phase: 'history' | 'contacts' | 'groups' | 'summaries';
+  message: string;
+}
+
 interface Msg {
   id: string;
   type: string;
@@ -95,6 +105,7 @@ export default function ConversationsPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [msgPage, setMsgPage] = useState(1);
   const [msgTotal, setMsgTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -205,6 +216,17 @@ export default function ConversationsPage() {
       setMsgPage(1);
       setMsgTotal(0);
       loadConversations(selectedAccountId);
+      whatsappApi.syncProgress(selectedAccountId)
+        .then(progress => {
+          if (progress) {
+            setSyncProgress(progress);
+            setSyncing(progress.status === 'syncing');
+          } else {
+            setSyncProgress(null);
+            setSyncing(false);
+          }
+        })
+        .catch(() => {});
     }
   }, [selectedAccountId]);
 
@@ -369,6 +391,15 @@ export default function ConversationsPage() {
         }
       }
     };
+    const onSyncProgress = (data: SyncProgress & { accountId: string }) => {
+      if (data.accountId !== selectedAccountIdRef.current) return;
+      setSyncProgress(data);
+      setSyncing(data.status === 'syncing');
+      if (data.status === 'completed') {
+        loadConversations();
+        window.setTimeout(() => setSyncProgress(current => current?.status === 'completed' ? null : current), 7000);
+      }
+    };
     const onConvRead = (data: { conversationId: string }) => {
       setConversations(prev =>
         prev.map(c => c.id === data.conversationId ? { ...c, unreadCount: 0 } : c)
@@ -379,12 +410,14 @@ export default function ConversationsPage() {
     socket.on('message:sent', onSent);
     socket.on('contacts:updated', onContactsUpdated);
     socket.on('history:imported', onHistory);
+    socket.on('sync:progress', onSyncProgress);
     socket.on('conversation:read', onConvRead);
     return () => {
       socket.off('message:new', onNewMsg);
       socket.off('message:sent', onSent);
       socket.off('contacts:updated', onContactsUpdated);
       socket.off('history:imported', onHistory);
+      socket.off('sync:progress', onSyncProgress);
       socket.off('conversation:read', onConvRead);
     };
   }, [socket, loadConversations, loadMessages]);
@@ -392,12 +425,23 @@ export default function ConversationsPage() {
   const handleSync = async () => {
     if (!selectedAccountId || syncing) return;
     setSyncing(true);
+    setSyncProgress({
+      status: 'syncing',
+      percent: 0,
+      remainingPercent: 100,
+      processedMessages: 0,
+      totalMessages: 0,
+      phase: 'contacts',
+      message: 'Preparando sincronização...',
+    });
     try {
       await whatsappApi.sync(selectedAccountId);
-    } catch {}
-    finally {
       await loadConversations();
+    } catch {
       setSyncing(false);
+      setSyncProgress(current => current ? { ...current, status: 'error', message: 'Não foi possível sincronizar agora' } : null);
+    } finally {
+      await loadConversations();
     }
   };
 
@@ -479,7 +523,54 @@ export default function ConversationsPage() {
   const hasMoreHistory = messages.size < msgTotal;
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] -m-4 lg:-m-6 rounded-3xl overflow-hidden shadow-lg border border-monte-sereno/15">
+    <div className="space-y-3">
+      {syncProgress && (
+        <div
+          className={`rounded-2xl border px-4 py-3 shadow-sm ${
+            syncProgress.status === 'error'
+              ? 'bg-red-50 border-red-200'
+              : syncProgress.status === 'completed'
+                ? 'bg-emerald-50 border-emerald-200'
+                : 'bg-white/85 border-monte-sereno/15'
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-monte-azul truncate">
+                {syncProgress.status === 'completed' ? 'Sincronização concluída' : syncProgress.status === 'error' ? 'Sincronização interrompida' : 'Sincronizando tudo...'}
+              </p>
+              <p className="text-xs text-monte-sereno truncate">{syncProgress.message}</p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-lg font-bold text-monte-verde">{Math.round(syncProgress.percent)}%</p>
+              <p className="text-[10px] text-monte-sereno">{Math.round(syncProgress.remainingPercent)}% restante</p>
+            </div>
+          </div>
+          <div
+            className="h-2.5 w-full overflow-hidden rounded-full bg-monte-sereno/15"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(syncProgress.percent)}
+            aria-label="Progresso da sincronização"
+          >
+            <div
+              className={`h-full rounded-full transition-[width] duration-500 ${
+                syncProgress.status === 'error' ? 'bg-red-400' : 'bg-gradient-to-r from-monte-verde to-emerald-400'
+              }`}
+              style={{ width: `${Math.max(0, Math.min(100, syncProgress.percent))}%` }}
+            />
+          </div>
+          {syncProgress.totalMessages > 0 && (
+            <p className="text-[11px] text-monte-sereno mt-1.5">
+              {syncProgress.processedMessages.toLocaleString('pt-BR')} de {syncProgress.totalMessages.toLocaleString('pt-BR')} mensagens processadas
+            </p>
+          )}
+        </div>
+      )}
+      <div className="flex h-[calc(100vh-8rem)] -m-4 lg:-m-6 rounded-3xl overflow-hidden shadow-lg border border-monte-sereno/15">
       {/* Sidebar - conversations list */}
       <div className="w-80 bg-white/80 backdrop-blur-md flex flex-col flex-shrink-0 border-r border-monte-sereno/15">
         {accounts.length > 1 && (
@@ -722,6 +813,7 @@ export default function ConversationsPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

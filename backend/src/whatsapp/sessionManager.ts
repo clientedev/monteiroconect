@@ -20,6 +20,17 @@ import { findMatchingReply, getGreetingForAccount, getAiChatbot } from '../servi
 import { generateAiReply } from '../services/aiService.js';
 
 type SessionStatus = 'CONNECTING' | 'QR_CODE' | 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING' | 'ERROR';
+type SyncProgressStatus = 'syncing' | 'completed' | 'error';
+
+export interface SyncProgressState {
+  status: SyncProgressStatus;
+  percent: number;
+  processedMessages: number;
+  totalMessages: number;
+  batches: number;
+  phase: 'history' | 'contacts' | 'groups' | 'summaries';
+  message: string;
+}
 
 interface SessionInfo {
   id: string;
@@ -50,6 +61,7 @@ class WhatsAppSessionManager extends EventEmitter {
   private sessions: Map<string, SessionInfo> = new Map();
   private historyImporting = new Set<string>();
   private historyQueue = new Map<string, any[]>();
+  private historyProgress = new Map<string, SyncProgressState>();
   private contactAliases = new Map<string, Map<string, string>>();
   private contactNames = new Map<string, Map<string, string>>();
 
@@ -314,7 +326,7 @@ class WhatsAppSessionManager extends EventEmitter {
         if (session.isDestroying) return;
         const msgs = data?.messages || [];
         const chats = data?.chats || [];
-        if (msgs.length > 0 || chats.length > 0) {
+        if (msgs.length > 0 || chats.length > 0 || data?.isLatest === true || Number(data?.progress) >= 100) {
           logger.info(`Histórico recebido: ${msgs.length} mensagens, ${chats.length} conversas (${session.name})`);
           this.enqueueHistory(accountId, data);
         }
@@ -522,12 +534,19 @@ class WhatsAppSessionManager extends EventEmitter {
     this.contactAliases.set(accountId, aliases);
     this.contactNames.set(accountId, names);
 
-    // Versões antigas gravavam o próprio LID como nome. Ele é um identificador
-    // técnico e não deve aparecer para o atendente.
-    const cleaned = await prisma.contact.updateMany({
-      where: { whatsappId: accountId, name: { endsWith: '@lid' } },
-      data: { name: null },
+    // Versões antigas podiam gravar JID, LID ou número como nome. Esses valores
+    // são identificadores técnicos e não devem aparecer para o atendente.
+    const savedContacts = await prisma.contact.findMany({
+      where: { whatsappId: accountId },
+      select: { id: true, phone: true, name: true },
     });
+    let cleanedCount = 0;
+    for (const contact of savedContacts) {
+      if (contact.name && !this.usableContactName(contact.name, contact.phone)) {
+        await prisma.contact.update({ where: { id: contact.id }, data: { name: null } });
+        cleanedCount++;
+      }
+    }
     let changed = false;
     for (const item of contacts || []) {
       const rawAliases = [...new Set(
@@ -540,7 +559,10 @@ class WhatsAppSessionManager extends EventEmitter {
         .find((value): value is string => typeof value === 'string' && value.length > 0);
       if (!canonicalSource) continue;
       const canonical = this.normalizeLookupJid(canonicalSource);
-      const name = this.usableContactName(item?.name || item?.notify || item?.verifiedName, this.jidToContactPhone(canonical));
+      const contactPhone = this.jidToContactPhone(canonical);
+      const name = [item?.name, item?.notify, item?.verifiedName, item?.pushName]
+        .map(value => this.usableContactName(value, contactPhone))
+        .find((value): value is string => Boolean(value)) || null;
       for (const alias of rawAliases) aliases.set(alias, canonical);
       if (!name) continue;
       for (const alias of [...rawAliases, canonical]) names.set(alias, name);
@@ -557,13 +579,13 @@ class WhatsAppSessionManager extends EventEmitter {
       const phones = [...new Set([...rawAliases, canonical].map(jid => this.jidToContactPhone(jid)))];
       const saved = await prisma.contact.findMany({ where: { whatsappId: accountId, phone: { in: phones } } });
       for (const contact of saved) {
-        if (!contact.name || contact.name === contact.phone) {
+        if (!contact.name || !this.usableContactName(contact.name, contact.phone)) {
           await prisma.contact.update({ where: { id: contact.id }, data: { name } });
           changed = true;
         }
       }
     }
-    if (changed || cleaned.count > 0) this.emit('contacts-updated', { accountId });
+    if (changed || cleanedCount > 0) this.emit('contacts-updated', { accountId });
   }
 
   /**
@@ -875,10 +897,35 @@ class WhatsAppSessionManager extends EventEmitter {
     q.push(data);
     this.historyQueue.set(accountId, q);
 
+    const previous = this.historyProgress.get(accountId);
+    const batchMessages = Array.isArray(data?.messages) ? data.messages.length : 0;
+    const batchProgress = Number(data?.progress);
+    const nextPercent = Number.isFinite(batchProgress)
+      ? Math.max(previous?.percent || 0, Math.min(100, batchProgress))
+      : data?.isLatest
+        ? Math.max(previous?.percent || 0, 99)
+        : Math.max(previous?.percent || 0, Math.min(95, ((previous?.batches || 0) + 1) * 5));
+    const progress: SyncProgressState = {
+      status: 'syncing',
+      percent: nextPercent,
+      processedMessages: previous?.processedMessages || 0,
+      totalMessages: (previous?.totalMessages || 0) + batchMessages,
+      batches: (previous?.batches || 0) + 1,
+      phase: 'history',
+      message: data?.isLatest ? 'Finalizando histórico...' : 'Recebendo histórico do WhatsApp...',
+    };
+    this.historyProgress.set(accountId, progress);
+    this.emit('sync-progress', { accountId, ...progress, remainingPercent: 100 - progress.percent });
+
     if (!this.historyImporting.has(accountId)) {
       this.historyImporting.add(accountId);
       this.processHistoryQueue(accountId).catch(() => {});
     }
+  }
+
+  getSyncProgress(accountId: string): (SyncProgressState & { remainingPercent: number }) | null {
+    const progress = this.historyProgress.get(accountId);
+    return progress ? { ...progress, remainingPercent: 100 - progress.percent } : null;
   }
 
   private async processHistoryQueue(accountId: string): Promise<void> {
@@ -895,15 +942,43 @@ class WhatsAppSessionManager extends EventEmitter {
         } catch (batchErr) {
           logger.error(`[${accountId}] Erro ao importar lote de histórico:`, batchErr);
         }
+        const progress = this.historyProgress.get(accountId);
+        if (progress) {
+          progress.processedMessages += Array.isArray(data?.messages) ? data.messages.length : 0;
+          this.historyProgress.set(accountId, progress);
+          this.emit('sync-progress', {
+            accountId,
+            ...progress,
+            remainingPercent: 100 - progress.percent,
+          });
+        }
       }
       // Mesmo um lote sem mensagens pode conter chats novos. O frontend
       // precisa recarregar a lista nesse caso também.
       if (processedBatches > 0) {
+        const previous = this.historyProgress.get(accountId);
+        const completed: SyncProgressState = {
+          status: 'completed',
+          percent: 100,
+          processedMessages: previous?.processedMessages || 0,
+          totalMessages: previous?.totalMessages || 0,
+          batches: previous?.batches || processedBatches,
+          phase: 'history',
+          message: `Sincronização concluída: ${total} mensagens importadas`,
+        };
+        this.historyProgress.set(accountId, completed);
+        this.emit('sync-progress', { accountId, ...completed, remainingPercent: 0 });
         this.emit('history-imported', { accountId, total });
         logger.info(`[${accountId}] Histórico completo importado: ${total} mensagens`);
       }
     } catch (err) {
       logger.error(`[${accountId}] Erro fatal na fila de histórico:`, err);
+      const previous = this.historyProgress.get(accountId);
+      if (previous) {
+        const failed = { ...previous, status: 'error' as const, message: 'Erro ao importar o histórico' };
+        this.historyProgress.set(accountId, failed);
+        this.emit('sync-progress', { accountId, ...failed, remainingPercent: 100 - failed.percent });
+      }
     } finally {
       this.historyImporting.delete(accountId);
       this.historyQueue.delete(accountId);
@@ -1211,7 +1286,7 @@ class WhatsAppSessionManager extends EventEmitter {
         contact = await prisma.contact.create({
           data: {
             phone: fromPhone,
-            name: contactName || fromPhone,
+            name: contactName,
             whatsappId: accountId,
           },
         });
@@ -1582,12 +1657,28 @@ class WhatsAppSessionManager extends EventEmitter {
       throw new AppError('WhatsApp não está conectado', 409);
     }
 
+    const manualProgress = (percent: number, phase: SyncProgressState['phase'], message: string, status: SyncProgressStatus = 'syncing') => {
+      const progress: SyncProgressState = {
+        status,
+        percent,
+        processedMessages: 0,
+        totalMessages: 0,
+        batches: 0,
+        phase,
+        message,
+      };
+      this.historyProgress.set(accountId, progress);
+      this.emit('sync-progress', { accountId, ...progress, remainingPercent: 100 - percent });
+    };
+    manualProgress(0, 'contacts', 'Preparando sincronização...');
+
     // 1. Sincroniza contatos da memória do Baileys
     const cache = (session.socket as any).contacts || {};
     const contacts = Object.values(cache) as any[];
     if (contacts.length > 0) {
       await this.syncContactNames(accountId, contacts);
     }
+    manualProgress(35, 'contacts', `${contacts.length} contatos encontrados`);
 
     // 2. Busca TODOS os grupos em que a conta participa e garante contatos e conversas
     let groupsCount = 0;
@@ -1631,13 +1722,16 @@ class WhatsAppSessionManager extends EventEmitter {
     } catch (groupErr) {
       logger.warn(`Falha ao buscar grupos em syncNow (${accountId}):`, groupErr);
     }
+    manualProgress(70, 'groups', `${groupsCount} grupos encontrados`);
 
     // Corrige resumos que ficaram inconsistentes em importações interrompidas
     // ou em versões antigas que ordenavam apenas por createdAt.
+    manualProgress(85, 'summaries', 'Recalculando resumos das conversas...');
     await this.repairConversationSummaries(accountId);
 
     this.emit('contacts-updated', { accountId });
     this.emit('history-imported', { accountId, count: contacts.length });
+    manualProgress(100, 'summaries', 'Sincronização concluída', 'completed');
     return { contacts: contacts.length, groups: groupsCount };
   }
 

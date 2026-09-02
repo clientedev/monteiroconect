@@ -82,6 +82,11 @@ export async function syncWhatsApp(id: string, user: SessionUser) {
   return result;
 }
 
+export async function getWhatsAppSyncProgress(id: string, user: SessionUser) {
+  await assertAccountAccess(user, id);
+  return sessionManager.getSyncProgress(id);
+}
+
 export async function sendWhatsAppMessage(
   accountId: string,
   to: string,
