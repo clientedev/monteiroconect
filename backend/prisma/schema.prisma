@@ -130,6 +130,7 @@ model Message {
 
   @@unique([conversationId, waMsgId])
   @@index([conversationId])
+  @@index([conversationId, timestamp])
   @@index([whatsappId])
   @@index([timestamp])
   @@index([createdAt])

@@ -90,7 +90,10 @@ export async function getConversationMessages(
 
   const currentConv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    include: { contact: true },
+    select: {
+      whatsappId: true,
+      contact: { select: { phone: true } },
+    },
   });
 
   if (!currentConv) throw new AppError('Conversa não encontrada', 404);
@@ -98,7 +101,10 @@ export async function getConversationMessages(
   let targetConvIds = [conversationId];
 
   const rawPhone = currentConv.contact?.phone;
-  if (rawPhone) {
+  // Conversas novas já são unificadas pelo gerenciador de sessão. Só procura
+  // equivalentes legadas quando o contato ainda está identificado por LID/JID,
+  // evitando uma consulta extra em toda abertura de conversa.
+  if (rawPhone && (rawPhone.includes('@lid') || rawPhone.includes('@s.whatsapp.net'))) {
     const cleanPhone = rawPhone.replace('@s.whatsapp.net', '').replace(/:\d+$/, '');
 
     const matchingConversations = await prisma.conversation.findMany({
@@ -122,28 +128,21 @@ export async function getConversationMessages(
 
   const where = { conversationId: { in: targetConvIds } };
 
-  const total = await prisma.message.count({ where });
-
-  const messages = await prisma.message.findMany({
-    where,
-    orderBy: [
-      { timestamp: { sort: 'desc', nulls: 'last' } },
-      { createdAt: 'desc' },
-      { id: 'desc' },
-    ],
-    skip,
-    take: limit,
-  });
-
-  await prisma.message.updateMany({
-    where: { conversationId: { in: targetConvIds }, isRead: false },
-    data: { isRead: true },
-  });
-
-  await prisma.conversation.updateMany({
-    where: { id: { in: targetConvIds } },
-    data: { unreadCount: 0 },
-  });
+  // As duas consultas são independentes. Não bloqueia a entrega do histórico
+  // aguardando a contagem total ou a atualização de badges.
+  const [total, messages] = await Promise.all([
+    prisma.message.count({ where }),
+    prisma.message.findMany({
+      where,
+      orderBy: [
+        { timestamp: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      skip,
+      take: limit,
+    }),
+  ]);
 
   return { total, page, limit, messages: messages.reverse() };
 }

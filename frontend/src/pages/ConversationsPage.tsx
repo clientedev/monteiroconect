@@ -115,6 +115,7 @@ export default function ConversationsPage() {
   const pendingConvId = useRef<string | null>(null);
   const selectedConvRef = useRef<ConvItem | null>(null);
   const selectedAccountIdRef = useRef<string>('');
+  const messageRequestId = useRef(0);
 
   // Sincroniza refs para closure segura nos handlers de WebSocket
   useEffect(() => { selectedConvRef.current = selectedConv; }, [selectedConv]);
@@ -158,8 +159,10 @@ export default function ConversationsPage() {
 
   /** Carrega as mensagens de uma conversa. page=1 substitui tudo; page>1 prepend. */
   const loadMessages = useCallback(async (convId: string, page = 1) => {
+    const requestId = ++messageRequestId.current;
     try {
       const data = await conversationApi.messages(convId, page);
+      if (requestId !== messageRequestId.current) return;
       const fetched: Msg[] = data.messages || [];
       setMsgTotal(data.total || 0);
       setMsgPage(page);
@@ -179,9 +182,12 @@ export default function ConversationsPage() {
       });
 
       if (page === 1) {
-        await conversationApi.markRead(convId);
-        if (socket) socket.emit('conversation-read', convId);
+        // O histórico já está na tela; não faça o usuário esperar a escrita dos
+        // badges/read-state para poder enxergá-lo.
         scrollToBottom('instant');
+        conversationApi.markRead(convId).then(() => {
+          if (socket) socket.emit('conversation-read', convId);
+        }).catch(() => {});
       }
     } catch {}
   }, [socket]);
