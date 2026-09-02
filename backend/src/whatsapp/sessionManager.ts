@@ -475,19 +475,32 @@ class WhatsAppSessionManager extends EventEmitter {
     return `${t.replace(/\D/g, '')}@s.whatsapp.net`;
   }
 
+  /** Normaliza apenas variações do mesmo JID para busca e agrupamento local. */
+  private normalizeLookupJid(jid: string): string {
+    const value = jid.trim();
+    if (value.endsWith('@s.whatsapp.net')) {
+      const [number] = value.split('@');
+      return `${number.split(':')[0]}@s.whatsapp.net`;
+    }
+    return value;
+  }
+
   /**
    * Extrai do JID o identificador de contato — MESMA transformação usada ao
    * salvar mensagens recebidas, para que envio e recebimento caiam no mesmo contato.
    */
   private jidToContactPhone(jid: string): string {
-    if (jid.endsWith('@s.whatsapp.net')) {
-      return jid.split('@')[0].split(':')[0]; // remove sufixo de dispositivo ":N" se houver
+    const normalized = this.normalizeLookupJid(jid);
+    if (normalized.endsWith('@s.whatsapp.net')) {
+      return normalized.split('@')[0]; // remove sufixo de dispositivo ":N" se houver
     }
-    return jid; // grupos (@g.us) e LIDs (@lid) são mantidos íntegros
+    return normalized; // grupos (@g.us) e LIDs (@lid) são mantidos íntegros
   }
 
   private canonicalJid(accountId: string, jid: string): string {
-    return this.contactAliases.get(accountId)?.get(jid) || jid;
+    const normalized = this.normalizeLookupJid(jid);
+    const aliases = this.contactAliases.get(accountId);
+    return aliases?.get(jid) || aliases?.get(normalized) || normalized;
   }
 
   private cachedContactName(accountId: string, jid: string): string | null {
@@ -517,9 +530,16 @@ class WhatsAppSessionManager extends EventEmitter {
     });
     let changed = false;
     for (const item of contacts || []) {
-      const rawAliases = [item?.id, item?.lid, item?.jid].filter((v): v is string => typeof v === 'string' && v.length > 0);
+      const rawAliases = [...new Set(
+        [item?.id, item?.lid, item?.jid]
+          .filter((v): v is string => typeof v === 'string' && v.length > 0)
+          .flatMap(value => [value, this.normalizeLookupJid(value)]),
+      )];
       if (!rawAliases.length) continue;
-      const canonical = item?.jid || aliases.get(item.id) || item.id;
+      const canonicalSource = [item?.jid, item?.id ? aliases.get(item.id) : undefined, item?.id, item?.lid]
+        .find((value): value is string => typeof value === 'string' && value.length > 0);
+      if (!canonicalSource) continue;
+      const canonical = this.normalizeLookupJid(canonicalSource);
       const name = this.usableContactName(item?.name || item?.notify || item?.verifiedName, this.jidToContactPhone(canonical));
       for (const alias of rawAliases) aliases.set(alias, canonical);
       if (!name) continue;
@@ -697,11 +717,18 @@ class WhatsAppSessionManager extends EventEmitter {
     return 'Mensagem';
   }
 
-  /** Converte messageTimestamp (segundos, podendo vir como Long) em Date */
+  /** Converte timestamps do WhatsApp (segundos, podendo vir como Long) em Date. */
+  private whatsappTimestamp(raw: unknown): Date | null {
+    if (raw === null || raw === undefined) return null;
+    const value = raw as any;
+    const num = typeof value === 'number'
+      ? value
+      : Number(value?.low ?? value?.value ?? value ?? 0);
+    return Number.isFinite(num) && num > 0 ? new Date(num * 1000) : null;
+  }
+
   private msgTimestamp(msg: WAMessage): Date {
-    const raw = msg.messageTimestamp as any;
-    const num = typeof raw === 'number' ? raw : Number(raw?.low ?? raw ?? 0);
-    return Number.isFinite(num) && num > 0 ? new Date(num * 1000) : new Date();
+    return this.whatsappTimestamp(msg.messageTimestamp) || new Date();
   }
 
   /** Evita gravar telefone/JID como se fosse o nome do cliente. */
@@ -772,6 +799,7 @@ class WhatsAppSessionManager extends EventEmitter {
         : (mediaType || messageType);
 
       let savedMessage: any;
+      let alreadyStored = false;
       try {
         savedMessage = await prisma.message.create({
           data: {
@@ -794,6 +822,7 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       } catch (dbErr: any) {
         if (dbErr?.code === 'P2002' && waMsgId) {
+          alreadyStored = true;
           savedMessage = await prisma.message.findFirst({
             where: { conversationId: conversation.id, waMsgId },
           });
@@ -801,7 +830,7 @@ class WhatsAppSessionManager extends EventEmitter {
           throw dbErr;
         }
       }
-      if (!savedMessage) return;
+      if (!savedMessage || alreadyStored) return;
 
       if (ts > (conversation.lastMessageAt || new Date(0))) {
         await prisma.conversation.update({
@@ -854,18 +883,22 @@ class WhatsAppSessionManager extends EventEmitter {
 
   private async processHistoryQueue(accountId: string): Promise<void> {
     let total = 0;
+    let processedBatches = 0;
     try {
       for (;;) {
         const q = this.historyQueue.get(accountId) || [];
         const data = q.shift();
         if (!data) break;
+        processedBatches++;
         try {
           total += await this.importHistoryBatch(accountId, data);
         } catch (batchErr) {
           logger.error(`[${accountId}] Erro ao importar lote de histórico:`, batchErr);
         }
       }
-      if (total > 0) {
+      // Mesmo um lote sem mensagens pode conter chats novos. O frontend
+      // precisa recarregar a lista nesse caso também.
+      if (processedBatches > 0) {
         this.emit('history-imported', { accountId, total });
         logger.info(`[${accountId}] Histórico completo importado: ${total} mensagens`);
       }
@@ -900,6 +933,10 @@ class WhatsAppSessionManager extends EventEmitter {
       const jid = this.canonicalJid(accountId, chat.id);
       const contactPhone = this.jidToContactPhone(jid);
       const displayName = this.cachedContactName(accountId, jid) || nameByJid.get(jid) || chat.name || null;
+      const chatLastMessageAt = this.whatsappTimestamp(
+        chat.conversationTimestamp ?? chat.lastMessageRecvTimestamp ?? chat.timestamp,
+      );
+      const chatLastMessage = typeof chat.lastMessage === 'string' ? chat.lastMessage : null;
 
       let contact = await prisma.contact.findUnique({
         where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
@@ -919,8 +956,20 @@ class WhatsAppSessionManager extends EventEmitter {
         where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
       });
       if (!conversation) {
-        await prisma.conversation.create({
+        conversation = await prisma.conversation.create({
           data: { contactId: contact.id, whatsappId: accountId },
+        });
+      }
+      if (
+        chatLastMessageAt &&
+        chatLastMessageAt >= (conversation.lastMessageAt || new Date(0))
+      ) {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastMessage: chatLastMessage || conversation.lastMessage,
+            lastMessageAt: chatLastMessageAt,
+          },
         });
       }
     }
@@ -1042,11 +1091,12 @@ class WhatsAppSessionManager extends EventEmitter {
         });
 
         if (toCreateFull.length >= 200) {
+          const batchFull = toCreateFull.slice();
           const batchMin = toCreateMin.slice();
           toCreateFull.length = 0;
           toCreateMin.length = 0;
           try {
-            await prisma.message.createMany({ data: toCreateFull.slice(), skipDuplicates: true });
+            await prisma.message.createMany({ data: batchFull, skipDuplicates: true });
             imported += batchMin.length;
           } catch {
             logger.warn(`[${accountId}] Fallback compativel no lote de 200`);
@@ -1195,6 +1245,7 @@ class WhatsAppSessionManager extends EventEmitter {
       const savedMediaUrl = mediaType ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType) : null;
 
       let savedMessage: any;
+      let alreadyStored = false;
       try {
         savedMessage = await prisma.message.create({
           data: {
@@ -1218,6 +1269,7 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       } catch (dbErr: any) {
         if (dbErr?.code === 'P2002' && waMsgId) {
+          alreadyStored = true;
           savedMessage = await prisma.message.findFirst({
             where: { conversationId: conversation.id, waMsgId },
           });
@@ -1241,6 +1293,7 @@ class WhatsAppSessionManager extends EventEmitter {
             });
           } catch (fallbackErr: any) {
             if (fallbackErr?.code === 'P2002' && waMsgId) {
+              alreadyStored = true;
               savedMessage = await prisma.message.findFirst({
                 where: { conversationId: conversation.id, waMsgId },
               });
@@ -1251,13 +1304,16 @@ class WhatsAppSessionManager extends EventEmitter {
           }
         }
       }
-      if (!savedMessage) return;
+      if (!savedMessage || alreadyStored) return;
 
+      const isNewerThanSummary = receivedAt >= (conversation.lastMessageAt || new Date(0));
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
-          lastMessage: content || `[${mediaType || messageType}]`,
-          lastMessageAt: receivedAt,
+          ...(isNewerThanSummary ? {
+            lastMessage: content || `[${mediaType || messageType}]`,
+            lastMessageAt: receivedAt,
+          } : {}),
           unreadCount: { increment: 1 },
         },
       });
@@ -1576,9 +1632,50 @@ class WhatsAppSessionManager extends EventEmitter {
       logger.warn(`Falha ao buscar grupos em syncNow (${accountId}):`, groupErr);
     }
 
+    // Corrige resumos que ficaram inconsistentes em importações interrompidas
+    // ou em versões antigas que ordenavam apenas por createdAt.
+    await this.repairConversationSummaries(accountId);
+
     this.emit('contacts-updated', { accountId });
     this.emit('history-imported', { accountId, count: contacts.length });
     return { contacts: contacts.length, groups: groupsCount };
+  }
+
+  private async repairConversationSummaries(accountId: string): Promise<void> {
+    const conversations = await prisma.conversation.findMany({
+      where: { whatsappId: accountId },
+      select: { id: true },
+    });
+
+    for (const conversation of conversations) {
+      const latest = await prisma.message.findFirst({
+        where: { conversationId: conversation.id },
+        orderBy: [
+          { timestamp: { sort: 'desc', nulls: 'last' } },
+          { createdAt: 'desc' },
+          { id: 'desc' },
+        ],
+      });
+      if (!latest) continue;
+
+      const lastMessageAt = latest.timestamp || latest.createdAt;
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastMessage: latest.content || `[${latest.mediaType || latest.type}]`,
+          lastMessageAt,
+        },
+      });
+      await prisma.contact.updateMany({
+        where: {
+          conversations: { some: { id: conversation.id } },
+        },
+        data: {
+          lastMessage: latest.content,
+          lastContact: lastMessageAt,
+        },
+      });
+    }
   }
 
   async refreshQRCode(accountId: string): Promise<string> {

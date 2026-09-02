@@ -1,0 +1,1 @@
+- [Baileys dependency firewall](baileys-dependency-firewall.md) — Replit pode bloquear os tarballs do Baileys; valide a instalação antes de testar o backend ou publicar.

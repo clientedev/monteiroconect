@@ -20,9 +20,9 @@ export async function listConversations(opts: ListConversationsOpts) {
   const where: any = { whatsappId };
   if (search) {
     where.OR = [
-      { contact: { name: { contains: search } } },
-      { contact: { phone: { contains: search } } },
-      { lastMessage: { contains: search } },
+      { contact: { name: { contains: search, mode: 'insensitive' } } },
+      { contact: { phone: { contains: search, mode: 'insensitive' } } },
+      { lastMessage: { contains: search, mode: 'insensitive' } },
     ];
   }
 
@@ -121,6 +121,7 @@ export async function getConversationMessages(
   const messages = await prisma.message.findMany({
     where,
     orderBy: [
+      { timestamp: { sort: 'desc', nulls: 'last' } },
       { createdAt: 'desc' },
       { id: 'desc' },
     ],

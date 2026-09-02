@@ -117,7 +117,7 @@ export const whatsappApi = {
 // Conversations
 export const conversationApi = {
   list: (whatsappId: string, search?: string, page?: number) =>
-    api.get<any>(`/conversations?whatsappId=${whatsappId}&search=${search || ''}&page=${page || 1}`),
+    api.get<any>(`/conversations?whatsappId=${encodeURIComponent(whatsappId)}&search=${encodeURIComponent(search || '')}&page=${page || 1}`),
   get: (id: string) => api.get<any>(`/conversations/${id}`),
   messages: (id: string, page?: number) =>
     api.get<any>(`/conversations/${id}/messages?page=${page || 1}`),
