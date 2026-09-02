@@ -56,10 +56,10 @@ router.post('/:id/disconnect', async (req: AuthRequest, res, next) => {
   }
 });
 
-router.delete('/:id', requireRole('admin'), async (req, res, next) => {
+router.delete('/:id', requireRole('admin'), async (req: AuthRequest, res, next) => {
   try {
-    await removeWhatsApp(String(req.params.id));
-    res.json({ message: 'Removido' });
+    await removeWhatsApp(String(req.params.id), req.user!);
+    res.json({ message: 'WhatsApp e todo o histórico removidos com sucesso' });
   } catch (err) {
     next(err);
   }

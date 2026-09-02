@@ -86,8 +86,13 @@ export default function WhatsAppPage() {
   };
 
   const handleRemove = async (id: string) => {
-    if (!confirm('Tem certeza que deseja remover este WhatsApp? A sessão será encerrada.')) return;
-    try { await whatsappApi.remove(id); loadAccounts(); } catch {}
+    if (!confirm('Tem certeza que deseja excluir permanentemente este WhatsApp?\n\nIsso apagará TODO o histórico de conversas, mensagens e contatos vinculados a esta conta.')) return;
+    try {
+      await whatsappApi.remove(id);
+      await loadAccounts();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao remover WhatsApp');
+    }
   };
 
   const handleRefreshQR = async (id: string) => {

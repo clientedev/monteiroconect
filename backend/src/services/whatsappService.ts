@@ -63,9 +63,10 @@ export async function disconnectWhatsApp(id: string, user: SessionUser) {
   logger.info(`WhatsApp desconectado: ${id}`);
 }
 
-export async function removeWhatsApp(_id: string) {
-  // Histórico de atendimento é dado operacional: nunca é removido pela UI.
-  throw new AppError('A remoção de contas foi desativada para preservar todo o histórico', 409);
+export async function removeWhatsApp(id: string, user: SessionUser) {
+  await assertAccountAccess(user, id);
+  await sessionManager.removeSession(id);
+  logger.info(`WhatsApp e todo o histórico removidos: ${id}`);
 }
 
 export async function refreshQRCode(id: string, user: SessionUser) {
