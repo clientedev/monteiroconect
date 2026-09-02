@@ -311,14 +311,18 @@ class WhatsAppSessionManager extends EventEmitter {
       // Mensagens recebidas E enviadas de outros dispositivos (celular) —
       // comportamento igual ao WhatsApp Web, que espelha tudo
       socket.ev.on('messages.upsert', async (m: { type: MessageUpsertType; messages: WAMessage[] }) => {
-        if (m.type === 'notify' || m.type === 'append') {
-          for (const msg of m.messages) {
+        if (m.type !== 'notify' && m.type !== 'append') return;
+        const messages = Array.isArray(m.messages) ? m.messages : [];
+        for (const msg of messages) {
+          try {
             if (!this.isUsableChatMessage(accountId, msg)) continue;
             if (msg.key.fromMe) {
               await this.handleOutgoingFromDevice(accountId, msg);
             } else {
               await this.handleIncomingMessage(accountId, msg);
             }
+          } catch (err) {
+            logger.error(`Erro no lote messages.upsert (${accountId}):`, err);
           }
         }
       });
@@ -499,6 +503,20 @@ class WhatsAppSessionManager extends EventEmitter {
     return value;
   }
 
+  /** Obtém o JID real quando o WhatsApp envia o telefone em remoteJidAlt. */
+  private messageRemoteJid(msg: WAMessage): string {
+    const key = msg.key as any;
+    const primary = typeof key?.remoteJid === 'string' ? key.remoteJid : '';
+    const alternative = typeof key?.remoteJidAlt === 'string' ? key.remoteJidAlt : '';
+    if (primary.endsWith('@lid') && alternative) return alternative;
+    return primary || alternative;
+  }
+
+  private messageParticipantJid(msg: WAMessage): string | null {
+    const key = msg.key as any;
+    return key?.participant || key?.participantAlt || null;
+  }
+
   /**
    * Extrai do JID o identificador de contato — MESMA transformação usada ao
    * salvar mensagens recebidas, para que envio e recebimento caiam no mesmo contato.
@@ -523,7 +541,7 @@ class WhatsAppSessionManager extends EventEmitter {
   }
 
   private isUsableChatMessage(accountId: string, msg: WAMessage): boolean {
-    const remoteJid = msg.key.remoteJid || '';
+    const remoteJid = this.messageRemoteJid(msg);
     if (!remoteJid || remoteJid === 'status@broadcast') return false;
     const body: any = msg.message || {};
     if (body.protocolMessage || body.reactionMessage || body.senderKeyDistributionMessage) return false;
