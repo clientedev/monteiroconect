@@ -284,7 +284,7 @@ npm run build
 | `ADMIN_PASSWORD` | Senha admin inicial | `Admin@2026!` |
 | `CORS_ORIGIN` | Origens permitidas | `http://localhost:5173` |
 | `GEMINI_API_KEY` | Chave da API Google Gemini para os chatbots | — |
-| `GEMINI_MODEL` | Modelo Gemini usado pelo chatbot | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Modelo Gemini usado pelo chatbot | `gemini-3.5-flash-lite` |
 | `GEMINI_BASE_URL` | Endpoint da API Gemini | `https://generativelanguage.googleapis.com/v1beta` |
 
 ---

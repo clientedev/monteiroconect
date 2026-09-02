@@ -35,7 +35,7 @@ EXEMPLO DE TOM:
  * Modelos de fallback — se o modelo configurado não estiver disponível no Gemini
  * (404/400), tenta o próximo. O primeiro que responder é usado.
  */
-const FALLBACK_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite'];
+const FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite'];
 
 type GeminiContent = {
   role: 'user' | 'model';

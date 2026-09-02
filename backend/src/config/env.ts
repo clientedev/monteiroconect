@@ -29,5 +29,5 @@ export const env = {
   corsOrigin: process.env.CORS_ORIGIN || '*',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   geminiBaseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
 } as const;
