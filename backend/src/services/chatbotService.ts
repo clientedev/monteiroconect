@@ -183,7 +183,7 @@ export async function findMatchingReply(whatsappAccountId: string, messageConten
 }
 
 /**
- * Primeiro chatbot ATIVO com IA habilitada — é ele que responde com Grok.
+ * Primeiro chatbot ATIVO com IA habilitada — é ele que responde com Gemini.
  */
 export async function getAiChatbot(whatsappAccountId: string) {
   return prisma.chatbot.findFirst({

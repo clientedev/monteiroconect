@@ -27,7 +27,7 @@ export const env = {
   adminPassword: process.env.ADMIN_PASSWORD || 'Admin@2026!',
   adminEmail: process.env.ADMIN_EMAIL || 'admin@monteiroconecta.local',
   corsOrigin: process.env.CORS_ORIGIN || '*',
-  xaiApiKey: process.env.XAI_API_KEY || '',
-  xaiBaseUrl: process.env.XAI_BASE_URL || 'https://api.x.ai/v1',
-  xaiModel: process.env.XAI_MODEL || 'grok-4-fast-non-reasoning',
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+  geminiBaseUrl: process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
 } as const;

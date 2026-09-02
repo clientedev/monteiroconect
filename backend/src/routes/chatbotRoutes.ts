@@ -6,7 +6,7 @@ import { testAiConnection } from '../services/aiService.js';
 const router = Router();
 router.use(authMiddleware);
 
-// Testa a conexão com a IA da Grok — antes das rotas /:id
+// Testa a conexão com a IA do Gemini — antes das rotas /:id
 router.post('/test-ai', async (_req, res, next) => {
   try {
     const result = await testAiConnection();

@@ -3,13 +3,13 @@ import { prisma } from '../database/client.js';
 import { logger } from '../utils/logger.js';
 
 /**
- * Assistente de IA (xAI Grok) treinado para atender exclusivamente como
+ * Assistente de IA (Google Gemini) treinado para atender exclusivamente como
  * consultor da Monteiro Corretora: seguros e planos de saúde.
  */
 const SYSTEM_PROMPT = `Você é o assistente virtual de atendimento da Monteiro Corretora, uma corretora de seguros e planos de saúde brasileira.
 
 REGRAS DE IDENTIDADE:
-- Você atende em nome da Monteiro Corretora. Nunca revele que é uma IA baseada em Grok, xAI ou qualquer tecnologia específica. Se perguntarem, diga que é o assistente virtual da Monteiro Corretora.
+- Você atende em nome da Monteiro Corretora. Nunca revele que é uma IA baseada em Gemini, Google ou qualquer tecnologia específica. Se perguntarem, diga que é o assistente virtual da Monteiro Corretora.
 - Fale sempre em português do Brasil, com tom cordial, profissional e humano.
 
 SOBRE O QUE VOCÊ PODE FALAR (ÚNICOS ASSUNTOS PERMITIDOS):
@@ -32,33 +32,45 @@ EXEMPLO DE TOM:
 "Olá! Que ótimo ter você por aqui 😊 A Monteiro Corretora trabalha com as principais seguradoras do país. Para eu te ajudar melhor: é para veículo, residência, vida ou plano de saúde?"`;
 
 /**
- * Modelos de fallback — se o modelo configurado não existir mais na xAI
+ * Modelos de fallback — se o modelo configurado não estiver disponível no Gemini
  * (404/400), tenta o próximo. O primeiro que responder é usado.
  */
-const FALLBACK_MODELS = ['grok-4-fast-non-reasoning', 'grok-3-mini', 'grok-2-latest'];
+const FALLBACK_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite'];
 
-async function callGrok(
+type GeminiContent = {
+  role: 'user' | 'model';
+  parts: Array<{ text: string }>;
+};
+
+async function callGemini(
   model: string,
-  messages: Array<{ role: string; content: string }>,
+  contents: GeminiContent[],
 ): Promise<{ ok: true; reply: string } | { ok: false; status: number; body: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    const res = await fetch(`${env.xaiBaseUrl}/chat/completions`, {
+    const res = await fetch(
+      `${env.geminiBaseUrl}/models/${encodeURIComponent(model)}:generateContent`,
+      {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.xaiApiKey}`,
+        'x-goog-api-key': env.geminiApiKey,
       },
       body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.4,
-        max_tokens: 400,
+        system_instruction: {
+          parts: [{ text: SYSTEM_PROMPT }],
+        },
+        contents,
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 400,
+        },
       }),
       signal: controller.signal,
-    });
+      },
+    );
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
@@ -66,7 +78,10 @@ async function callGrok(
     }
 
     const data = await res.json() as any;
-    const reply: string | undefined = data.choices?.[0]?.message?.content?.trim();
+    const reply: string | undefined = data.candidates?.[0]?.content?.parts
+      ?.map((part: { text?: string }) => part.text || '')
+      .join('')
+      .trim();
     if (!reply) return { ok: false, status: 502, body: 'Resposta vazia da API' };
     return { ok: true, reply };
   } catch (err: any) {
@@ -78,8 +93,8 @@ async function callGrok(
 }
 
 export async function generateAiReply(conversationId: string, incomingText: string): Promise<string | null> {
-  if (!env.xaiApiKey) {
-    logger.warn('XAI_API_KEY não configurada — IA do chatbot desativada');
+  if (!env.geminiApiKey) {
+    logger.warn('GEMINI_API_KEY não configurada — IA do chatbot desativada');
     return null;
   }
 
@@ -95,54 +110,67 @@ export async function generateAiReply(conversationId: string, incomingText: stri
     });
     history.reverse();
 
-    const messages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...history.map(m => ({
-        role: m.isFromMe ? 'assistant' : 'user',
-        content: (m.content || '').slice(0, 2000),
-      })),
-    ];
-
-    // Garante que a mensagem atual seja a última da conversa
-    const last = messages[messages.length - 1];
-    if (!last || last.role !== 'user' || last.content !== incomingText.slice(0, 2000)) {
-      messages.push({ role: 'user', content: incomingText.slice(0, 2000) });
+    const contents: GeminiContent[] = [];
+    for (const message of history) {
+      const text = (message.content || '').slice(0, 2000).trim();
+      if (!text) continue;
+      const role: GeminiContent['role'] = message.isFromMe ? 'model' : 'user';
+      const previous = contents[contents.length - 1];
+      if (previous?.role === role) {
+        previous.parts[0].text += `\n${text}`;
+      } else {
+        contents.push({ role, parts: [{ text }] });
+      }
     }
 
-    const models = [env.xaiModel, ...FALLBACK_MODELS.filter(m => m !== env.xaiModel)];
+    // Garante que a mensagem atual seja a última da conversa
+    const currentText = incomingText.slice(0, 2000).trim();
+    const last = contents[contents.length - 1];
+    if (!last || last.role !== 'user' || last.parts[0].text !== currentText) {
+      if (last?.role === 'user') {
+        last.parts[0].text += `\n${currentText}`;
+      } else {
+        contents.push({ role: 'user', parts: [{ text: currentText }] });
+      }
+    }
+
+    // A API Gemini exige que o primeiro item do histórico seja do usuário.
+    while (contents[0]?.role === 'model') contents.shift();
+
+    const models = [env.geminiModel, ...FALLBACK_MODELS.filter(m => m !== env.geminiModel)];
     for (const model of models) {
-      const r = await callGrok(model, messages);
+      const r = await callGemini(model, contents);
       if (r.ok) return r.reply;
       if (r.status === 404 || r.status === 400) {
-        logger.error(`Grok modelo "${model}" indisponível (HTTP ${r.status}): ${r.body.slice(0, 200)} — tentando próximo modelo`);
+        logger.error(`Gemini modelo "${model}" indisponível (HTTP ${r.status}): ${r.body.slice(0, 200)} — tentando próximo modelo`);
         continue;
       }
-      logger.error(`Grok API erro ${r.status}: ${r.body.slice(0, 200)}`);
+      logger.error(`Gemini API erro ${r.status}: ${r.body.slice(0, 200)}`);
       return null; // erro de auth/servidor — outros modelos não vão ajudar
     }
     return null;
   } catch (err: any) {
-    logger.error('Erro ao chamar Grok API:', err?.message || err);
+    logger.error('Erro ao chamar Gemini API:', err?.message || err);
     return null;
   }
 }
 
 /**
- * Testa a conexão com a xAI — usado pelo botão "Testar IA" no painel.
+ * Testa a conexão com o Gemini — usado pelo botão "Testar IA" no painel.
  */
 export async function testAiConnection(): Promise<{ ok: boolean; model?: string; error?: string }> {
-  if (!env.xaiApiKey) {
-    return { ok: false, error: 'XAI_API_KEY não configurada no servidor. Adicione a variável no Railway.' };
+  if (!env.geminiApiKey) {
+    return { ok: false, error: 'GEMINI_API_KEY não configurada no servidor. Adicione a variável no Railway.' };
   }
 
-  const models = [env.xaiModel, ...FALLBACK_MODELS.filter(m => m !== env.xaiModel)];
+  const models = [env.geminiModel, ...FALLBACK_MODELS.filter(m => m !== env.geminiModel)];
   let lastError = '';
   for (const model of models) {
-    const r = await callGrok(model, [{ role: 'user', content: 'Responda apenas: ok' }]);
+    const r = await callGemini(model, [{ role: 'user', parts: [{ text: 'Responda apenas: ok' }] }]);
     if (r.ok) return { ok: true, model };
     lastError = `HTTP ${r.status}: ${r.body.slice(0, 200)}`;
     if (r.status === 401 || r.status === 403) {
-      return { ok: false, error: 'Chave da API inválida ou sem permissão. Verifique a XAI_API_KEY.' };
+      return { ok: false, error: 'Chave da API inválida ou sem permissão. Verifique a GEMINI_API_KEY.' };
     }
   }
   return { ok: false, error: lastError || 'Falha desconhecida' };

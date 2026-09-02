@@ -72,9 +72,9 @@ export default function ChatbotsPage() {
       const { chatbotApi } = await import('../lib/api');
       const r = await chatbotApi.testAi();
       if (r.ok) {
-        alert(`✅ IA da Grok funcionando!\n\nModelo em uso: ${r.model}\n\nA IA já está respondendo nos chatbots com o toggle ✨ ativado.`);
+         alert(`✅ IA do Gemini funcionando!\n\nModelo em uso: ${r.model}\n\nA IA já está respondendo nos chatbots com o toggle ✨ ativado.`);
       } else {
-        alert(`❌ IA da Grok com problema:\n\n${r.error}`);
+         alert(`❌ IA do Gemini com problema:\n\n${r.error}`);
       }
     } catch (err: any) {
       alert('❌ Erro ao testar IA: ' + (err.message || 'tente novamente'));
@@ -211,7 +211,7 @@ export default function ChatbotsPage() {
                     </span>
                     {bot.useAi && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-semibold bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-sm">
-                        <Sparkles className="w-3 h-3" /> IA Grok
+                         <Sparkles className="w-3 h-3" /> IA Gemini
                       </span>
                     )}
                     <span className="text-xs text-monte-sereno/60">{bot.autoReplies.length} regras</span>
@@ -223,7 +223,7 @@ export default function ChatbotsPage() {
                 <button
                   onClick={() => handleToggleAi(bot.id, bot.useAi)}
                   className={`p-2 rounded-full transition-colors ${bot.useAi ? 'bg-purple-100 hover:bg-purple-200' : 'hover:bg-monte-areiaSecao'}`}
-                  title={bot.useAi ? 'Desativar IA Grok' : 'Ativar IA Grok (assistente de seguros e planos de saúde)'}
+                   title={bot.useAi ? 'Desativar IA Gemini' : 'Ativar IA Gemini (assistente de seguros e planos de saúde)'}
                 >
                   <Sparkles className={`w-5 h-5 ${bot.useAi ? 'text-purple-600' : 'text-monte-sereno'}`} />
                 </button>
@@ -377,12 +377,12 @@ export default function ChatbotsPage() {
                 />
                 <div>
                   <p className="text-sm font-bold text-monte-azul flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-purple-600" /> IA Grok — Assistente Inteligente
+                     <Sparkles className="w-4 h-4 text-purple-600" /> IA Gemini — Assistente Inteligente
                   </p>
                   <p className="text-xs text-monte-sereno mt-1 leading-relaxed">
-                    Quando ativa, a IA da Grok responde os clientes automaticamente, treinada para falar
+                     Quando ativa, a IA do Gemini responde os clientes automaticamente, treinada para falar
                     apenas sobre seguros, planos de saúde e a Monteiro Corretora. As regras de palavras-chave
-                    continuam como alternativa quando a IA não responde. Requer a variável XAI_API_KEY no servidor.
+                     continuam como alternativa quando a IA não responde. Requer a variável GEMINI_API_KEY no servidor.
                   </p>
                 </div>
               </label>

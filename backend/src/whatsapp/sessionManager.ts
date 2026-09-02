@@ -1647,7 +1647,7 @@ class WhatsAppSessionManager extends EventEmitter {
         data: { lastMessage: content, lastContact: receivedAt },
       });
 
-      // Auto-resposta via Chatbot (IA Grok ou regras) — apenas conversas 1:1,
+      // Auto-resposta via Chatbot (IA Gemini ou regras) — apenas conversas 1:1,
       // nunca em grupos
       const session = this.sessions.get(accountId);
       if (session?.socket && content && !isGroup) {
@@ -1674,16 +1674,16 @@ class WhatsAppSessionManager extends EventEmitter {
           if (!firstMessageOnly || contactMsgCount === 1) {
             let replied = false;
 
-            // IA (Grok) tem prioridade quando habilitada
+            // IA (Gemini) tem prioridade quando habilitada
             if (aiBot) {
               const aiReply = await generateAiReply(conversation.id, content);
               if (aiReply) {
                 const aiResult = await session.socket.sendMessage(remoteJid, { text: aiReply });
                 await this.saveOutgoingMessage(accountId, remoteJid, aiReply, 'text', null, aiResult);
-                logger.info(`Resposta IA (Grok) enviada para ${fromPhone}`);
+                logger.info(`Resposta IA (Gemini) enviada para ${fromPhone}`);
                 replied = true;
               } else {
-                logger.warn(`Grok não respondeu para ${fromPhone} — usando regras de auto-resposta`);
+                logger.warn(`Gemini não respondeu para ${fromPhone} — usando regras de auto-resposta`);
               }
             }
 
