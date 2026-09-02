@@ -202,7 +202,9 @@ class WhatsAppSessionManager extends EventEmitter {
         printQRInTerminal: false,
         logger: makeLogger(),
         shouldIgnoreJid: () => false,
-        syncFullHistory: false,
+         // Sem isso, dispositivos novos recebem apenas uma parte do histórico.
+         // A janela efetiva continua limitada por shouldSyncHistoryMessage.
+         syncFullHistory: true,
         shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
           const ts = Number((msg as any).threadTs) || 0;
           if (!ts) return true;
@@ -931,6 +933,7 @@ class WhatsAppSessionManager extends EventEmitter {
   private async processHistoryQueue(accountId: string): Promise<void> {
     let total = 0;
     let processedBatches = 0;
+    let failedBatches = 0;
     try {
       for (;;) {
         const q = this.historyQueue.get(accountId) || [];
@@ -940,6 +943,7 @@ class WhatsAppSessionManager extends EventEmitter {
         try {
           total += await this.importHistoryBatch(accountId, data);
         } catch (batchErr) {
+          failedBatches++;
           logger.error(`[${accountId}] Erro ao importar lote de histórico:`, batchErr);
         }
         const progress = this.historyProgress.get(accountId);
@@ -953,23 +957,30 @@ class WhatsAppSessionManager extends EventEmitter {
           });
         }
       }
-      // Mesmo um lote sem mensagens pode conter chats novos. O frontend
-      // precisa recarregar a lista nesse caso também.
+       // Mesmo um lote sem mensagens pode conter chats novos. O frontend
+       // precisa recarregar a lista nesse caso também.
       if (processedBatches > 0) {
         const previous = this.historyProgress.get(accountId);
-        const completed: SyncProgressState = {
-          status: 'completed',
-          percent: 100,
+         const status = failedBatches > 0 ? 'error' : 'completed';
+         const completed: SyncProgressState = {
+           status,
+           percent: failedBatches > 0 ? (previous?.percent || 0) : 100,
           processedMessages: previous?.processedMessages || 0,
           totalMessages: previous?.totalMessages || 0,
           batches: previous?.batches || processedBatches,
           phase: 'history',
-          message: `Sincronização concluída: ${total} mensagens importadas`,
+           message: failedBatches > 0
+             ? `Sincronização incompleta: ${failedBatches} lote(s) falharam`
+             : `Sincronização concluída: ${total} mensagens importadas`,
         };
         this.historyProgress.set(accountId, completed);
-        this.emit('sync-progress', { accountId, ...completed, remainingPercent: 0 });
+         this.emit('sync-progress', {
+           accountId,
+           ...completed,
+           remainingPercent: 100 - completed.percent,
+         });
         this.emit('history-imported', { accountId, total });
-        logger.info(`[${accountId}] Histórico completo importado: ${total} mensagens`);
+         logger.info(`[${accountId}] Histórico processado: ${total} mensagens importadas${failedBatches > 0 ? `; ${failedBatches} lote(s) falharam` : ''}`);
       }
     } catch (err) {
       logger.error(`[${accountId}] Erro fatal na fila de histórico:`, err);
@@ -1171,8 +1182,8 @@ class WhatsAppSessionManager extends EventEmitter {
           toCreateFull.length = 0;
           toCreateMin.length = 0;
           try {
-            await prisma.message.createMany({ data: batchFull, skipDuplicates: true });
-            imported += batchMin.length;
+             const result = await prisma.message.createMany({ data: batchFull, skipDuplicates: true });
+             imported += result.count;
           } catch {
             logger.warn(`[${accountId}] Fallback compativel no lote de 200`);
             for (const row of batchMin) {
@@ -1185,8 +1196,8 @@ class WhatsAppSessionManager extends EventEmitter {
       if (toCreateFull.length > 0) {
         const batchMin = toCreateMin.slice();
         try {
-          await prisma.message.createMany({ data: toCreateFull, skipDuplicates: true });
-          imported += batchMin.length;
+           const result = await prisma.message.createMany({ data: toCreateFull, skipDuplicates: true });
+           imported += result.count;
         } catch {
           logger.warn(`[${accountId}] Fallback compativel no lote final`);
           for (const row of batchMin) {

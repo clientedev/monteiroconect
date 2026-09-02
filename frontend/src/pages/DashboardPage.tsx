@@ -29,6 +29,7 @@ interface Stats {
   disconnectedCount: number;
   totalConversations: number;
   unreadMessages: number;
+  totalMessages: number;
   messagesToday: number;
   recentMessages: any[];
   recentConversations: any[];
@@ -68,6 +69,7 @@ export default function DashboardPage() {
     socket.on('whatsapp:connected', onUpdate);
     socket.on('whatsapp:disconnected', onUpdate);
     socket.on('conversation:read', onUpdate);
+    socket.on('history:imported', onUpdate);
 
     return () => {
       socket.off('message:new', onUpdate);
@@ -76,6 +78,7 @@ export default function DashboardPage() {
       socket.off('whatsapp:connected', onUpdate);
       socket.off('whatsapp:disconnected', onUpdate);
       socket.off('conversation:read', onUpdate);
+      socket.off('history:imported', onUpdate);
     };
   }, [socket, loadStats]);
 
@@ -87,6 +90,7 @@ export default function DashboardPage() {
     { label: 'Conversas abertas', value: stats?.totalConversations || 0, icon: MessageSquare, gradient: 'from-monte-azul to-sky-600' },
     { label: 'Mensagens não lidas', value: stats?.unreadMessages || 0, icon: Mail, gradient: 'from-monte-terracota to-red-500' },
     { label: 'Mensagens hoje', value: stats?.messagesToday || 0, icon: TrendingUp, gradient: 'from-purple-600 to-indigo-600' },
+    { label: 'Mensagens armazenadas', value: stats?.totalMessages || 0, icon: MessageSquare, gradient: 'from-slate-600 to-slate-800' },
   ];
 
   return (
