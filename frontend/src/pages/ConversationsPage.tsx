@@ -113,10 +113,13 @@ export default function ConversationsPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesTopRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const pendingConvId = useRef<string | null>(null);
   const selectedConvRef = useRef<ConvItem | null>(null);
   const selectedAccountIdRef = useRef<string>('');
   const messageRequestId = useRef(0);
+  const conversationsRefreshTimer = useRef<number | null>(null);
+  const stickToBottomRef = useRef(true);
 
   // Sincroniza refs para closure segura nos handlers de WebSocket
   useEffect(() => { selectedConvRef.current = selectedConv; }, [selectedConv]);
@@ -127,7 +130,8 @@ export default function ConversationsPage() {
     return Array.from(messages.values()).sort((a, b) => msgTime(a) - msgTime(b));
   };
 
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth', force = false) => {
+    if (!force && !stickToBottomRef.current) return;
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior });
     }, 100);
@@ -158,9 +162,22 @@ export default function ConversationsPage() {
     finally { setLoading(false); }
   }, [search, selectedAccountId, includeGroups]);
 
+  const scheduleConversationsRefresh = useCallback((delay = 350) => {
+    if (conversationsRefreshTimer.current !== null) {
+      window.clearTimeout(conversationsRefreshTimer.current);
+    }
+    conversationsRefreshTimer.current = window.setTimeout(() => {
+      conversationsRefreshTimer.current = null;
+      loadConversations();
+    }, delay);
+  }, [loadConversations]);
+
   /** Carrega as mensagens de uma conversa. page=1 substitui tudo; page>1 prepend. */
-  const loadMessages = useCallback(async (convId: string, page = 1) => {
+  const loadMessages = useCallback(async (convId: string, page = 1, preserveView = false) => {
     const requestId = ++messageRequestId.current;
+    const container = messagesContainerRef.current;
+    const previousScrollTop = container?.scrollTop || 0;
+    const preserveScroll = page === 1 && preserveView && !!container;
     try {
       const data = await conversationApi.messages(convId, page);
       if (requestId !== messageRequestId.current) return;
@@ -185,7 +202,15 @@ export default function ConversationsPage() {
       if (page === 1) {
         // O histórico já está na tela; não faça o usuário esperar a escrita dos
         // badges/read-state para poder enxergá-lo.
-        scrollToBottom('instant');
+        if (preserveScroll) {
+          requestAnimationFrame(() => {
+            if (messagesContainerRef.current) {
+              messagesContainerRef.current.scrollTop = previousScrollTop;
+            }
+          });
+        } else {
+          scrollToBottom('instant', true);
+        }
         conversationApi.markRead(convId).then(() => {
           if (socket) socket.emit('conversation-read', convId);
         }).catch(() => {});
@@ -216,13 +241,18 @@ export default function ConversationsPage() {
   useEffect(() => { loadAccounts(); }, []);
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
+  useEffect(() => () => {
+    if (conversationsRefreshTimer.current !== null) {
+      window.clearTimeout(conversationsRefreshTimer.current);
+    }
+  }, []);
+
   useEffect(() => {
     if (selectedAccountId) {
       setSelectedConv(null);
       setMessages(new Map());
       setMsgPage(1);
       setMsgTotal(0);
-      loadConversations(selectedAccountId);
       whatsappApi.syncProgress(selectedAccountId)
         .then(progress => {
           if (progress) {
@@ -294,7 +324,7 @@ export default function ConversationsPage() {
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === data.conversationId);
         if (idx === -1) {
-          loadConversations();
+          scheduleConversationsRefresh();
           return prev;
         }
         const updated = [...prev];
@@ -337,7 +367,7 @@ export default function ConversationsPage() {
         conversationApi.markRead(data.conversationId).then(() => {
           socket.emit('conversation-read', data.conversationId);
         }).catch(() => {});
-        scrollToBottom();
+         scrollToBottom();
       }
     };
 
@@ -383,19 +413,21 @@ export default function ConversationsPage() {
           return map;
         });
         setMsgTotal(t => t + 1);
-        scrollToBottom();
+         scrollToBottom('smooth', true);
       }
     };
 
     const onContactsUpdated = (data: any) => {
-      if (data.accountId === selectedAccountIdRef.current) loadConversations();
+       if (data.accountId === selectedAccountIdRef.current) scheduleConversationsRefresh();
     };
     const onHistory = (data: any) => {
       if (data.accountId === selectedAccountIdRef.current) {
-        loadConversations();
-        if (selectedConvRef.current) {
-          loadMessages(selectedConvRef.current.id, 1);
-        }
+         // Atualiza o histórico ao final da sincronização sem mover a posição
+         // atual de leitura.
+         scheduleConversationsRefresh(500);
+         if (selectedConvRef.current) {
+           loadMessages(selectedConvRef.current.id, 1, true);
+         }
       }
     };
     const onSyncProgress = (data: SyncProgress & { accountId: string }) => {
@@ -403,7 +435,7 @@ export default function ConversationsPage() {
       setSyncProgress(data);
       setSyncing(data.status === 'syncing');
       if (data.status === 'completed') {
-        loadConversations();
+         scheduleConversationsRefresh(500);
         window.setTimeout(() => setSyncProgress(current => current?.status === 'completed' ? null : current), 7000);
       }
     };
@@ -427,7 +459,7 @@ export default function ConversationsPage() {
       socket.off('sync:progress', onSyncProgress);
       socket.off('conversation:read', onConvRead);
     };
-  }, [socket, loadConversations, loadMessages]);
+  }, [socket, loadConversations, loadMessages, scheduleConversationsRefresh]);
 
   const handleSync = async () => {
     if (!selectedAccountId || syncing) return;
@@ -448,11 +480,12 @@ export default function ConversationsPage() {
       setSyncing(false);
       setSyncProgress(current => current ? { ...current, status: 'error', message: 'Não foi possível sincronizar agora' } : null);
     } finally {
-      await loadConversations();
+      setSyncing(false);
     }
   };
 
   const handleSelectConv = (conv: ConvItem) => {
+    stickToBottomRef.current = true;
     setSelectedConv(conv);
     setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
     setMessages(new Map());
@@ -708,7 +741,16 @@ export default function ConversationsPage() {
             )}
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+             <div
+               ref={messagesContainerRef}
+               className="flex-1 overflow-y-auto p-4 space-y-2"
+               onScroll={() => {
+                 const container = messagesContainerRef.current;
+                 if (!container) return;
+                 stickToBottomRef.current =
+                   container.scrollHeight - container.scrollTop - container.clientHeight < 96;
+               }}
+             >
               {/* FIX 6.2: Botão "carregar mais" no topo */}
               <div ref={messagesTopRef} />
               {hasMoreHistory && (

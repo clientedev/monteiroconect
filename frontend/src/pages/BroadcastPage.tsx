@@ -11,6 +11,7 @@ import {
   Search,
   Send,
   Users,
+  Video,
   XCircle,
 } from 'lucide-react';
 
@@ -79,15 +80,25 @@ export default function BroadcastPage() {
     }
   }, [accountId, search]);
 
-  useEffect(() => {
-    whatsappApi.list()
-      .then(data => {
-        setAccounts(data);
-        if (data.length > 0) setAccountId(data[0].id);
-      })
-      .catch(err => setError(err?.message || 'Não foi possível carregar os WhatsApps'))
-      .finally(() => setLoadingAccounts(false));
+  const loadAccounts = useCallback(async () => {
+    setLoadingAccounts(true);
+    setError('');
+    try {
+      const data = await whatsappApi.list();
+      setAccounts(data);
+      setAccountId(current => data.some(account => account.id === current) ? current : (data[0]?.id || ''));
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível carregar os WhatsApps');
+      setAccounts([]);
+      setAccountId('');
+    } finally {
+      setLoadingAccounts(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadAccounts();
+  }, [loadAccounts]);
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -165,10 +176,6 @@ export default function BroadcastPage() {
     }
   };
 
-  if (loadingAccounts) {
-    return <div className="flex items-center justify-center p-16 text-monte-sereno"><Loader2 className="w-6 h-6 animate-spin" /></div>;
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -195,14 +202,21 @@ export default function BroadcastPage() {
         <section className="card-static overflow-hidden">
           <div className="p-4 border-b border-monte-sereno/15 space-y-3">
             <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-              <select className="input-rect sm:max-w-xs" value={accountId} onChange={event => setAccountId(event.target.value)}>
-                {accounts.length === 0 && <option value="">Nenhum WhatsApp configurado</option>}
-                {accounts.map(account => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} — {account.status === 'CONNECTED' ? 'conectado' : 'desconectado'}
-                  </option>
-                ))}
-              </select>
+              {loadingAccounts ? (
+                <div className="input-rect sm:max-w-xs flex items-center gap-2 text-monte-sereno">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Carregando WhatsApps...
+                </div>
+              ) : (
+                <select className="input-rect sm:max-w-xs" value={accountId} onChange={event => setAccountId(event.target.value)}>
+                  {accounts.length === 0 && <option value="">Nenhum WhatsApp configurado</option>}
+                  {accounts.map(account => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} — {account.status === 'CONNECTED' ? 'conectado' : 'desconectado'}
+                    </option>
+                  ))}
+                </select>
+              )}
               <span className={`text-xs font-semibold ${connected ? 'text-emerald-700' : 'text-amber-700'}`}>
                 {connected ? 'Pronto para enviar' : 'Conecte o WhatsApp para disparar'}
               </span>
@@ -273,7 +287,13 @@ export default function BroadcastPage() {
 
           {attachment && (
             <div className="rounded-2xl border border-monte-verde/20 bg-monte-verde/5 p-3 flex items-center gap-3">
-              {attachment.type === 'image' ? <ImageIcon className="w-5 h-5 text-monte-verde" /> : attachment.type === 'audio' ? <FileAudio className="w-5 h-5 text-monte-verde" /> : <FileText className="w-5 h-5 text-monte-verde" />}
+               {attachment.type === 'image'
+                 ? <ImageIcon className="w-5 h-5 text-monte-verde" />
+                 : attachment.type === 'audio'
+                   ? <FileAudio className="w-5 h-5 text-monte-verde" />
+                   : attachment.type === 'video'
+                     ? <Video className="w-5 h-5 text-monte-verde" />
+                     : <FileText className="w-5 h-5 text-monte-verde" />}
               <span className="text-sm text-monte-azul truncate flex-1">{attachment.originalName}</span>
               <button type="button" title="Remover anexo" onClick={() => setAttachment(null)} className="text-monte-sereno hover:text-monte-terracota">
                 <XCircle className="w-4 h-4" />
@@ -283,7 +303,7 @@ export default function BroadcastPage() {
 
           <div className="flex items-center gap-2">
             <label className="btn-secondary flex-1 text-center cursor-pointer">
-              {uploading ? 'Enviando anexo...' : 'Adicionar imagem, documento ou áudio'}
+               {uploading ? 'Enviando anexo...' : 'Adicionar imagem, vídeo, documento ou áudio'}
               <input type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" onChange={handleAttachment} disabled={uploading || sending} />
             </label>
           </div>
@@ -302,6 +322,12 @@ export default function BroadcastPage() {
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             {sending ? 'Enviando disparo...' : 'Enviar para selecionados'}
           </button>
+
+           {accounts.length === 0 && !loadingAccounts && (
+             <button type="button" className="btn-secondary w-full" onClick={loadAccounts}>
+               Tentar carregar novamente
+             </button>
+           )}
 
           {result && (
             <div className={`rounded-2xl border p-3 text-sm ${result.failed ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>

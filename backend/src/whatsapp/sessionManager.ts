@@ -522,7 +522,13 @@ class WhatsAppSessionManager extends EventEmitter {
    */
   private resolveMediaPath(mediaUrl: string): string {
     if (!mediaUrl.startsWith('/uploads/')) return mediaUrl;
-    return path.resolve(process.cwd(), mediaUrl);
+    const uploadRoot = path.resolve(env.uploadPath);
+    const relativePath = mediaUrl.slice('/uploads/'.length);
+    const resolvedPath = path.resolve(uploadRoot, relativePath);
+    if (resolvedPath !== uploadRoot && !resolvedPath.startsWith(`${uploadRoot}${path.sep}`)) {
+      throw new AppError('Caminho de mídia inválido', 400);
+    }
+    return resolvedPath;
   }
 
   private async mediaPayload(mediaUrl: string): Promise<Buffer | { url: string }> {
@@ -559,10 +565,18 @@ class WhatsAppSessionManager extends EventEmitter {
       result = await session.socket.sendMessage(jid, { text: content });
     } else if (type === 'image') {
       const image = await this.mediaPayload(mediaUrl!);
-      result = await session.socket.sendMessage(jid, { image, caption: content || undefined });
+      result = await session.socket.sendMessage(jid, {
+        image,
+        caption: content || undefined,
+        mimetype: mediaMimeType || undefined,
+      });
     } else if (type === 'video') {
       const video = await this.mediaPayload(mediaUrl!);
-      result = await session.socket.sendMessage(jid, { video, caption: content || undefined });
+      result = await session.socket.sendMessage(jid, {
+        video,
+        caption: content || undefined,
+        mimetype: mediaMimeType || undefined,
+      });
     } else if (type === 'audio') {
       const audio = await this.mediaPayload(mediaUrl!);
       result = await session.socket.sendMessage(jid, {
@@ -943,6 +957,9 @@ class WhatsAppSessionManager extends EventEmitter {
       const msgType = messageType === 'conversation' || messageType === 'extendedTextMessage'
         ? 'text'
         : (mediaType || messageType);
+      const savedMediaUrl = mediaType
+        ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType)
+        : null;
 
       let savedMessage: any;
       let alreadyStored = false;
@@ -954,7 +971,7 @@ class WhatsAppSessionManager extends EventEmitter {
             type: msgType,
             content,
             mediaType,
-            mediaUrl: null,
+            mediaUrl: savedMediaUrl,
             isFromMe: true,
             isRead: true,
             quotedMessageId,
@@ -997,7 +1014,7 @@ class WhatsAppSessionManager extends EventEmitter {
           type: savedMessage.type,
           content,
           mediaType,
-          mediaUrl: null,
+           mediaUrl: savedMediaUrl,
           isFromMe: true,
           quotedMessageId,
           quotedContent,
@@ -1146,7 +1163,9 @@ class WhatsAppSessionManager extends EventEmitter {
   private async importHistoryBatch(accountId: string, data: any): Promise<number> {
     const limit = env.historyMessageLimit; // 0 = sem limite
     const cutoff = new Date(Date.now() - Math.max(1, env.historySyncDays) * 24 * 60 * 60 * 1000);
-    const mediaCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // O histórico já é limitado por HISTORY_SYNC_DAYS; mídias dentro desse
+    // período também precisam ser baixadas para poderem ser reproduzidas.
+    const mediaCutoff = cutoff;
 
     await this.syncContactNames(accountId, data.contacts || []);
     // Nomes de contato vindos do sync (jid -> nome)
@@ -1392,6 +1411,20 @@ class WhatsAppSessionManager extends EventEmitter {
    * Restringe o download apenas para mídias válidas (imagem, vídeo, áudio, doc, sticker).
    * Evita chamar downloadMediaMessage para localização/contato/texto, o que travava o processo.
    */
+  private mediaMimeType(msg: WAMessage): string | null {
+    let m: any = msg.message || {};
+    let messageType = Object.keys(m)[0] || '';
+    const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage', 'editedMessage'];
+    for (let i = 0; i < 3 && wrappers.includes(messageType); i++) {
+      const inner = m[messageType]?.message;
+      if (!inner) return null;
+      m = inner;
+      messageType = Object.keys(m)[0] || '';
+    }
+    const value = m[messageType]?.mimetype;
+    return typeof value === 'string' && value.trim() ? value.trim().split(';')[0] : null;
+  }
+
   private async tryDownloadMedia(msg: WAMessage, msgId: string, mediaType: string): Promise<string | null> {
     const DOWNLOADABLE = ['image', 'video', 'audio', 'document', 'sticker'];
     if (!mediaType || !DOWNLOADABLE.includes(mediaType)) return null;
@@ -1407,8 +1440,22 @@ class WhatsAppSessionManager extends EventEmitter {
         document: 'bin',
         sticker: 'webp',
       };
-      const ext = extMap[mediaType] || 'bin';
-      const fileName = `${Date.now()}-${msgId}.${ext}`;
+      const mimeExtMap: Record<string, string> = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'video/mp4': 'mp4',
+        'video/webm': 'webm',
+        'audio/ogg': 'ogg',
+        'audio/opus': 'opus',
+        'audio/mpeg': 'mp3',
+        'audio/mp4': 'm4a',
+        'application/pdf': 'pdf',
+      };
+      const ext = mimeExtMap[this.mediaMimeType(msg) || ''] || extMap[mediaType] || 'bin';
+      const safeId = msgId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `${Date.now()}-${safeId}.${ext}`;
       const filePath = path.join(env.uploadPath, fileName);
       await fs.writeFile(filePath, buffer);
       return `/uploads/${fileName}`;
