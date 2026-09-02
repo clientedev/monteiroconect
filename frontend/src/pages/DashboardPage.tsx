@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { dashboardApi } from '../lib/api';
+import { useSocket } from '../context/SocketContext';
 import { Smartphone, MessageSquare, Mail, TrendingUp, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -35,16 +36,11 @@ interface Stats {
 }
 
 export default function DashboardPage() {
+  const { socket } = useSocket();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadStats();
-    const interval = setInterval(loadStats, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const data = await dashboardApi.stats();
       setStats(data);
@@ -52,7 +48,37 @@ export default function DashboardPage() {
     finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+    const interval = setInterval(loadStats, 30000);
+    return () => clearInterval(interval);
+  }, [loadStats]);
+
+  // Atualizações em tempo real via Socket
+  useEffect(() => {
+    if (!socket) return;
+
+    const onUpdate = () => loadStats();
+
+    socket.on('message:new', onUpdate);
+    socket.on('message:sent', onUpdate);
+    socket.on('whatsapp:status', onUpdate);
+    socket.on('whatsapp:connected', onUpdate);
+    socket.on('whatsapp:disconnected', onUpdate);
+    socket.on('conversation:read', onUpdate);
+
+    return () => {
+      socket.off('message:new', onUpdate);
+      socket.off('message:sent', onUpdate);
+      socket.off('whatsapp:status', onUpdate);
+      socket.off('whatsapp:connected', onUpdate);
+      socket.off('whatsapp:disconnected', onUpdate);
+      socket.off('conversation:read', onUpdate);
+    };
+  }, [socket, loadStats]);
+
 
   if (loading) return <LoadingSkeleton />;
 

@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { disconnectSocket, getSocket } from '../lib/socket';
+import { useSocket } from '../context/SocketContext';
+import { disconnectSocket } from '../lib/socket';
 import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell,
   LogOut, Search, Menu, X, Bot,
@@ -23,6 +24,7 @@ const manageItems = [
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { socket } = useSocket();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,7 +75,6 @@ export default function Layout() {
 
   // Atualiza badge em tempo real: nova mensagem OU conversa lida
   useEffect(() => {
-    const socket = getSocket();
     if (!socket) return;
 
     const onNewMsg = () => loadUnreadCount();
@@ -85,7 +86,8 @@ export default function Layout() {
       socket.off('message:new', onNewMsg);
       socket.off('conversation:read', onRead);
     };
-  }, [loadUnreadCount]);
+  }, [socket, loadUnreadCount]);
+
 
   const handleLogout = () => {
     disconnectSocket();

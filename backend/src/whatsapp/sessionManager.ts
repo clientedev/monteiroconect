@@ -297,7 +297,7 @@ class WhatsAppSessionManager extends EventEmitter {
       // Mensagens recebidas E enviadas de outros dispositivos (celular) —
       // comportamento igual ao WhatsApp Web, que espelha tudo
       socket.ev.on('messages.upsert', async (m: { type: MessageUpsertType; messages: WAMessage[] }) => {
-        if (m.type === 'notify') {
+        if (m.type === 'notify' || m.type === 'append') {
           for (const msg of m.messages) {
             if (!this.isUsableChatMessage(accountId, msg)) continue;
             if (msg.key.fromMe) {

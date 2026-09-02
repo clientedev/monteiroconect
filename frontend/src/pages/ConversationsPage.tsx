@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { whatsappApi, conversationApi } from '../lib/api';
-import { connectSocket, getSocket } from '../lib/socket';
+import { useSocket } from '../context/SocketContext';
 import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp } from 'lucide-react';
 
 interface ConvItem {
@@ -83,23 +83,21 @@ const formatTime = (date?: string | null) => {
 };
 
 export default function ConversationsPage() {
+  const { socket } = useSocket();
   const location = useLocation();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [conversations, setConversations] = useState<ConvItem[]>([]);
   const [selectedConv, setSelectedConv] = useState<ConvItem | null>(null);
-  // FIX 6.1: Map com id como chave garante deduplicação sem duplicatas visuais
   const [messages, setMessages] = useState<Map<string, Msg>>(new Map());
   const [newMessage, setNewMessage] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  // FIX 6.2: Paginação de histórico
   const [msgPage, setMsgPage] = useState(1);
   const [msgTotal, setMsgTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
-  const MSG_LIMIT = 50;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesTopRef = useRef<HTMLDivElement>(null);
@@ -135,10 +133,11 @@ export default function ConversationsPage() {
     } catch {}
   }, []);
 
-  const loadConversations = useCallback(async () => {
-    if (!selectedAccountIdRef.current) return;
+  const loadConversations = useCallback(async (accountId?: string) => {
+    const accId = accountId || selectedAccountIdRef.current;
+    if (!accId) return;
     try {
-      const data = await conversationApi.list(selectedAccountIdRef.current, search);
+      const data = await conversationApi.list(accId, search);
       setConversations(data.conversations || []);
     } catch {}
     finally { setLoading(false); }
@@ -154,12 +153,10 @@ export default function ConversationsPage() {
 
       setMessages(prev => {
         if (page === 1) {
-          // Substitui completamente — FIX 6.1: usa Map para garantir unicidade
           const map = new Map<string, Msg>();
           for (const m of fetched) map.set(m.id, m);
           return map;
         } else {
-          // Prepend (histórico mais antigo) — preserva mensagens existentes
           const map = new Map<string, Msg>(prev);
           for (const m of fetched) {
             if (!map.has(m.id)) map.set(m.id, m);
@@ -170,13 +167,12 @@ export default function ConversationsPage() {
 
       if (page === 1) {
         await conversationApi.markRead(convId);
-        getSocket()?.emit('conversation-read', convId);
+        if (socket) socket.emit('conversation-read', convId);
         scrollToBottom('instant');
       }
     } catch {}
-  }, []);
+  }, [socket]);
 
-  /** FIX 6.2: Carrega pagina anterior (historico mais antigo) */
   const loadMoreMessages = async () => {
     if (!selectedConv || loadingMore) return;
     const nextPage = msgPage + 1;
@@ -184,14 +180,12 @@ export default function ConversationsPage() {
     if (!hasMore) return;
 
     setLoadingMore(true);
-    // Salva posicao do scroll antes de adicionar mensagens acima
     const container = messagesTopRef.current?.parentElement;
     const prevScrollHeight = container?.scrollHeight || 0;
 
     await loadMessages(selectedConv.id, nextPage);
     setLoadingMore(false);
 
-    // Mantem a posicao visual apos prepend
     requestAnimationFrame(() => {
       if (container) {
         container.scrollTop = container.scrollHeight - prevScrollHeight;
@@ -199,30 +193,16 @@ export default function ConversationsPage() {
     });
   };
 
-  // Recarrega mensagens da conversa aberta periodicamente para garantir exibicao
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    if (!selectedConv) {
-      if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
-      return;
-    }
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    pollIntervalRef.current = setInterval(() => {
-      if (selectedConvRef.current) loadMessages(selectedConvRef.current.id, 1);
-    }, 5000); // polling a cada 5s como fallback
-    return () => {
-      if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
-    };
-  }, [selectedConv, loadMessages]);
-
   useEffect(() => { loadAccounts(); }, []);
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
   useEffect(() => {
     if (selectedAccountId) {
       setSelectedConv(null);
       setMessages(new Map());
       setMsgPage(1);
       setMsgTotal(0);
+      loadConversations(selectedAccountId);
     }
   }, [selectedAccountId]);
 
@@ -246,26 +226,31 @@ export default function ConversationsPage() {
     }
   }, [conversations]);
 
-  // Join socket rooms
+  // Enter socket rooms & auto-rejoin
   useEffect(() => {
-    const socket = getSocket();
     if (!socket || !selectedAccountId) return;
-    socket.emit('join-account', selectedAccountId);
-    return () => { socket.emit('leave-account', selectedAccountId); };
-  }, [selectedAccountId]);
-
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket || !selectedConv) return;
-    socket.emit('join-conversation', selectedConv.id);
+    const joinAcc = () => socket.emit('join-account', selectedAccountId);
+    joinAcc();
+    socket.on('connect', joinAcc);
     return () => {
-      if (selectedConv) socket.emit('leave-conversation', selectedConv.id);
+      socket.off('connect', joinAcc);
+      socket.emit('leave-account', selectedAccountId);
     };
-  }, [selectedConv]);
+  }, [socket, selectedAccountId]);
 
-  // Real-time messages
   useEffect(() => {
-    const socket = getSocket();
+    if (!socket || !selectedConv) return;
+    const joinConv = () => socket.emit('join-conversation', selectedConv.id);
+    joinConv();
+    socket.on('connect', joinConv);
+    return () => {
+      socket.off('connect', joinConv);
+      socket.emit('leave-conversation', selectedConv.id);
+    };
+  }, [socket, selectedConv]);
+
+  // Real-time message & status listeners
+  useEffect(() => {
     if (!socket) return;
 
     const onNewMsg = (data: any) => {
@@ -274,11 +259,10 @@ export default function ConversationsPage() {
 
       if (data.accountId !== currentAccountId) return;
 
-      // FIX 6.3: Atualização cirúrgica da conversa na lista (sem reload completo)
+      // Atualização cirúrgica da conversa na lista
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === data.conversationId);
         if (idx === -1) {
-          // Conversa nova — recarrega a lista completa
           loadConversations();
           return prev;
         }
@@ -291,7 +275,6 @@ export default function ConversationsPage() {
             ? 0
             : (updated[idx].unreadCount || 0) + 1,
         };
-        // Reordena: conversa mais recente primeiro
         updated.sort((a, b) =>
           new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime()
         );
@@ -299,7 +282,6 @@ export default function ConversationsPage() {
       });
 
       if (currentConv?.id === data.conversationId) {
-        // FIX 6.1: Adiciona ao Map — impossível duplicar
         setMessages(prev => {
           if (prev.has(data.message.id)) return prev;
           const map = new Map(prev);
@@ -322,7 +304,7 @@ export default function ConversationsPage() {
         });
         setMsgTotal(t => t + 1);
         conversationApi.markRead(data.conversationId).then(() => {
-          getSocket()?.emit('conversation-read', data.conversationId);
+          socket.emit('conversation-read', data.conversationId);
         }).catch(() => {});
         scrollToBottom();
       }
@@ -334,7 +316,6 @@ export default function ConversationsPage() {
 
       if (data.accountId !== currentAccountId) return;
 
-      // FIX 6.3: Atualização cirúrgica da lista de conversas para mensagens enviadas
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === data.conversationId);
         if (idx === -1) return prev;
@@ -342,7 +323,7 @@ export default function ConversationsPage() {
         updated[idx] = {
           ...updated[idx],
           lastMessage: data.message.content || updated[idx].lastMessage,
-          lastMessageAt: data.message.createdAt,
+          lastMessageAt: data.message.createdAt || data.message.timestamp,
         };
         updated.sort((a, b) =>
           new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime()
@@ -351,7 +332,6 @@ export default function ConversationsPage() {
       });
 
       if (currentConv?.id === data.conversationId) {
-        // FIX 6.1: Map — não duplica mensagem enviada
         setMessages(prev => {
           if (prev.has(data.message.id)) return prev;
           const map = new Map(prev);
@@ -362,7 +342,7 @@ export default function ConversationsPage() {
             mediaUrl: data.message.mediaUrl,
             mediaType: data.message.mediaType,
             isFromMe: true,
-            isRead: false,
+            isRead: true,
             createdAt: data.message.createdAt,
             timestamp: data.message.timestamp,
             fromPhone: null,
@@ -382,7 +362,6 @@ export default function ConversationsPage() {
     const onHistory = (data: any) => {
       if (data.accountId === selectedAccountIdRef.current) {
         loadConversations();
-        // Recarrega mensagens da conversa aberta se houver
         if (selectedConvRef.current) {
           loadMessages(selectedConvRef.current.id, 1);
         }
@@ -406,7 +385,7 @@ export default function ConversationsPage() {
       socket.off('history:imported', onHistory);
       socket.off('conversation:read', onConvRead);
     };
-  }, [loadConversations]);
+  }, [socket, loadConversations, loadMessages]);
 
   const handleSync = async () => {
     if (!selectedAccountId || syncing) return;
@@ -439,10 +418,6 @@ export default function ConversationsPage() {
     setNewMessage('');
     try {
       await conversationApi.send(selectedAccountId, selectedConv.contactPhone, text);
-      // Recarrega mensagens para garantir que a mensagem enviada apareca
-      setTimeout(() => {
-        if (selectedConvRef.current) loadMessages(selectedConvRef.current.id, 1);
-      }, 500);
     } catch (err: any) {
       setNewMessage(text);
       alert('Erro ao enviar: ' + (err.message || 'tente novamente'));

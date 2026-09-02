@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -9,25 +10,16 @@ import ContactsPage from './pages/ContactsPage';
 import AttendantsPage from './pages/AttendantsPage';
 import TagsPage from './pages/TagsPage';
 import ChatbotsPage from './pages/ChatbotsPage';
-import { useEffect } from 'react';
-import { connectSocket, disconnectSocket } from './lib/socket';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="flex h-screen items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-monte-verde border-t-transparent rounded-full" /></div>;
   if (!user) return <Navigate to="/login" />;
-  return <>{children}</>;
+  return <SocketProvider>{children}</SocketProvider>;
 }
 
 export default function App() {
-  const { token, user } = useAuth();
-
-  useEffect(() => {
-    if (token && user) {
-      connectSocket(token);
-    }
-    return () => disconnectSocket();
-  }, [token, user]);
+  const { user } = useAuth();
 
   return (
     <Routes>
@@ -48,3 +40,4 @@ export default function App() {
     </Routes>
   );
 }
+

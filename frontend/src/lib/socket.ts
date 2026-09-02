@@ -2,11 +2,9 @@ import { io, Socket } from 'socket.io-client';
 
 let socket: Socket | null = null;
 
-export function connectSocket(token: string, onReconnect?: () => void): Socket {
-  // FIX 5: Destrói socket anterior antes de criar novo, evitando handlers duplicados
+export function connectSocket(token: string): Socket {
   if (socket) {
     if (socket.connected) return socket;
-    // Socket existe mas desconectado — destrói completamente antes de recriar
     socket.removeAllListeners();
     socket.disconnect();
     socket = null;
@@ -17,15 +15,10 @@ export function connectSocket(token: string, onReconnect?: () => void): Socket {
     auth: { token },
     transports: ['websocket', 'polling'],
     reconnection: true,
-    reconnectionDelay: 2000,
-    reconnectionDelayMax: 30000,
-    reconnectionAttempts: Infinity, // FIX 5: tenta reconectar indefinidamente
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 10000,
+    reconnectionAttempts: Infinity,
   });
-
-  // FIX 5: Notifica o frontend após reconexão para recarregar dados
-  if (onReconnect) {
-    socket.on('reconnect', onReconnect);
-  }
 
   return socket;
 }
@@ -41,3 +34,4 @@ export function disconnectSocket() {
     socket = null;
   }
 }
+
