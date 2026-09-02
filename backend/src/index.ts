@@ -24,9 +24,51 @@ import searchRoutes from './routes/searchRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import chatbotRoutes from './routes/chatbotRoutes.js';
 
-function syncDatabaseInBackground(): Promise<void> {
-  return new Promise((resolve) => {
-    logger.info('Sincronizando schema com banco de dados (prisma db push)...');
+async function ensureMessageColumns(): Promise<void> {
+  // O banco do Railway pode ter sido criado antes da inclusão de campos de
+  // deduplicação. Essas alterações são aditivas e idempotentes: corrigem uma
+  // base existente sem apagar mensagens e deixam o db push completar o resto.
+  const statements = [
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "caption" TEXT',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "quotedMessageId" TEXT',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "quotedContent" TEXT',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderName" TEXT',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderJid" TEXT',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "waMsgId" TEXT',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "timestamp" TIMESTAMP(3)',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "messageId" TEXT',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "fromPhone" TEXT',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "toPhone" TEXT',
+  ];
+
+  try {
+    for (const statement of statements) {
+      await prisma.$executeRawUnsafe(statement);
+    }
+    await prisma.$executeRawUnsafe(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "Message_conversationId_waMsgId_key" ON "Message" ("conversationId", "waMsgId")',
+    );
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "Message_conversationId_timestamp_idx" ON "Message" ("conversationId", "timestamp")',
+    );
+    logger.info('Schema de mensagens verificado (deduplicação e timestamp ativos).');
+  } catch (err: any) {
+    // Em uma base vazia a tabela ainda não existe; o db push abaixo a criará.
+    // Outros erros devem interromper o boot para não aceitar mensagens e
+    // descartá-las silenciosamente por schema incompatível.
+    if (/(?:relation|table).*(?:does not exist|não existe)/i.test(String(err?.message || err))) {
+      logger.info('Tabela Message ainda não existe; será criada pelo Prisma.');
+      return;
+    }
+    throw err;
+  }
+}
+
+async function syncDatabaseInBackground(): Promise<void> {
+  logger.info('Sincronizando schema com banco de dados (prisma db push)...');
+  await ensureMessageColumns();
+
+  await new Promise<void>((resolve, reject) => {
     const child = exec(
       // Nunca aceite perda de dados automaticamente ao iniciar o servidor.
       // Alterações destrutivas devem ser revisadas e executadas manualmente.
@@ -35,12 +77,12 @@ function syncDatabaseInBackground(): Promise<void> {
       (err, stdout, stderr) => {
         if (err) {
           logger.error(`prisma db push falhou: ${stderr || err.message}`);
-          logger.info('Tentando conectar ao banco mesmo assim...');
+          reject(err);
         } else {
           logger.info(`Schema sincronizado: ${stdout?.trim()}`);
+          resolve();
         }
-        resolve();
-      }
+      },
     );
     child.stdout?.on('data', (d) => logger.info(`[prisma] ${d.trim()}`));
     child.stderr?.on('data', (d) => logger.warn(`[prisma] ${d.trim()}`));

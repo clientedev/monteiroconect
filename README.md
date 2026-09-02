@@ -148,6 +148,11 @@ O botão **Reconectar** reutiliza as credenciais existentes e não apaga a pasta
 da sessão. O botão **Atualizar QR** é a ação explícita para invalidar a sessão e
 gerar um QR novo.
 
+O backend também verifica e corrige de forma aditiva o schema da tabela de
+mensagens durante o boot. Portanto, depois de atualizar o código, é necessário
+fazer um novo deploy no Railway para criar campos como `waMsgId` no banco de
+produção.
+
 ---
 
 ## 📂 Estrutura do Projeto

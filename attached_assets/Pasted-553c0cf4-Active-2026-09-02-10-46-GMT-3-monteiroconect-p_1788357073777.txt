@@ -1,0 +1,175 @@
+553c0cf4
+Active
+
+2026-09-02 10:46 GMT-3
+monteiroconect-production.up.railway.app
+Details
+Build Logs
+Deploy Logs
+Network Logs
+Filter and search logs
+
+
+The column `Message.waMsgId` does not exist in the current database.
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+Railway rate limit reached for deployment, update your application to reduce the logging rate. Messages dropped: 413
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+The column `Message.waMsgId` does not exist in the current database.
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+The column `Message.waMsgId` does not exist in the current database.
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+Railway rate limit reached for deployment, update your application to reduce the logging rate. Messages dropped: 403
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+prisma:error 
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
+prisma:error 
+Invalid `prisma.message.create()` invocation:
