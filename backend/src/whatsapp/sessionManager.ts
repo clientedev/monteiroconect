@@ -543,6 +543,12 @@ class WhatsAppSessionManager extends EventEmitter {
     }
   }
 
+  private outboundContent(content: string, senderName?: string): string {
+    const name = senderName?.trim();
+    if (!name) return content;
+    return content.trim() ? `${name}: ${content}` : name;
+  }
+
   async sendMessage(
     accountId: string,
     to: string,
@@ -560,22 +566,23 @@ class WhatsAppSessionManager extends EventEmitter {
 
     const jid = this.normalizeJid(to);
     const resolvedMedia = mediaUrl ? this.resolveMediaPath(mediaUrl) : undefined;
+    const recipientContent = this.outboundContent(content, senderName);
     let result: any;
 
     if (type === 'text' || !resolvedMedia) {
-      result = await session.socket.sendMessage(jid, { text: content });
+      result = await session.socket.sendMessage(jid, { text: recipientContent });
     } else if (type === 'image') {
       const image = await this.mediaPayload(mediaUrl!);
       result = await session.socket.sendMessage(jid, {
         image,
-        caption: content || undefined,
+        caption: recipientContent || undefined,
         mimetype: mediaMimeType || undefined,
       });
     } else if (type === 'video') {
       const video = await this.mediaPayload(mediaUrl!);
       result = await session.socket.sendMessage(jid, {
         video,
-        caption: content || undefined,
+        caption: recipientContent || undefined,
         mimetype: mediaMimeType || undefined,
       });
     } else if (type === 'audio') {
@@ -585,16 +592,21 @@ class WhatsAppSessionManager extends EventEmitter {
         mimetype: mediaMimeType || 'audio/ogg; codecs=opus',
         ptt: false,
       });
+      // O WhatsApp não oferece caption para áudio; envia a identificação
+      // como texto complementar para que o destinatário também veja o atendente.
+      if (recipientContent) {
+        await session.socket.sendMessage(jid, { text: recipientContent });
+      }
     } else if (type === 'document') {
       const document = await this.mediaPayload(mediaUrl!);
       result = await session.socket.sendMessage(jid, {
         document,
-        caption: content || undefined,
+        caption: recipientContent || undefined,
         mimetype: mediaMimeType || 'application/octet-stream',
         fileName: mediaFileName || content || 'documento',
       });
     } else {
-      result = await session.socket.sendMessage(jid, { text: content });
+      result = await session.socket.sendMessage(jid, { text: recipientContent });
     }
 
     await this.saveOutgoingMessage(accountId, jid, content, type, mediaUrl ?? null, result, senderName);
