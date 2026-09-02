@@ -103,6 +103,19 @@ export default function WhatsAppPage() {
     } catch (err: any) { alert(err.message); }
   };
 
+  const handleReconnect = async (id: string) => {
+    try {
+      const result = await whatsappApi.reconnect(id);
+      if (result.qrCode) {
+        const account = accounts.find(a => a.id === id);
+        if (account) setQrAccount({ ...account, status: 'QR_CODE', qrCode: result.qrCode });
+      }
+      await loadAccounts();
+    } catch (err: any) {
+      alert(err.message || 'Não foi possível reconectar o WhatsApp');
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center py-12"><div className="animate-spin h-8 w-8 border-4 border-monte-verde border-t-transparent rounded-full" /></div>;
 
   return (
@@ -155,7 +168,7 @@ export default function WhatsAppPage() {
                   </button>
                 )}
                 {(acc.status === 'DISCONNECTED' || acc.status === 'ERROR') && (
-                  <button onClick={() => handleRefreshQR(acc.id)} className="btn-secondary text-xs flex items-center gap-1 flex-1 justify-center">
+                  <button onClick={() => handleReconnect(acc.id)} className="btn-secondary text-xs flex items-center gap-1 flex-1 justify-center">
                     <RefreshCw className="w-3 h-3" /> Reconectar
                   </button>
                 )}

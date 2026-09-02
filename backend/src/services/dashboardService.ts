@@ -41,7 +41,10 @@ export async function getDashboardStats() {
       },
     }),
     prisma.message.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { timestamp: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ],
       take: 20,
       include: { conversation: { include: { contact: true } } },
     }),

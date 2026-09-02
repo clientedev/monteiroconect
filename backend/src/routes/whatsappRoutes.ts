@@ -6,6 +6,7 @@ import {
   disconnectWhatsApp,
   removeWhatsApp,
   refreshQRCode,
+  reconnectWhatsApp,
   syncWhatsApp,
   getWhatsAppSyncProgress,
 } from '../services/whatsappService.js';
@@ -70,6 +71,14 @@ router.post('/:id/refresh-qr', async (req: AuthRequest, res, next) => {
   try {
     const { qrCode } = await refreshQRCode(String(req.params.id), req.user!);
     res.json({ qrCode });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/reconnect', async (req: AuthRequest, res, next) => {
+  try {
+    res.json(await reconnectWhatsApp(String(req.params.id), req.user!));
   } catch (err) {
     next(err);
   }

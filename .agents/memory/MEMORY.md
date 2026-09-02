@@ -1,2 +1,3 @@
 - [Baileys dependency firewall](baileys-dependency-firewall.md) — Replit pode bloquear os tarballs do Baileys; valide a instalação antes de testar o backend ou publicar.
 - [Railway startup health](railway-startup-healthcheck.md) — o processo HTTP deve iniciar antes de qualquer sincronização bloqueante do Prisma.
+- [WhatsApp session durability](whatsapp-session-reliability.md) — sessões Baileys exigem volume persistente e uma única instância; reconectar deve preservar as credenciais.

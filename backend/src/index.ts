@@ -54,6 +54,12 @@ async function bootstrap() {
   await fs.mkdir(env.sessionsPath, { recursive: true });
   await fs.mkdir(env.uploadPath, { recursive: true });
   await fs.mkdir(env.logPath, { recursive: true });
+  if (env.nodeEnv === 'production' && !process.env.SESSIONS_PATH) {
+    logger.warn(
+      `SESSIONS_PATH não foi definido; sessões usam ${path.resolve(env.sessionsPath).replace(/\/$/, '')}. ` +
+      'No Railway, monte um Volume persistente nesse caminho para não exigir novo QR após reinícios.',
+    );
+  }
 
   // Express app
   const app = express();

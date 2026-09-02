@@ -64,6 +64,9 @@ class WhatsAppSessionManager extends EventEmitter {
   private historyProgress = new Map<string, SyncProgressState>();
   private contactAliases = new Map<string, Map<string, string>>();
   private contactNames = new Map<string, Map<string, string>>();
+  private reconnectTimers = new Map<string, NodeJS.Timeout>();
+  private connectionGenerations = new Map<string, number>();
+  private realtimeMessageQueues = new Map<string, Promise<void>>();
 
   constructor() {
     super();
@@ -173,9 +176,11 @@ class WhatsAppSessionManager extends EventEmitter {
     const session = this.sessions.get(accountId);
     if (!session || session.isDestroying) return;
 
-    // FIX 1: Destrói o socket anterior ANTES de criar um novo.
-    // Sem isso, cada reconexão acumula event listeners no Baileys e na sessão,
-    // causando mensagens duplicadas e comportamentos imprevisíveis.
+    // Invalida o socket anterior antes de criar outro. O número de geração
+    // também impede que eventos atrasados de um socket antigo reconectem ou
+    // gravem mensagens depois que a sessão já mudou de conexão.
+    const generation = (this.connectionGenerations.get(accountId) || 0) + 1;
+    this.connectionGenerations.set(accountId, generation);
     if (session.socket) {
       try { (session.socket.ev as any).removeAllListeners(); } catch {}
       try { (session.socket as any).end?.(undefined); } catch {}
@@ -219,13 +224,17 @@ class WhatsAppSessionManager extends EventEmitter {
       });
 
       session.socket = socket;
+      const isCurrentSocket = () =>
+        !session.isDestroying &&
+        session.socket === socket &&
+        this.connectionGenerations.get(accountId) === generation;
 
       // Credenciais atualizadas
       socket.ev.on('creds.update', saveCreds);
 
       // Connection events
       socket.ev.on('connection.update', async (update: Partial<ConnectionState>) => {
-        if (session.isDestroying) return;
+        if (!isCurrentSocket()) return;
 
         if (update.qr) {
           try {
@@ -234,9 +243,11 @@ class WhatsAppSessionManager extends EventEmitter {
               margin: 2,
               color: { dark: '#000000', light: '#ffffff' },
             });
+            if (!isCurrentSocket()) return;
             session.qrCode = qrDataUrl;
             session.status = 'QR_CODE';
             await this.updateAccountStatus(accountId, 'QR_CODE');
+            if (!isCurrentSocket()) return;
             this.emitStatus(accountId);
             this.emit('qr-code', { accountId, qrCode: qrDataUrl });
             logger.info(`QR Code gerado para: ${session.name}`);
@@ -246,6 +257,7 @@ class WhatsAppSessionManager extends EventEmitter {
         }
 
         if (update.connection === 'open') {
+          if (!isCurrentSocket()) return;
           session.status = 'CONNECTED';
           session.reconnectAttempts = 0;
           session.qrCode = null;
@@ -264,6 +276,7 @@ class WhatsAppSessionManager extends EventEmitter {
             },
           });
 
+          if (!isCurrentSocket()) return;
           session.phone = phone;
           this.emitStatus(accountId);
           this.emit('connected', { accountId, phone, name: session.name });
@@ -274,6 +287,7 @@ class WhatsAppSessionManager extends EventEmitter {
         }
 
         if (update.connection === 'close') {
+          if (!isCurrentSocket()) return;
           const statusCode = (update.lastDisconnect?.error as any)?.output?.statusCode as number;
           const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
@@ -291,7 +305,7 @@ class WhatsAppSessionManager extends EventEmitter {
           // A sessão SÓ desconecta se o usuário efetivamente deslogou pelo WhatsApp ou pelo painel.
           // Qualquer outro motivo (queda de rede, timeout, restart de servidor) tenta reconectar INDEFINIDAMENTE.
           if (!isLoggedOut && !session.isDestroying) {
-            this.attemptReconnect(accountId);
+            this.scheduleReconnect(accountId);
           } else {
             session.status = 'DISCONNECTED';
             await this.updateAccountStatus(accountId, 'DISCONNECTED');
@@ -311,25 +325,19 @@ class WhatsAppSessionManager extends EventEmitter {
       // Mensagens recebidas E enviadas de outros dispositivos (celular) —
       // comportamento igual ao WhatsApp Web, que espelha tudo
       socket.ev.on('messages.upsert', async (m: { type: MessageUpsertType; messages: WAMessage[] }) => {
+        if (!isCurrentSocket()) return;
         if (m.type !== 'notify' && m.type !== 'append') return;
         const messages = Array.isArray(m.messages) ? m.messages : [];
         for (const msg of messages) {
-          try {
-            if (!this.isUsableChatMessage(accountId, msg)) continue;
-            if (msg.key.fromMe) {
-              await this.handleOutgoingFromDevice(accountId, msg);
-            } else {
-              await this.handleIncomingMessage(accountId, msg);
-            }
-          } catch (err) {
-            logger.error(`Erro no lote messages.upsert (${accountId}):`, err);
-          }
+          if (!isCurrentSocket()) return;
+          if (!this.isUsableChatMessage(accountId, msg)) continue;
+          this.enqueueRealtimeMessage(accountId, msg);
         }
       });
 
       // Histórico sincronizado ao vincular dispositivo (como WhatsApp Web)
       socket.ev.on('messaging-history.set', (data: any) => {
-        if (session.isDestroying) return;
+        if (!isCurrentSocket()) return;
         const msgs = data?.messages || [];
         const chats = data?.chats || [];
         if (msgs.length > 0 || chats.length > 0 || data?.isLatest === true || Number(data?.progress) >= 100) {
@@ -341,30 +349,35 @@ class WhatsAppSessionManager extends EventEmitter {
       // Os dados de contato podem chegar depois das mensagens, sobretudo para
       // contas que usam LID. Mantemos os aliases e preenchemos nomes faltantes.
       socket.ev.on('contacts.upsert', (contacts: any[]) => {
+        if (!isCurrentSocket()) return;
         this.syncContactNames(accountId, contacts).catch(err => logger.warn(`Falha ao sincronizar contatos (${accountId}):`, err));
       });
       socket.ev.on('contacts.update', (contacts: any[]) => {
+        if (!isCurrentSocket()) return;
         this.syncContactNames(accountId, contacts).catch(err => logger.warn(`Falha ao atualizar contatos (${accountId}):`, err));
       });
     } catch (err) {
+      if (this.connectionGenerations.get(accountId) !== generation) return;
       logger.error(`Erro ao conectar sessão ${accountId}:`, err);
       session.status = 'ERROR';
       if (session.socket) {
         try { (session.socket.ev as any).removeAllListeners(); } catch {}
+        try { (session.socket as any).end?.(undefined); } catch {}
       }
       session.socket = null;
       await this.updateAccountStatus(accountId, 'ERROR');
       this.emitStatus(accountId);
 
       if (!isNew) {
-        this.attemptReconnect(accountId);
+        this.scheduleReconnect(accountId);
       }
     }
   }
 
-  private async attemptReconnect(accountId: string): Promise<void> {
+  private scheduleReconnect(accountId: string): void {
     const session = this.sessions.get(accountId);
     if (!session || session.isDestroying) return;
+    if (this.reconnectTimers.has(accountId)) return;
 
     const delay = calculateBackoff(
       session.reconnectAttempts,
@@ -374,23 +387,75 @@ class WhatsAppSessionManager extends EventEmitter {
 
     session.reconnectAttempts++;
     session.status = 'RECONNECTING';
-    await this.updateAccountStatus(accountId, 'RECONNECTING');
+    this.updateAccountStatus(accountId, 'RECONNECTING').catch(err =>
+      logger.warn(`Falha ao salvar status RECONNECTING (${accountId}):`, err),
+    );
     this.emitStatus(accountId);
 
     logger.info(`Reconectando ${session.name} em ${delay}ms (tentativa ${session.reconnectAttempts})`);
 
-    await sleep(delay);
-    if (!session.isDestroying) {
-      await this.connectSession(accountId, false);
-    }
+    const timer = setTimeout(() => {
+      this.reconnectTimers.delete(accountId);
+      if (session.isDestroying) return;
+      this.connectSession(accountId, false).catch(err => {
+        logger.error(`Erro na tentativa de reconexão (${accountId}):`, err);
+        this.scheduleReconnect(accountId);
+      });
+    }, delay);
+    this.reconnectTimers.set(accountId, timer);
+  }
+
+  private cancelReconnect(accountId: string): void {
+    const timer = this.reconnectTimers.get(accountId);
+    if (timer) clearTimeout(timer);
+    this.reconnectTimers.delete(accountId);
+  }
+
+  /**
+   * Mantém a ordem dos eventos de mensagens de uma conta e repete falhas
+   * transitórias de banco/rede. O Baileys pode entregar novos eventos enquanto
+   * o lote anterior ainda está sendo persistido.
+   */
+  private enqueueRealtimeMessage(accountId: string, msg: WAMessage): void {
+    const previous = this.realtimeMessageQueues.get(accountId) || Promise.resolve();
+    const task = previous
+      .catch(() => {})
+      .then(async () => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            if (msg.key.fromMe) {
+              await this.handleOutgoingFromDevice(accountId, msg);
+            } else {
+              await this.handleIncomingMessage(accountId, msg);
+            }
+            return;
+          } catch (err) {
+            if (attempt === 2) {
+              logger.error(`Mensagem não persistida após 3 tentativas (${accountId}):`, err);
+              return;
+            }
+            const delay = Math.min(5000, 500 * 2 ** attempt);
+            logger.warn(`Falha transitória ao persistir mensagem (${accountId}); nova tentativa em ${delay}ms`);
+            await sleep(delay);
+          }
+        }
+      })
+      .finally(() => {
+        if (this.realtimeMessageQueues.get(accountId) === task) {
+          this.realtimeMessageQueues.delete(accountId);
+        }
+      });
+    this.realtimeMessageQueues.set(accountId, task);
   }
 
   async disconnectSession(accountId: string, logout = true): Promise<void> {
     const session = this.sessions.get(accountId);
     if (!session) throw new AppError('Sessão não encontrada', 404);
 
+    this.cancelReconnect(accountId);
     session.isDestroying = true;
     session.reconnectAttempts = env.maxReconnectAttempts;
+    this.connectionGenerations.set(accountId, (this.connectionGenerations.get(accountId) || 0) + 1);
 
     if (session.socket && logout) {
       try {
@@ -401,7 +466,8 @@ class WhatsAppSessionManager extends EventEmitter {
     }
 
     if (session.socket) {
-      (session.socket.ev as any).removeAllListeners();
+      try { (session.socket.ev as any).removeAllListeners(); } catch {}
+      try { (session.socket as any).end?.(undefined); } catch {}
       session.socket = null;
     }
 
@@ -810,7 +876,7 @@ class WhatsAppSessionManager extends EventEmitter {
    */
   private async handleOutgoingFromDevice(accountId: string, msg: WAMessage): Promise<void> {
     try {
-      const remoteJid = this.canonicalJid(accountId, msg.key.remoteJid || '');
+      const remoteJid = this.canonicalJid(accountId, this.messageRemoteJid(msg));
       if (!remoteJid || remoteJid === 'status@broadcast') return;
 
       const waMsgId = msg.key.id || null;
@@ -903,6 +969,7 @@ class WhatsAppSessionManager extends EventEmitter {
       });
     } catch (err) {
       logger.error(`Erro ao espelhar mensagem enviada do celular (${accountId}):`, err);
+          throw err;
     }
   }
 
@@ -959,7 +1026,7 @@ class WhatsAppSessionManager extends EventEmitter {
         if (!data) break;
         processedBatches++;
         try {
-          total += await this.importHistoryBatch(accountId, data);
+          total += await this.importHistoryBatchWithRetry(accountId, data);
         } catch (batchErr) {
           failedBatches++;
           logger.error(`[${accountId}] Erro ao importar lote de histórico:`, batchErr);
@@ -1010,8 +1077,32 @@ class WhatsAppSessionManager extends EventEmitter {
       }
     } finally {
       this.historyImporting.delete(accountId);
-      this.historyQueue.delete(accountId);
+      const pending = this.historyQueue.get(accountId);
+      if (pending?.length) {
+        this.historyImporting.add(accountId);
+        this.processHistoryQueue(accountId).catch(() => {});
+      } else {
+        this.historyQueue.delete(accountId);
+      }
     }
+  }
+
+  private async importHistoryBatchWithRetry(accountId: string, data: any): Promise<number> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await this.importHistoryBatch(accountId, data);
+      } catch (err) {
+        lastError = err;
+        if (attempt === 2) break;
+        const delay = Math.min(5000, 500 * 2 ** attempt);
+        logger.warn(
+          `[${accountId}] Falha no lote de histórico; tentativa ${attempt + 2}/3 em ${delay}ms`,
+        );
+        await sleep(delay);
+      }
+    }
+    throw lastError;
   }
 
   private async importHistoryBatch(accountId: string, data: any): Promise<number> {
@@ -1290,7 +1381,7 @@ class WhatsAppSessionManager extends EventEmitter {
 
   private async handleIncomingMessage(accountId: string, msg: WAMessage): Promise<void> {
     try {
-      const remoteJid = this.canonicalJid(accountId, msg.key.remoteJid || '');
+      const remoteJid = this.canonicalJid(accountId, this.messageRemoteJid(msg));
       if (!remoteJid || remoteJid === 'status@broadcast') return;
 
       const waMsgId = msg.key.id || null;
@@ -1298,7 +1389,7 @@ class WhatsAppSessionManager extends EventEmitter {
       const fromPhone = this.jidToContactPhone(remoteJid);
       const pushName = this.usableContactName(msg.pushName || '', fromPhone) || this.cachedContactName(accountId, remoteJid);
 
-      const senderJid = isGroup ? (msg.key.participant || null) : null;
+      const senderJid = isGroup ? this.messageParticipantJid(msg) : null;
       const senderName = isGroup ? (msg.pushName || (senderJid ? this.jidToContactPhone(senderJid) : null)) : null;
 
       let contactName = pushName;
@@ -1518,6 +1609,7 @@ class WhatsAppSessionManager extends EventEmitter {
       }
     } catch (err) {
       logger.error(`Erro ao processar mensagem incoming (${accountId}):`, err);
+      throw err;
     }
   }
 
@@ -1807,10 +1899,18 @@ class WhatsAppSessionManager extends EventEmitter {
 
     if (session.qrCode) return session.qrCode;
 
-    // Reset flags so connectSession can proceed
+    // Este é o botão explícito "Atualizar QR". Diferente de "Reconectar",
+    // ele pode invalidar a sessão atual para gerar um QR novo.
+    this.cancelReconnect(accountId);
+    session.isDestroying = true;
+    this.connectionGenerations.set(accountId, (this.connectionGenerations.get(accountId) || 0) + 1);
+    if (session.socket) {
+      try { (session.socket.ev as any).removeAllListeners(); } catch {}
+      try { (session.socket as any).end?.(undefined); } catch {}
+    }
+    session.socket = null;
     session.isDestroying = false;
     session.reconnectAttempts = 0;
-    session.socket = null;
 
     // Destroy old session data on disk to force a fresh QR
     const sessionDir = path.join(env.sessionsPath, accountId);
@@ -1827,6 +1927,29 @@ class WhatsAppSessionManager extends EventEmitter {
     throw new AppError('Não foi possível gerar QR Code', 500);
   }
 
+  /**
+   * Retoma a sessão existente sem remover credenciais. Se o processo tiver
+   * perdido a sessão no disco, o fluxo de criação pode gerar QR normalmente;
+   * em uma sessão válida, Baileys restaura o login sem pedir novo QR.
+   */
+  async reconnectSession(accountId: string): Promise<{ status: SessionStatus; qrCode: string | null }> {
+    const session = this.sessions.get(accountId);
+    if (!session) throw new AppError('Sessão não encontrada', 404);
+
+    if (session.status === 'CONNECTED' && session.socket) {
+      return { status: session.status, qrCode: null };
+    }
+
+    this.cancelReconnect(accountId);
+    session.isDestroying = false;
+    session.reconnectAttempts = 0;
+    const sessionDir = path.join(env.sessionsPath, accountId);
+    const hasSession = await this.sessionExists(sessionDir);
+
+    await this.connectSession(accountId, !hasSession);
+    return { status: session.status, qrCode: session.qrCode };
+  }
+
   private async sessionExists(dir: string): Promise<boolean> {
     try {
       const stat = await fs.stat(dir);
@@ -1839,6 +1962,7 @@ class WhatsAppSessionManager extends EventEmitter {
   }
 
   async destroy(): Promise<void> {
+    for (const accountId of this.reconnectTimers.keys()) this.cancelReconnect(accountId);
     for (const [id] of this.sessions) {
       try {
         await this.disconnectSession(id, false);

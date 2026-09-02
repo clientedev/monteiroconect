@@ -111,6 +111,7 @@ export const whatsappApi = {
   disconnect: (id: string) => api.post(`/whatsapp/${id}/disconnect`),
   remove: (id: string) => api.del(`/whatsapp/${id}`),
   refreshQR: (id: string) => api.post<{ qrCode: string }>(`/whatsapp/${id}/refresh-qr`),
+  reconnect: (id: string) => api.post<{ status: string; qrCode: string | null }>(`/whatsapp/${id}/reconnect`),
   sync: (id: string) => api.post<{ contacts: number; groups: number }>(`/whatsapp/${id}/sync`),
   syncProgress: (id: string) => api.get<any>(`/whatsapp/${id}/sync-progress`),
 };

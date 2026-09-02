@@ -75,6 +75,11 @@ export async function refreshQRCode(id: string, user: SessionUser) {
   return { qrCode: qr };
 }
 
+export async function reconnectWhatsApp(id: string, user: SessionUser) {
+  await assertAccountAccess(user, id);
+  return sessionManager.reconnectSession(id);
+}
+
 export async function syncWhatsApp(id: string, user: SessionUser) {
   await assertAccountAccess(user, id);
   const result = await sessionManager.syncNow(id);

@@ -131,6 +131,25 @@ Serviços criados:
 
 ---
 
+## 🚂 Railway (produção)
+
+O WhatsApp mantém as credenciais de login em arquivos. Para a conta continuar
+conectada depois de reinícios ou novos deploys, configure no serviço do Railway:
+
+1. Adicione um **Volume persistente** montado em `/app/backend/sessions`.
+2. Defina `SESSIONS_PATH=/app/backend/sessions` (ou mantenha o caminho padrão
+   somente se o volume estiver montado exatamente nesse diretório).
+3. Execute apenas **uma instância** do backend. Escalar horizontalmente o
+   processo que mantém a mesma sessão pode causar conflitos e desconexões.
+4. Configure `DATABASE_URL`, `JWT_SECRET` e `ADMIN_PASSWORD` como variáveis
+   seguras do serviço, nunca no repositório.
+
+O botão **Reconectar** reutiliza as credenciais existentes e não apaga a pasta
+da sessão. O botão **Atualizar QR** é a ação explícita para invalidar a sessão e
+gerar um QR novo.
+
+---
+
 ## 📂 Estrutura do Projeto
 
 ```
