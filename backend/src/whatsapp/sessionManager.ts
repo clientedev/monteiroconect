@@ -546,7 +546,7 @@ class WhatsAppSessionManager extends EventEmitter {
   private outboundContent(content: string, senderName?: string): string {
     const name = senderName?.trim();
     if (!name) return content;
-    return content.trim() ? `${name}: ${content}` : name;
+    return content.trim() ? `*${name}*: ${content}` : `*${name}*`;
   }
 
   async sendMessage(
