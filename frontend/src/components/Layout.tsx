@@ -6,8 +6,41 @@ import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone,
   LogOut, Search, Menu, X, Bot,
 } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useState, useRef, useEffect, useCallback } from 'react';
 import { dashboardApi } from '../lib/api';
+
+class PageErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Erro ao renderizar a página:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="card-static p-8 text-center max-w-xl mx-auto">
+          <h2 className="section-title text-xl">Não foi possível abrir esta tela</h2>
+          <p className="text-sm text-monte-sereno mt-2">
+            A sessão ou os dados recebidos do servidor não puderam ser exibidos.
+          </p>
+          <button
+            type="button"
+            className="btn-primary mt-5"
+            onClick={() => window.location.reload()}
+          >
+            Recarregar página
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -346,7 +379,9 @@ export default function Layout() {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6" onClick={() => { setShowSearch(false); }}>
-          <Outlet />
+          <PageErrorBoundary>
+            <Outlet />
+          </PageErrorBoundary>
         </main>
       </div>
     </div>

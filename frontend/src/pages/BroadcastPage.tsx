@@ -37,7 +37,25 @@ function attachmentType(file: File): Attachment['type'] {
 }
 
 function displayContact(contact: Contact) {
-  return contact.name || contact.phone;
+  return contact.name || contact.phone || 'Contato';
+}
+
+function normalizeAccounts(value: unknown): any[] {
+  const accounts = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && Array.isArray((value as { accounts?: unknown }).accounts)
+      ? (value as { accounts: unknown[] }).accounts
+      : [];
+  return accounts.filter(account => account && typeof account === 'object' && typeof (account as { id?: unknown }).id === 'string');
+}
+
+function normalizeContacts(value: unknown): Contact[] {
+  const contacts = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && Array.isArray((value as { contacts?: unknown }).contacts)
+      ? (value as { contacts: unknown[] }).contacts
+      : [];
+  return contacts.filter(contact => contact && typeof contact === 'object' && typeof (contact as { id?: unknown }).id === 'string') as Contact[];
 }
 
 export default function BroadcastPage() {
@@ -71,7 +89,7 @@ export default function BroadcastPage() {
     setLoadingContacts(true);
     try {
       const data = await contactApi.list(accountId, search, 1, 1000);
-      setContacts(data.contacts || []);
+      setContacts(normalizeContacts(data));
     } catch (err: any) {
       setError(err?.message || 'Não foi possível carregar os contatos');
       setContacts([]);
@@ -85,8 +103,9 @@ export default function BroadcastPage() {
     setError('');
     try {
       const data = await whatsappApi.list();
-      setAccounts(data);
-      setAccountId(current => data.some(account => account.id === current) ? current : (data[0]?.id || ''));
+      const nextAccounts = normalizeAccounts(data);
+      setAccounts(nextAccounts);
+      setAccountId(current => nextAccounts.some(account => account.id === current) ? current : (nextAccounts[0]?.id || ''));
     } catch (err: any) {
       setError(err?.message || 'Não foi possível carregar os WhatsApps');
       setAccounts([]);
