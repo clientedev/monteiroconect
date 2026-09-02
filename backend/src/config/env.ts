@@ -10,7 +10,7 @@ export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   frontendUrl: process.env.FRONTEND_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'http://localhost:5173'),
   databaseUrl: process.env.DATABASE_URL || 'file:./dev.db',
-  jwtSecret: process.env.JWT_SECRET || 'monteiro-conecta-change-me-in-production',
+  jwtSecret: process.env.JWT_SECRET || process.env.SESSION_SECRET || 'monteiro-conecta-change-me-in-production',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
   sessionsPath: process.env.SESSIONS_PATH || './sessions',
   maxReconnectAttempts: parseInt(process.env.MAX_RECONNECT_ATTEMPTS || '100', 10),

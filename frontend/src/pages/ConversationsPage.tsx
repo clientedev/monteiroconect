@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { whatsappApi, conversationApi } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
 import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp } from 'lucide-react';
@@ -544,7 +544,16 @@ export default function ConversationsPage() {
           {!loading && conversations.length === 0 && (
             <div className="p-8 text-center text-monte-sereno text-sm">
               <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              Nenhuma conversa
+              {accounts.length === 0 ? (
+                <>
+                  <p>Nenhum WhatsApp conectado</p>
+                  <Link to="/whatsapp" className="inline-block mt-3 text-monte-verde font-semibold hover:underline">
+                    Conectar um WhatsApp
+                  </Link>
+                </>
+              ) : (
+                'Nenhuma conversa sincronizada'
+              )}
             </div>
           )}
         </div>
