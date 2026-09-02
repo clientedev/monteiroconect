@@ -15,6 +15,9 @@ interface ConvItem {
   lastMessageAt: string | null;
   unreadCount: number;
   tags: any[];
+  accountId: string;
+  accountName?: string;
+  accountPhone?: string | null;
 }
 
 interface SyncProgress {
@@ -93,6 +96,8 @@ const formatTime = (date?: string | null) => {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
 
+const ALL_ACCOUNTS = '__all__';
+
 export default function ConversationsPage() {
   const { socket } = useSocket();
   const { user } = useAuth();
@@ -123,6 +128,18 @@ export default function ConversationsPage() {
   const conversationsRefreshTimer = useRef<number | null>(null);
   const stickToBottomRef = useRef(true);
 
+  const visibleAccountIds = selectedAccountId === ALL_ACCOUNTS
+    ? accounts.map(account => account.id)
+    : selectedAccountId
+      ? [selectedAccountId]
+      : [];
+
+  const isAccountVisible = useCallback((accountId: string) => {
+    return selectedAccountIdRef.current === ALL_ACCOUNTS
+      ? accounts.some(account => account.id === accountId)
+      : accountId === selectedAccountIdRef.current;
+  }, [accounts]);
+
   // Sincroniza refs para closure segura nos handlers de WebSocket
   useEffect(() => { selectedConvRef.current = selectedConv; }, [selectedConv]);
   useEffect(() => { selectedAccountIdRef.current = selectedAccountId; }, [selectedAccountId]);
@@ -146,7 +163,13 @@ export default function ConversationsPage() {
         (b.status === 'CONNECTED' ? 1 : 0) - (a.status === 'CONNECTED' ? 1 : 0)
       );
       setAccounts(sorted);
-      if (sorted.length > 0 && !selectedAccountIdRef.current) {
+      const currentSelection = selectedAccountIdRef.current;
+      if (sorted.length === 0) {
+        setSelectedAccountId('');
+      } else if (
+        !currentSelection ||
+        (currentSelection !== ALL_ACCOUNTS && !sorted.some(account => account.id === currentSelection))
+      ) {
         setSelectedAccountId(sorted[0].id);
       }
     } catch {}
@@ -155,14 +178,36 @@ export default function ConversationsPage() {
   const loadConversations = useCallback(async (accountId?: string) => {
     const accId = accountId || selectedAccountIdRef.current || selectedAccountId;
     if (!accId) return;
+
+    const accountsToLoad = accId === ALL_ACCOUNTS
+      ? accounts
+      : accounts.filter(account => account.id === accId);
+    if (accountsToLoad.length === 0) return;
+
     try {
-       const data = await conversationApi.list(accId, search, 1, includeGroups);
-      setConversations(data.conversations || []);
+      const results = await Promise.all(
+        accountsToLoad.map(async account => {
+          const data = await conversationApi.list(account.id, search, 1, includeGroups);
+          return (data.conversations || []).map((conversation: ConvItem) => ({
+            ...conversation,
+            accountId: account.id,
+            accountName: account.name,
+            accountPhone: account.phone,
+          }));
+        }),
+      );
+      const merged = results
+        .flat()
+        .sort((a, b) => {
+          const timeDifference = new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime();
+          return timeDifference || b.id.localeCompare(a.id);
+        });
+      setConversations(merged);
     } catch (err) {
       console.error('Erro ao carregar conversas:', err);
     }
     finally { setLoading(false); }
-  }, [search, selectedAccountId, includeGroups]);
+  }, [accounts, search, selectedAccountId, includeGroups]);
 
   const scheduleConversationsRefresh = useCallback((delay = 350) => {
     if (conversationsRefreshTimer.current !== null) {
@@ -250,7 +295,7 @@ export default function ConversationsPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedAccountId) {
+    if (selectedAccountId && selectedAccountId !== ALL_ACCOUNTS) {
       setSelectedConv(null);
       setMessages(new Map());
       setMsgPage(1);
@@ -266,6 +311,13 @@ export default function ConversationsPage() {
           }
         })
         .catch(() => {});
+    } else if (selectedAccountId === ALL_ACCOUNTS) {
+      setSelectedConv(null);
+      setMessages(new Map());
+      setMsgPage(1);
+      setMsgTotal(0);
+      setSyncProgress(null);
+      setSyncing(false);
     }
   }, [selectedAccountId]);
 
@@ -291,15 +343,15 @@ export default function ConversationsPage() {
 
   // Enter socket rooms & auto-rejoin
   useEffect(() => {
-    if (!socket || !selectedAccountId) return;
-    const joinAcc = () => socket.emit('join-account', selectedAccountId);
+    if (!socket || visibleAccountIds.length === 0) return;
+    const joinAcc = () => visibleAccountIds.forEach(accountId => socket.emit('join-account', accountId));
     joinAcc();
     socket.on('connect', joinAcc);
     return () => {
       socket.off('connect', joinAcc);
-      socket.emit('leave-account', selectedAccountId);
+      visibleAccountIds.forEach(accountId => socket.emit('leave-account', accountId));
     };
-  }, [socket, selectedAccountId]);
+  }, [socket, visibleAccountIds.join(',')]);
 
   useEffect(() => {
     if (!socket || !selectedConv) return;
@@ -317,10 +369,9 @@ export default function ConversationsPage() {
     if (!socket) return;
 
     const onNewMsg = (data: any) => {
-      const currentAccountId = selectedAccountIdRef.current;
       const currentConv = selectedConvRef.current;
 
-      if (data.accountId !== currentAccountId) return;
+      if (!isAccountVisible(data.accountId)) return;
 
       // Atualização cirúrgica da conversa na lista
       setConversations(prev => {
@@ -374,10 +425,9 @@ export default function ConversationsPage() {
     };
 
     const onSent = (data: any) => {
-      const currentAccountId = selectedAccountIdRef.current;
       const currentConv = selectedConvRef.current;
 
-      if (data.accountId !== currentAccountId) return;
+      if (!isAccountVisible(data.accountId)) return;
 
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === data.conversationId);
@@ -421,10 +471,10 @@ export default function ConversationsPage() {
     };
 
     const onContactsUpdated = (data: any) => {
-       if (data.accountId === selectedAccountIdRef.current) scheduleConversationsRefresh();
+       if (isAccountVisible(data.accountId)) scheduleConversationsRefresh();
     };
     const onHistory = (data: any) => {
-      if (data.accountId === selectedAccountIdRef.current) {
+      if (isAccountVisible(data.accountId)) {
          // Atualiza o histórico ao final da sincronização sem mover a posição
          // atual de leitura.
          scheduleConversationsRefresh(500);
@@ -434,7 +484,7 @@ export default function ConversationsPage() {
       }
     };
     const onSyncProgress = (data: SyncProgress & { accountId: string }) => {
-      if (data.accountId !== selectedAccountIdRef.current) return;
+      if (!isAccountVisible(data.accountId)) return;
       setSyncProgress(data);
       setSyncing(data.status === 'syncing');
       if (data.status === 'completed') {
@@ -462,10 +512,10 @@ export default function ConversationsPage() {
       socket.off('sync:progress', onSyncProgress);
       socket.off('conversation:read', onConvRead);
     };
-  }, [socket, loadConversations, loadMessages, scheduleConversationsRefresh, user]);
+  }, [socket, isAccountVisible, loadConversations, loadMessages, scheduleConversationsRefresh, user]);
 
   const handleSync = async () => {
-    if (!selectedAccountId || syncing) return;
+    if (!selectedAccountId || selectedAccountId === ALL_ACCOUNTS || syncing) return;
     setSyncing(true);
     setSyncProgress({
       status: 'syncing',
@@ -497,16 +547,18 @@ export default function ConversationsPage() {
     loadMessages(conv.id, 1);
   };
 
-  const selectedAccount = accounts.find(a => a.id === selectedAccountId);
+  const selectedAccount = accounts.find(a =>
+    a.id === (selectedConv?.accountId || (selectedAccountId === ALL_ACCOUNTS ? '' : selectedAccountId))
+  );
   const isConnected = selectedAccount?.status === 'CONNECTED';
 
   const handleSend = async () => {
-    if (!newMessage.trim() || !selectedAccountId || !selectedConv || !isConnected) return;
+    if (!newMessage.trim() || !selectedConv || !selectedConv.accountId || !isConnected) return;
     const text = newMessage.trim();
     setSending(true);
     setNewMessage('');
     try {
-      await conversationApi.send(selectedAccountId, selectedConv.contactPhone, text);
+      await conversationApi.send(selectedConv.accountId, selectedConv.contactPhone, text);
       if (selectedConvRef.current) {
         await loadMessages(selectedConvRef.current.id, 1);
       }
@@ -519,7 +571,7 @@ export default function ConversationsPage() {
 
   const handleSendFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !selectedAccountId || !selectedConv || !isConnected) return;
+    if (!file || !selectedConv || !selectedConv.accountId || !isConnected) return;
     setSending(true);
     try {
        const uploaded = await api.upload<{
@@ -536,7 +588,7 @@ export default function ConversationsPage() {
 
        const caption = type === 'document' ? file.name : newMessage.trim();
        await conversationApi.send(
-         selectedAccountId,
+        selectedConv.accountId,
          selectedConv.contactPhone,
          caption,
          type,
@@ -624,6 +676,7 @@ export default function ConversationsPage() {
         {accounts.length > 1 && (
           <div className="p-3 border-b border-monte-sereno/15">
             <select className="input-rect text-sm" value={selectedAccountId} onChange={e => setSelectedAccountId(e.target.value)}>
+              <option value={ALL_ACCOUNTS}>Todos os WhatsApps</option>
               {accounts.map((a: any) => (
                 <option key={a.id} value={a.id}>
                   {a.name} ({a.phone || '—'}){a.status !== 'CONNECTED' ? ` — ${a.status === 'QR_CODE' ? 'aguardando QR' : a.status === 'ERROR' ? 'erro' : 'desconectado'}` : ''}
@@ -640,8 +693,8 @@ export default function ConversationsPage() {
           </div>
           <button
             onClick={handleSync}
-            disabled={syncing || !selectedAccountId}
-            title="Sincronizar conversas e contatos agora"
+            disabled={syncing || !selectedAccountId || selectedAccountId === ALL_ACCOUNTS}
+            title={selectedAccountId === ALL_ACCOUNTS ? 'Selecione um WhatsApp para sincronizar' : 'Sincronizar conversas e contatos agora'}
             className="p-2.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-monte-verde/10 transition-colors disabled:opacity-50 flex-shrink-0"
           >
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
@@ -685,7 +738,14 @@ export default function ConversationsPage() {
                     )}
                   </div>
                   <div className="flex items-center justify-between mt-0.5">
-                    <p className="text-xs text-monte-sereno truncate">{conv.lastMessage || 'Sem mensagens'}</p>
+                    <div className="min-w-0">
+                      <p className="text-xs text-monte-sereno truncate">{conv.lastMessage || 'Sem mensagens'}</p>
+                      {selectedAccountId === ALL_ACCOUNTS && conv.accountName && (
+                        <p className="text-[10px] text-monte-verde/80 font-medium truncate mt-0.5">
+                          {conv.accountName}{conv.accountPhone ? ` · ${conv.accountPhone}` : ''}
+                        </p>
+                      )}
+                    </div>
                     {conv.unreadCount > 0 && (
                       <span className="bg-monte-terracota text-white text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center flex-shrink-0 ml-2 px-1 font-bold shadow-sm">
                         {conv.unreadCount}
@@ -733,6 +793,11 @@ export default function ConversationsPage() {
                       ? 'WhatsApp'
                       : selectedConv.contactPhone}
                 </p>
+                {selectedAccountId === ALL_ACCOUNTS && selectedConv.accountName && (
+                  <p className="text-[11px] text-monte-verde font-medium">
+                    {selectedConv.accountName}{selectedConv.accountPhone ? ` · ${selectedConv.accountPhone}` : ''}
+                  </p>
+                )}
               </div>
             </div>
 
