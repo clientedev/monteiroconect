@@ -125,6 +125,8 @@ export const conversationApi = {
     api.get<any>(`/conversations/${id}/messages?page=${page || 1}`),
   assign: (id: string, userId: string | null) =>
     api.put<{ assignedUser: { id: string; username: string; role: string } | null }>(`/conversations/${id}/assignment`, { userId }),
+  setAiEnabled: (id: string, enabled: boolean) =>
+    api.put<{ id: string; aiEnabled: boolean }>(`/conversations/${id}/ai`, { enabled }),
   markRead: (id: string) => api.post(`/conversations/${id}/read`),
   send: (
     accountId: string,

@@ -39,6 +39,7 @@ async function ensureMessageColumns(): Promise<void> {
     'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "messageId" TEXT',
     'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "fromPhone" TEXT',
     'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "toPhone" TEXT',
+    'ALTER TABLE "Conversation" ADD COLUMN IF NOT EXISTS "aiEnabled" BOOLEAN NOT NULL DEFAULT TRUE',
   ];
 
   try {

@@ -1652,6 +1652,18 @@ class WhatsAppSessionManager extends EventEmitter {
       const session = this.sessions.get(accountId);
       if (session?.socket && content && !isGroup) {
         try {
+          // O atendente pode assumir esta conversa sem desligar os chatbots
+          // das demais. Consulte o valor atual para evitar que uma mensagem
+          // concorrente gere uma resposta automática após a assunção.
+          const automationState = await prisma.conversation.findUnique({
+            where: { id: conversation.id },
+            select: { aiEnabled: true },
+          });
+          if (automationState?.aiEnabled === false) {
+            logger.info(`Automação desativada para ${fromPhone}; mensagem aguardará atendimento humano`);
+            return;
+          }
+
           const contactMsgCount = await prisma.message.count({
             where: {
               conversationId: conversation.id,

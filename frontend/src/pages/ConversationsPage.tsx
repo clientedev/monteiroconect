@@ -19,6 +19,7 @@ interface ConvItem {
   accountName?: string;
   accountPhone?: string | null;
   assignedUser?: { id: string; username: string; role: string } | null;
+  aiEnabled?: boolean;
 }
 
 interface ConversationTag {
@@ -128,6 +129,7 @@ export default function ConversationsPage() {
   const [selectedAttendantName, setSelectedAttendantName] = useState('');
   const [tagBusy, setTagBusy] = useState(false);
   const [assignmentBusy, setAssignmentBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -639,6 +641,23 @@ export default function ConversationsPage() {
     }
   };
 
+  const handleToggleAi = async () => {
+    if (!selectedConv || aiBusy) return;
+    const enabled = selectedConv.aiEnabled === false;
+    setAiBusy(true);
+    try {
+      const result = await conversationApi.setAiEnabled(selectedConv.id, enabled);
+      setSelectedConv(prev => prev?.id === selectedConv.id ? { ...prev, aiEnabled: result.aiEnabled } : prev);
+      setConversations(prev => prev.map(conv =>
+        conv.id === selectedConv.id ? { ...conv, aiEnabled: result.aiEnabled } : conv
+      ));
+    } catch (err: any) {
+      alert(err.message || 'Não foi possível alterar o atendimento da IA');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   const selectedAccount = accounts.find(a =>
     a.id === (selectedConv?.accountId || (selectedAccountId === ALL_ACCOUNTS ? '' : selectedAccountId))
   );
@@ -984,6 +1003,28 @@ export default function ConversationsPage() {
                     {assignmentBusy && <span className="text-[10px] text-monte-sereno">Salvando...</span>}
                   </div>
                 )}
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold ${
+                    selectedConv.aiEnabled === false
+                      ? 'bg-monte-terracota/10 text-monte-terracota'
+                      : 'bg-monte-verde/10 text-monte-verde'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${selectedConv.aiEnabled === false ? 'bg-monte-terracota' : 'bg-monte-verde'}`} />
+                    {selectedConv.aiEnabled === false ? 'Atendimento humano' : 'IA ativa'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleToggleAi}
+                    disabled={aiBusy}
+                    className={`text-[10px] font-semibold rounded-full px-2.5 py-1 border transition-colors disabled:opacity-50 ${
+                      selectedConv.aiEnabled === false
+                        ? 'border-monte-verde/30 text-monte-verde hover:bg-monte-verde/10'
+                        : 'border-monte-terracota/30 text-monte-terracota hover:bg-monte-terracota/10'
+                    }`}
+                  >
+                    {aiBusy ? 'Salvando...' : selectedConv.aiEnabled === false ? 'Reativar IA' : 'Desligar IA e assumir'}
+                  </button>
+                </div>
               </div>
             </div>
 
