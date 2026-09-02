@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { listConversations, getConversation, getConversationMessages, markConversationRead } from '../services/conversationService.js';
-import { sendWhatsAppMessage } from '../services/whatsappService.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { sendWhatsAppMessage, broadcastWhatsAppMessages } from '../services/whatsappService.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { AppError } from '../utils/errors.js';
 import { z } from 'zod';
 
@@ -18,6 +18,7 @@ router.get('/', async (req, res, next) => {
       search: req.query.search as string,
       page: parseInt(req.query.page as string) || 1,
       limit: parseInt(req.query.limit as string) || 50,
+      includeGroups: req.query.includeGroups !== 'false',
     });
     res.json(result);
   } catch (err) {
@@ -32,15 +33,48 @@ const sendSchema = z.object({
   content: z.string().optional().default(''),
   type: z.string().optional().default('text'),
   mediaUrl: z.string().optional(),
+  mediaMimeType: z.string().max(200).optional(),
+  mediaFileName: z.string().max(255).optional(),
 }).refine(v => v.content.length > 0 || !!v.mediaUrl, {
   message: 'content ou mediaUrl é obrigatório',
 });
 
-router.post('/send', async (req, res, next) => {
+router.post('/send', async (req: AuthRequest, res, next) => {
   try {
     const body = sendSchema.parse(req.body);
-    const result = await sendWhatsAppMessage(body.accountId, body.to, body.content, body.type, body.mediaUrl);
+    const result = await sendWhatsAppMessage(
+      body.accountId,
+      body.to,
+      body.content,
+      body.type,
+      body.mediaUrl,
+      body.mediaMimeType,
+      body.mediaFileName,
+      req.user!,
+    );
     res.json({ success: true, result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const broadcastSchema = z.object({
+  accountId: z.string().min(1),
+  recipients: z.array(z.string().min(1)).min(1).max(500),
+  content: z.string().optional().default(''),
+  type: z.string().optional().default('text'),
+  mediaUrl: z.string().optional(),
+  mediaMimeType: z.string().max(200).optional(),
+  mediaFileName: z.string().max(255).optional(),
+}).refine(v => v.content.length > 0 || !!v.mediaUrl, {
+  message: 'content ou mediaUrl é obrigatório',
+});
+
+router.post('/broadcast', async (req: AuthRequest, res, next) => {
+  try {
+    const body = broadcastSchema.parse(req.body);
+    const result = await broadcastWhatsAppMessages(body, req.user!);
+    res.json(result);
   } catch (err) {
     next(err);
   }

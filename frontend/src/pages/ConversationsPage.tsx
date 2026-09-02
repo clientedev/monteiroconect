@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { whatsappApi, conversationApi } from '../lib/api';
+import { api, whatsappApi, conversationApi } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
-import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp } from 'lucide-react';
+import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff } from 'lucide-react';
 
 interface ConvItem {
   id: string;
@@ -102,6 +102,7 @@ export default function ConversationsPage() {
   const [messages, setMessages] = useState<Map<string, Msg>>(new Map());
   const [newMessage, setNewMessage] = useState('');
   const [search, setSearch] = useState('');
+  const [includeGroups, setIncludeGroups] = useState(true);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -149,13 +150,13 @@ export default function ConversationsPage() {
     const accId = accountId || selectedAccountIdRef.current || selectedAccountId;
     if (!accId) return;
     try {
-      const data = await conversationApi.list(accId, search);
+       const data = await conversationApi.list(accId, search, 1, includeGroups);
       setConversations(data.conversations || []);
     } catch (err) {
       console.error('Erro ao carregar conversas:', err);
     }
     finally { setLoading(false); }
-  }, [search, selectedAccountId]);
+  }, [search, selectedAccountId, includeGroups]);
 
   /** Carrega as mensagens de uma conversa. page=1 substitui tudo; page>1 prepend. */
   const loadMessages = useCallback(async (convId: string, page = 1) => {
@@ -485,16 +486,11 @@ export default function ConversationsPage() {
     if (!file || !selectedAccountId || !selectedConv || !isConnected) return;
     setSending(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const token = localStorage.getItem('wa_token');
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-      if (!res.ok) throw new Error('Upload falhou');
-      const { url } = await res.json();
+       const uploaded = await api.upload<{
+         url: string;
+         originalName: string;
+         mimetype: string;
+       }>('/upload', file);
 
       const mime = file.type.toLowerCase();
       let type = 'document';
@@ -502,7 +498,17 @@ export default function ConversationsPage() {
       else if (mime.startsWith('video/')) type = 'video';
       else if (mime.startsWith('audio/')) type = 'audio';
 
-      await conversationApi.send(selectedAccountId, selectedConv.contactPhone, '', type, url);
+       const caption = type === 'document' ? file.name : newMessage.trim();
+       await conversationApi.send(
+         selectedAccountId,
+         selectedConv.contactPhone,
+         caption,
+         type,
+         uploaded.url,
+         uploaded.mimetype,
+         uploaded.originalName,
+       );
+       setNewMessage('');
       await loadMessages(selectedConv.id, 1);
     } catch (err: any) {
       alert('Erro ao enviar arquivo: ' + (err.message || 'tente novamente'));
@@ -591,7 +597,7 @@ export default function ConversationsPage() {
           </div>
         )}
 
-        <div className="p-3 border-b border-monte-sereno/15 flex items-center gap-2">
+         <div className="p-3 border-b border-monte-sereno/15 flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-monte-sereno" />
             <input type="text" className="input-rect pl-10 text-sm" placeholder="Buscar conversa..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -604,6 +610,22 @@ export default function ConversationsPage() {
           >
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
           </button>
+           <button
+             type="button"
+             onClick={() => setIncludeGroups(current => !current)}
+             title={includeGroups ? 'Ocultar grupos' : 'Mostrar grupos'}
+             aria-label={includeGroups ? 'Ocultar grupos' : 'Mostrar grupos'}
+             className={`p-2.5 rounded-full transition-colors flex-shrink-0 ${
+               includeGroups
+                 ? 'text-monte-sereno hover:text-monte-terracota hover:bg-monte-terracota/10'
+                 : 'text-monte-verde bg-monte-verde/10'
+             }`}
+           >
+             {includeGroups ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+               <span className="hidden sm:inline text-[11px] font-semibold">
+                 {includeGroups ? 'Grupos' : 'Sem grupos'}
+               </span>
+           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -735,11 +757,14 @@ export default function ConversationsPage() {
                         <video src={msg.mediaUrl} controls className="rounded-2xl max-w-full max-h-80" />
                       </div>
                     )}
-                    {msg.mediaType === 'audio' && msg.mediaUrl && (
+                     {msg.mediaType === 'audio' && msg.mediaUrl && (
                       <div className="mb-2">
                         <audio src={msg.mediaUrl} controls className="max-w-full" />
                       </div>
                     )}
+                     {msg.mediaType === 'audio' && !msg.mediaUrl && (
+                       <p className="text-xs opacity-70 mb-1">Áudio sem arquivo disponível</p>
+                     )}
                     {msg.content && (
                       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderContent(msg.content)}</p>
                     )}
@@ -787,9 +812,9 @@ export default function ConversationsPage() {
                   <ImageIcon className="w-5 h-5" />
                   <input type="file" accept="image/*" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
-                <label className={`p-2 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar arquivo">
+                 <label className={`p-2 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem, documento ou áudio">
                   <Paperclip className="w-5 h-5" />
-                  <input type="file" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
+                   <input type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
                 <textarea
                   className="input-rect flex-1 resize-none min-h-[40px]"

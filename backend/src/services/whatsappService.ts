@@ -98,6 +98,58 @@ export async function sendWhatsAppMessage(
   content: string,
   type = 'text',
   mediaUrl?: string,
+  mediaMimeType?: string,
+  mediaFileName?: string,
+  user?: SessionUser,
 ) {
-  return sessionManager.sendMessage(accountId, to, content, type, mediaUrl);
+  if (user) await assertAccountAccess(user, accountId);
+  return sessionManager.sendMessage(accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName);
+}
+
+export async function broadcastWhatsAppMessages(
+  data: {
+    accountId: string;
+    recipients: string[];
+    content: string;
+    type?: string;
+    mediaUrl?: string;
+    mediaMimeType?: string;
+    mediaFileName?: string;
+  },
+  user: SessionUser,
+) {
+  await assertAccountAccess(user, data.accountId);
+
+  const results: Array<{ to: string; ok: boolean; error?: string }> = [];
+  for (let index = 0; index < data.recipients.length; index++) {
+    const to = data.recipients[index];
+    try {
+      await sessionManager.sendMessage(
+        data.accountId,
+        to,
+        data.content,
+        data.type || 'text',
+        data.mediaUrl,
+        data.mediaMimeType,
+        data.mediaFileName,
+      );
+      results.push({ to, ok: true });
+    } catch (err: any) {
+      results.push({ to, ok: false, error: err?.message || 'Falha ao enviar' });
+    }
+
+    // Espaça os envios para reduzir bloqueios por rajada no WhatsApp.
+    if (index < data.recipients.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
+
+  const sent = results.filter(result => result.ok).length;
+  return {
+    success: results.every(result => result.ok),
+    total: results.length,
+    sent,
+    failed: results.length - sent,
+    results,
+  };
 }

@@ -2,3 +2,4 @@
 - [Railway startup health](railway-startup-healthcheck.md) — o processo HTTP deve iniciar antes de qualquer sincronização bloqueante do Prisma.
 - [WhatsApp session durability](whatsapp-session-reliability.md) — sessões Baileys exigem volume persistente e uma única instância; reconectar deve preservar as credenciais.
 - [Production schema gate](production-schema-gate.md) — nunca iniciar o consumidor WhatsApp se o schema de mensagens não estiver compatível com o Prisma.
+- [WhatsApp media payloads](whatsapp-media-payloads.md) — arquivos enviados pelo painel devem virar Buffer local e levar MIME/nome; caminho do servidor não é URL pública.

@@ -118,20 +118,50 @@ export const whatsappApi = {
 
 // Conversations
 export const conversationApi = {
-  list: (whatsappId: string, search?: string, page?: number) =>
-    api.get<any>(`/conversations?whatsappId=${encodeURIComponent(whatsappId)}&search=${encodeURIComponent(search || '')}&page=${page || 1}`),
+  list: (whatsappId: string, search?: string, page?: number, includeGroups = true, limit = 50) =>
+    api.get<any>(`/conversations?whatsappId=${encodeURIComponent(whatsappId)}&search=${encodeURIComponent(search || '')}&page=${page || 1}&limit=${limit}&includeGroups=${includeGroups}`),
   get: (id: string) => api.get<any>(`/conversations/${id}`),
   messages: (id: string, page?: number) =>
     api.get<any>(`/conversations/${id}/messages?page=${page || 1}`),
   markRead: (id: string) => api.post(`/conversations/${id}/read`),
-  send: (accountId: string, to: string, content: string, type?: string, mediaUrl?: string) =>
-    api.post('/conversations/send', { accountId, to, content, type, mediaUrl }),
+  send: (
+    accountId: string,
+    to: string,
+    content: string,
+    type?: string,
+    mediaUrl?: string,
+    mediaMimeType?: string,
+    mediaFileName?: string,
+  ) => api.post('/conversations/send', { accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName }),
+  broadcast: (
+    accountId: string,
+    recipients: string[],
+    content: string,
+    type?: string,
+    mediaUrl?: string,
+    mediaMimeType?: string,
+    mediaFileName?: string,
+  ) => api.post<{
+    success: boolean;
+    total: number;
+    sent: number;
+    failed: number;
+    results: Array<{ to: string; ok: boolean; error?: string }>;
+  }>('/conversations/broadcast', {
+    accountId,
+    recipients,
+    content,
+    type,
+    mediaUrl,
+    mediaMimeType,
+    mediaFileName,
+  }),
 };
 
 // Contacts
 export const contactApi = {
-  list: (whatsappId: string, search?: string) =>
-    api.get<any>(`/contacts?whatsappId=${encodeURIComponent(whatsappId)}&search=${encodeURIComponent(search || '')}`),
+  list: (whatsappId: string, search?: string, page = 1, limit = 50) =>
+    api.get<any>(`/contacts?whatsappId=${encodeURIComponent(whatsappId)}&search=${encodeURIComponent(search || '')}&page=${page}&limit=${limit}`),
   update: (id: string, data: {
     name?: string;
     notes?: string;

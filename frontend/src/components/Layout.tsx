@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { disconnectSocket } from '../lib/socket';
 import {
-  LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell,
+  LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone,
   LogOut, Search, Menu, X, Bot,
 } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/whatsapp', icon: Smartphone, label: 'Whatsapps' },
   { to: '/conversations', icon: MessageSquare, label: 'Conversas', showBadge: true },
+  { to: '/broadcast', icon: Megaphone, label: 'Disparo' },
   { to: '/chatbots', icon: Bot, label: 'Chatbots' },
 ];
 

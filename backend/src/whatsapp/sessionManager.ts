@@ -140,7 +140,12 @@ class WhatsAppSessionManager extends EventEmitter {
     const session = this.sessions.get(accountId);
     if (!session?.socket || !jid) return null;
     try {
-      return (await session.socket.profilePictureUrl(jid, 'image', 10_000)) ?? null;
+      const value = jid.trim();
+      const normalizedJid = value.includes('@')
+        ? value
+        : `${value.replace(/\D/g, '')}@s.whatsapp.net`;
+      if (normalizedJid === '@s.whatsapp.net') return null;
+      return (await session.socket.profilePictureUrl(normalizedJid, 'image', 10_000)) ?? null;
     } catch {
       // sem foto ou sem permissão — normal
       return null;
@@ -520,7 +525,27 @@ class WhatsAppSessionManager extends EventEmitter {
     return path.resolve(process.cwd(), mediaUrl);
   }
 
-  async sendMessage(accountId: string, to: string, content: string, type = 'text', mediaUrl?: string): Promise<any> {
+  private async mediaPayload(mediaUrl: string): Promise<Buffer | { url: string }> {
+    if (/^https?:\/\//i.test(mediaUrl)) return { url: mediaUrl };
+    const mediaPath = this.resolveMediaPath(mediaUrl);
+    try {
+      const buffer = await fs.readFile(mediaPath);
+      if (!buffer.length) throw new Error('arquivo vazio');
+      return buffer;
+    } catch {
+      throw new AppError(`Arquivo de mídia não encontrado: ${mediaUrl}`, 400);
+    }
+  }
+
+  async sendMessage(
+    accountId: string,
+    to: string,
+    content: string,
+    type = 'text',
+    mediaUrl?: string,
+    mediaMimeType?: string,
+    mediaFileName?: string,
+  ): Promise<any> {
     const session = this.sessions.get(accountId);
     if (!session?.socket) {
       throw new AppError('WhatsApp não está conectado', 400);
@@ -533,13 +558,26 @@ class WhatsAppSessionManager extends EventEmitter {
     if (type === 'text' || !resolvedMedia) {
       result = await session.socket.sendMessage(jid, { text: content });
     } else if (type === 'image') {
-      result = await session.socket.sendMessage(jid, { image: { url: resolvedMedia }, caption: content || undefined });
+      const image = await this.mediaPayload(mediaUrl!);
+      result = await session.socket.sendMessage(jid, { image, caption: content || undefined });
     } else if (type === 'video') {
-      result = await session.socket.sendMessage(jid, { video: { url: resolvedMedia }, caption: content || undefined });
+      const video = await this.mediaPayload(mediaUrl!);
+      result = await session.socket.sendMessage(jid, { video, caption: content || undefined });
     } else if (type === 'audio') {
-      result = await session.socket.sendMessage(jid, { audio: { url: resolvedMedia }, mimetype: 'audio/mp4' });
+      const audio = await this.mediaPayload(mediaUrl!);
+      result = await session.socket.sendMessage(jid, {
+        audio,
+        mimetype: mediaMimeType || 'audio/ogg; codecs=opus',
+        ptt: false,
+      });
     } else if (type === 'document') {
-      result = await session.socket.sendMessage(jid, { document: { url: resolvedMedia }, caption: content || undefined, mimetype: 'application/octet-stream' });
+      const document = await this.mediaPayload(mediaUrl!);
+      result = await session.socket.sendMessage(jid, {
+        document,
+        caption: content || undefined,
+        mimetype: mediaMimeType || 'application/octet-stream',
+        fileName: mediaFileName || content || 'documento',
+      });
     } else {
       result = await session.socket.sendMessage(jid, { text: content });
     }
@@ -1595,7 +1633,10 @@ class WhatsAppSessionManager extends EventEmitter {
               if (match) {
                 let sendResult: any;
                 if (match.mediaType === 'image' && match.mediaUrl) {
-                  sendResult = await session.socket.sendMessage(remoteJid, { image: { url: match.mediaUrl }, caption: match.reply });
+                   sendResult = await session.socket.sendMessage(remoteJid, {
+                     image: await this.mediaPayload(match.mediaUrl),
+                     caption: match.reply,
+                   });
                 } else {
                   sendResult = await session.socket.sendMessage(remoteJid, { text: match.reply });
                 }

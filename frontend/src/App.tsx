@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import WhatsAppPage from './pages/WhatsAppPage';
 import ConversationsPage from './pages/ConversationsPage';
+import BroadcastPage from './pages/BroadcastPage';
 import ContactsPage from './pages/ContactsPage';
 import AttendantsPage from './pages/AttendantsPage';
 import TagsPage from './pages/TagsPage';
@@ -32,6 +33,7 @@ export default function App() {
         <Route index element={<DashboardPage />} />
         <Route path="whatsapp" element={<WhatsAppPage />} />
         <Route path="conversations" element={<ConversationsPage />} />
+        <Route path="broadcast" element={<BroadcastPage />} />
         <Route path="chatbots" element={<ChatbotsPage />} />
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="attendants" element={<AttendantsPage />} />

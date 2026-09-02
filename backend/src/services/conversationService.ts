@@ -17,13 +17,17 @@ interface ListConversationsOpts {
   search?: string;
   page?: number;
   limit?: number;
+  includeGroups?: boolean;
 }
 
 export async function listConversations(opts: ListConversationsOpts) {
-  const { whatsappId, search, page = 1, limit = 50 } = opts;
+  const { whatsappId, search, page = 1, limit = 50, includeGroups = true } = opts;
   const skip = (page - 1) * limit;
 
   const where: any = { whatsappId };
+  if (!includeGroups) {
+    where.NOT = [{ contact: { phone: { endsWith: '@g.us' } } }];
+  }
   if (search) {
     where.OR = [
       { contact: { name: { contains: search, mode: 'insensitive' } } },
