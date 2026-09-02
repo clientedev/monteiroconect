@@ -1,4 +1,5 @@
 import { prisma } from '../database/client.js';
+import { SessionUser } from './accessService.js';
 
 function startOfSaoPauloDay(now = new Date()): Date {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -13,7 +14,7 @@ function startOfSaoPauloDay(now = new Date()): Date {
   return new Date(`${values.year}-${values.month}-${values.day}T00:00:00-03:00`);
 }
 
-export async function getDashboardStats() {
+export async function getDashboardStats(user?: SessionUser) {
   const today = startOfSaoPauloDay();
   const [
     connectedCount,
@@ -26,6 +27,7 @@ export async function getDashboardStats() {
     recentConversations,
     unreadConversations,
     messagesPerAccount,
+    assignedConversations,
   ] = await Promise.all([
     prisma.whatsAppAccount.count({ where: { status: 'CONNECTED' } }),
     prisma.whatsAppAccount.count({ where: { status: { not: 'CONNECTED' } } }),
@@ -67,6 +69,21 @@ export async function getDashboardStats() {
         _count: { select: { conversations: true } },
       },
     }),
+    user
+      ? prisma.conversation.findMany({
+          where: {
+            isOpen: true,
+            assignments: { some: { userId: user.id } },
+          },
+          orderBy: [{ lastMessageAt: 'desc' }, { updatedAt: 'desc' }],
+          take: 20,
+          include: {
+            contact: true,
+            whatsapp: { select: { id: true, name: true, phone: true } },
+            assignments: { include: { user: { select: { id: true, username: true, role: true } } } },
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   const isVisibleConversation = (conversation: any) =>
@@ -85,5 +102,7 @@ export async function getDashboardStats() {
     recentConversations: recentConversations.filter(isVisibleConversation),
     unreadConversations: visibleUnreadConversations.slice(0, 15),
     messagesPerAccount,
+    assignedConversations,
+    assignedCount: assignedConversations.length,
   };
 }

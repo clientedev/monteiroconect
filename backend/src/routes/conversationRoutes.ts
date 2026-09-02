@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listConversations, getConversation, getConversationMessages, markConversationRead } from '../services/conversationService.js';
+import { listConversations, getConversation, getConversationMessages, markConversationRead, assignConversation } from '../services/conversationService.js';
 import { sendWhatsAppMessage, broadcastWhatsAppMessages } from '../services/whatsappService.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { AppError } from '../utils/errors.js';
@@ -35,6 +35,7 @@ const sendSchema = z.object({
   mediaUrl: z.string().optional(),
   mediaMimeType: z.string().max(200).optional(),
   mediaFileName: z.string().max(255).optional(),
+  senderName: z.string().trim().min(1).max(50).optional(),
 }).refine(v => v.content.length > 0 || !!v.mediaUrl, {
   message: 'content ou mediaUrl é obrigatório',
 });
@@ -51,6 +52,7 @@ router.post('/send', async (req: AuthRequest, res, next) => {
       body.mediaMimeType,
       body.mediaFileName,
       req.user!,
+      body.senderName,
     );
     res.json({ success: true, result });
   } catch (err) {
@@ -74,6 +76,16 @@ router.post('/broadcast', async (req: AuthRequest, res, next) => {
   try {
     const body = broadcastSchema.parse(req.body);
     const result = await broadcastWhatsAppMessages(body, req.user!);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/:id/assignment', async (req: AuthRequest, res, next) => {
+  try {
+    const { userId } = z.object({ userId: z.string().nullable() }).parse(req.body);
+    const result = await assignConversation(String(req.params.id), userId, req.user!);
     res.json(result);
   } catch (err) {
     next(err);

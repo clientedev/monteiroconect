@@ -123,6 +123,8 @@ export const conversationApi = {
   get: (id: string) => api.get<any>(`/conversations/${id}`),
   messages: (id: string, page?: number) =>
     api.get<any>(`/conversations/${id}/messages?page=${page || 1}`),
+  assign: (id: string, userId: string | null) =>
+    api.put<{ assignedUser: { id: string; username: string; role: string } | null }>(`/conversations/${id}/assignment`, { userId }),
   markRead: (id: string) => api.post(`/conversations/${id}/read`),
   send: (
     accountId: string,
@@ -132,7 +134,8 @@ export const conversationApi = {
     mediaUrl?: string,
     mediaMimeType?: string,
     mediaFileName?: string,
-  ) => api.post('/conversations/send', { accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName }),
+    senderName?: string,
+  ) => api.post('/conversations/send', { accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName, senderName }),
   broadcast: (
     accountId: string,
     recipients: string[],

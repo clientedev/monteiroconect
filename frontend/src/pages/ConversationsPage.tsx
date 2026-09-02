@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { api, whatsappApi, conversationApi } from '../lib/api';
+import { api, authApi, tagApi, whatsappApi, conversationApi } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
-import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff } from 'lucide-react';
+import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon, X, UserCheck } from 'lucide-react';
 
 interface ConvItem {
   id: string;
@@ -18,6 +18,19 @@ interface ConvItem {
   accountId: string;
   accountName?: string;
   accountPhone?: string | null;
+  assignedUser?: { id: string; username: string; role: string } | null;
+}
+
+interface ConversationTag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface Attendant {
+  id: string;
+  username: string;
+  isActive: boolean;
 }
 
 interface SyncProgress {
@@ -110,6 +123,11 @@ export default function ConversationsPage() {
   const [newMessage, setNewMessage] = useState('');
   const [search, setSearch] = useState('');
   const [includeGroups, setIncludeGroups] = useState(true);
+  const [availableTags, setAvailableTags] = useState<ConversationTag[]>([]);
+  const [attendants, setAttendants] = useState<Attendant[]>([]);
+  const [selectedAttendantName, setSelectedAttendantName] = useState('');
+  const [tagBusy, setTagBusy] = useState(false);
+  const [assignmentBusy, setAssignmentBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -143,6 +161,23 @@ export default function ConversationsPage() {
   // Sincroniza refs para closure segura nos handlers de WebSocket
   useEffect(() => { selectedConvRef.current = selectedConv; }, [selectedConv]);
   useEffect(() => { selectedAccountIdRef.current = selectedAccountId; }, [selectedAccountId]);
+  useEffect(() => {
+    if (!selectedAttendantName && user?.username) {
+      setSelectedAttendantName(user.username);
+    }
+  }, [selectedAttendantName, user?.username]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([tagApi.list(), authApi.listUsers()])
+      .then(([tags, users]) => {
+        if (!active) return;
+        setAvailableTags(tags || []);
+        setAttendants((users || []).filter((attendant: Attendant) => attendant.isActive));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   /** Converte o Map de mensagens em array ordenado cronologicamente */
   const sortedMessages = (): Msg[] => {
@@ -547,6 +582,63 @@ export default function ConversationsPage() {
     loadMessages(conv.id, 1);
   };
 
+  const updateConversationTags = (conversationId: string, nextTags: ConversationTag[]) => {
+    setConversations(prev => prev.map(conv =>
+      conv.id === conversationId ? { ...conv, tags: nextTags } : conv
+    ));
+    setSelectedConv(prev =>
+      prev?.id === conversationId ? { ...prev, tags: nextTags } : prev
+    );
+  };
+
+  const handleAddTag = async (tagId: string) => {
+    if (!selectedConv || !tagId || tagBusy) return;
+    const tag = availableTags.find(item => item.id === tagId);
+    if (!tag || selectedConv.tags?.some(item => item.id === tag.id)) return;
+    setTagBusy(true);
+    try {
+      await tagApi.add(selectedConv.id, selectedConv.contactId, tag.id);
+      updateConversationTags(selectedConv.id, [...(selectedConv.tags || []), tag]);
+    } catch (err: any) {
+      alert(err.message || 'Não foi possível adicionar a etiqueta');
+    } finally {
+      setTagBusy(false);
+    }
+  };
+
+  const handleRemoveTag = async (tagId: string) => {
+    if (!selectedConv || tagBusy) return;
+    setTagBusy(true);
+    try {
+      await tagApi.remove(selectedConv.id, selectedConv.contactId, tagId);
+      updateConversationTags(
+        selectedConv.id,
+        (selectedConv.tags || []).filter(tag => tag.id !== tagId),
+      );
+    } catch (err: any) {
+      alert(err.message || 'Não foi possível remover a etiqueta');
+    } finally {
+      setTagBusy(false);
+    }
+  };
+
+  const handleAssignConversation = async (userId: string) => {
+    if (!selectedConv || assignmentBusy) return;
+    setAssignmentBusy(true);
+    try {
+      const result = await conversationApi.assign(selectedConv.id, userId || null);
+      const assignedUser = result.assignedUser || null;
+      setSelectedConv(prev => prev?.id === selectedConv.id ? { ...prev, assignedUser } : prev);
+      setConversations(prev => prev.map(conv =>
+        conv.id === selectedConv.id ? { ...conv, assignedUser } : conv
+      ));
+    } catch (err: any) {
+      alert(err.message || 'Não foi possível encaminhar a conversa');
+    } finally {
+      setAssignmentBusy(false);
+    }
+  };
+
   const selectedAccount = accounts.find(a =>
     a.id === (selectedConv?.accountId || (selectedAccountId === ALL_ACCOUNTS ? '' : selectedAccountId))
   );
@@ -558,7 +650,16 @@ export default function ConversationsPage() {
     setSending(true);
     setNewMessage('');
     try {
-      await conversationApi.send(selectedConv.accountId, selectedConv.contactPhone, text);
+      await conversationApi.send(
+        selectedConv.accountId,
+        selectedConv.contactPhone,
+        text,
+        'text',
+        undefined,
+        undefined,
+        undefined,
+        selectedAttendantName || user?.username,
+      );
       if (selectedConvRef.current) {
         await loadMessages(selectedConvRef.current.id, 1);
       }
@@ -589,12 +690,13 @@ export default function ConversationsPage() {
        const caption = type === 'document' ? file.name : newMessage.trim();
        await conversationApi.send(
         selectedConv.accountId,
-         selectedConv.contactPhone,
-         caption,
-         type,
-         uploaded.url,
-         uploaded.mimetype,
-         uploaded.originalName,
+        selectedConv.contactPhone,
+        caption,
+        type,
+        uploaded.url,
+        uploaded.mimetype,
+        uploaded.originalName,
+        selectedAttendantName || user?.username,
        );
        setNewMessage('');
       await loadMessages(selectedConv.id, 1);
@@ -745,6 +847,29 @@ export default function ConversationsPage() {
                           {conv.accountName}{conv.accountPhone ? ` · ${conv.accountPhone}` : ''}
                         </p>
                       )}
+                      {!!conv.tags?.length && (
+                        <div className="flex items-center gap-1 mt-1 overflow-hidden">
+                          {conv.tags.slice(0, 3).map((tag: ConversationTag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center gap-1 max-w-[92px] rounded-full border px-1.5 py-0.5 text-[9px] font-semibold truncate"
+                              style={{ color: tag.color, borderColor: tag.color, backgroundColor: `${tag.color}12` }}
+                            >
+                              <TagIcon className="w-2.5 h-2.5 flex-shrink-0" />
+                              <span className="truncate">{tag.name}</span>
+                            </span>
+                          ))}
+                          {conv.tags.length > 3 && (
+                            <span className="text-[9px] text-monte-sereno flex-shrink-0">+{conv.tags.length - 3}</span>
+                          )}
+                        </div>
+                      )}
+                      {conv.assignedUser && (
+                        <p className="flex items-center gap-1 text-[10px] text-monte-azul/70 truncate mt-1">
+                          <UserCheck className="w-2.5 h-2.5 flex-shrink-0" />
+                          {conv.assignedUser.username}
+                        </p>
+                      )}
                     </div>
                     {conv.unreadCount > 0 && (
                       <span className="bg-monte-terracota text-white text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center flex-shrink-0 ml-2 px-1 font-bold shadow-sm">
@@ -779,12 +904,12 @@ export default function ConversationsPage() {
         {selectedConv ? (
           <>
             {/* Header */}
-            <div className="bg-white/80 backdrop-blur-md border-b border-monte-sereno/15 px-4 py-3 flex items-center gap-3">
+            <div className="bg-white/80 backdrop-blur-md border-b border-monte-sereno/15 px-4 py-3 flex items-start gap-3">
               <button onClick={() => { setSelectedConv(null); setMessages(new Map()); }} className="lg:hidden text-monte-azul hover:text-monte-verde">
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <Avatar contactId={selectedConv.contactId} name={selectedConv.contactName} phone={selectedConv.contactPhone} />
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="font-semibold text-monte-azul font-display">{selectedConv.contactName || formatContactPhone(selectedConv.contactPhone)}</p>
                 <p className="text-xs text-monte-sereno">
                   {selectedConv.contactPhone.includes('@g.us')
@@ -797,6 +922,67 @@ export default function ConversationsPage() {
                   <p className="text-[11px] text-monte-verde font-medium">
                     {selectedConv.accountName}{selectedConv.accountPhone ? ` · ${selectedConv.accountPhone}` : ''}
                   </p>
+                )}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  {(selectedConv.tags || []).map((tag: ConversationTag) => (
+                    <span
+                      key={tag.id}
+                      className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold"
+                      style={{ color: tag.color, borderColor: tag.color, backgroundColor: `${tag.color}12` }}
+                    >
+                      <TagIcon className="w-3 h-3" />
+                      {tag.name}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag.id)}
+                        disabled={tagBusy}
+                        aria-label={`Remover etiqueta ${tag.name}`}
+                        className="rounded-full hover:bg-black/10 disabled:opacity-50"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {availableTags.some(tag => !(selectedConv.tags || []).some(current => current.id === tag.id)) && (
+                    <select
+                      className="input-rect py-1 px-2 text-[10px] w-auto max-w-[170px]"
+                      value=""
+                      onChange={e => handleAddTag(e.target.value)}
+                      disabled={tagBusy}
+                      aria-label="Adicionar etiqueta"
+                    >
+                      <option value="">+ Etiqueta</option>
+                      {availableTags
+                        .filter(tag => !(selectedConv.tags || []).some(current => current.id === tag.id))
+                        .map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                    </select>
+                  )}
+                  {!availableTags.length && (
+                    <Link to="/tags" className="inline-flex items-center gap-1 text-[10px] text-monte-verde hover:underline">
+                      <TagIcon className="w-3 h-3" /> Criar etiqueta
+                    </Link>
+                  )}
+                </div>
+                {attendants.length > 0 && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <UserCheck className="w-3.5 h-3.5 text-monte-sereno flex-shrink-0" />
+                    <label htmlFor="conversation-assignee" className="text-[10px] font-semibold text-monte-sereno flex-shrink-0">
+                      Encaminhar para
+                    </label>
+                    <select
+                      id="conversation-assignee"
+                      className="input-rect py-1 px-2 text-[10px] min-w-0 max-w-[190px]"
+                      value={selectedConv.assignedUser?.id || ''}
+                      onChange={e => handleAssignConversation(e.target.value)}
+                      disabled={assignmentBusy}
+                    >
+                      <option value="">Sem responsável</option>
+                      {attendants.map(attendant => (
+                        <option key={attendant.id} value={attendant.id}>{attendant.username}</option>
+                      ))}
+                    </select>
+                    {assignmentBusy && <span className="text-[10px] text-monte-sereno">Salvando...</span>}
+                  </div>
                 )}
               </div>
             </div>
@@ -919,6 +1105,24 @@ export default function ConversationsPage() {
 
             {/* Input */}
             <div className="bg-white/80 backdrop-blur-md border-t border-monte-sereno/15 p-3">
+              {attendants.length > 0 && (
+                <div className="flex items-center justify-end gap-2 mb-2">
+                  <label htmlFor="attendant-select" className="text-[11px] font-semibold text-monte-sereno">
+                    Enviar como
+                  </label>
+                  <select
+                    id="attendant-select"
+                    className="input-rect py-1.5 px-2 text-xs w-auto max-w-[190px]"
+                    value={selectedAttendantName}
+                    onChange={e => setSelectedAttendantName(e.target.value)}
+                    disabled={sending}
+                  >
+                    {attendants.map(attendant => (
+                      <option key={attendant.id} value={attendant.username}>{attendant.username}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <label className={`p-2 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem">
                   <ImageIcon className="w-5 h-5" />

@@ -101,9 +101,29 @@ export async function sendWhatsAppMessage(
   mediaMimeType?: string,
   mediaFileName?: string,
   user?: SessionUser,
+  senderName?: string,
 ) {
   if (user) await assertAccountAccess(user, accountId);
-  return sessionManager.sendMessage(accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName, user?.username);
+  const selectedName = senderName?.trim();
+  if (selectedName) {
+    const registeredUser = await prisma.user.findFirst({
+      where: { username: selectedName, isActive: true },
+      select: { username: true },
+    });
+    if (!registeredUser) {
+      throw new AppError('Atendente selecionado não está cadastrado ou está inativo', 400);
+    }
+  }
+  return sessionManager.sendMessage(
+    accountId,
+    to,
+    content,
+    type,
+    mediaUrl,
+    mediaMimeType,
+    mediaFileName,
+    selectedName || user?.username,
+  );
 }
 
 export async function broadcastWhatsAppMessages(

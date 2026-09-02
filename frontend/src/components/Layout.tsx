@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { disconnectSocket } from '../lib/socket';
 import {
-  LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone,
+  LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone, UserCheck,
   LogOut, Search, Menu, X, Bot,
 } from 'lucide-react';
 import { Component, type ErrorInfo, type ReactNode, useState, useRef, useEffect, useCallback } from 'react';
@@ -66,6 +66,8 @@ export default function Layout() {
   const [showSearch, setShowSearch] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadConversations, setUnreadConversations] = useState<any[]>([]);
+  const [assignedCount, setAssignedCount] = useState(0);
+  const [assignedConversations, setAssignedConversations] = useState<any[]>([]);
   const [showNotif, setShowNotif] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -98,6 +100,8 @@ export default function Layout() {
       const stats = await dashboardApi.stats();
       setUnreadCount(stats.unreadMessages || 0);
       setUnreadConversations(stats.unreadConversations || []);
+      setAssignedCount(stats.assignedCount || 0);
+      setAssignedConversations(stats.assignedConversations || []);
     } catch {}
   }, []);
 
@@ -324,9 +328,9 @@ export default function Layout() {
               title="Notificações"
             >
               <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
+              {(unreadCount + assignedCount) > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 bg-monte-terracota text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 leading-none shadow-sm animate-pulse">
-                  {unreadCount > 99 ? '99+' : unreadCount}
+                  {(unreadCount + assignedCount) > 99 ? '99+' : unreadCount + assignedCount}
                 </span>
               )}
             </button>
@@ -337,9 +341,41 @@ export default function Layout() {
                   <div className="px-4 py-3 border-b border-monte-sereno/15 sticky top-0 bg-white/95 backdrop-blur-xl">
                     <p className="text-sm font-bold font-display text-monte-azul">Notificações</p>
                     <p className="text-xs text-monte-sereno">
-                      {unreadCount > 0 ? `${unreadCount} mensagem${unreadCount > 1 ? 's' : ''} não lida${unreadCount > 1 ? 's' : ''}` : 'Tudo em dia'}
+                      {(unreadCount + assignedCount) > 0
+                        ? `${unreadCount} mensagem${unreadCount !== 1 ? 's' : ''} não lida${unreadCount !== 1 ? 's' : ''}${assignedCount ? ` · ${assignedCount} demanda${assignedCount !== 1 ? 's' : ''}` : ''}`
+                        : 'Tudo em dia'}
                     </p>
                   </div>
+                  {assignedConversations.length > 0 && (
+                    <div className="border-b border-monte-sereno/15">
+                      <div className="px-4 py-2 bg-monte-verde/5 flex items-center gap-2">
+                        <UserCheck className="w-4 h-4 text-monte-verde" />
+                        <p className="text-xs font-bold text-monte-azul">Demandas para você</p>
+                      </div>
+                      {assignedConversations.map(conv => (
+                        <button
+                          key={`assigned-${conv.id}`}
+                          onClick={() => openConversation(conv)}
+                          className="w-full text-left px-4 py-3 hover:bg-monte-areiaSecao/60 transition-colors flex items-center gap-3 border-b border-monte-sereno/10"
+                        >
+                          <div className="w-9 h-9 rounded-full bg-monte-verde/15 text-monte-verde flex items-center justify-center flex-shrink-0">
+                            <UserCheck className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-monte-azul truncate">
+                              {conv.contact?.name || conv.contact?.phone || 'Contato'}
+                            </p>
+                            <p className="text-[11px] text-monte-verde truncate mt-0.5">
+                              Encaminhada para atendimento
+                            </p>
+                            {conv.whatsapp?.name && (
+                              <p className="text-[10px] text-monte-sereno truncate">{conv.whatsapp.name}</p>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {unreadConversations.length === 0 ? (
                     <div className="p-8 text-center">
                       <Bell className="w-8 h-8 mx-auto mb-2 text-monte-sereno/30" />
