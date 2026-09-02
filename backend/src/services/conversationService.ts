@@ -81,14 +81,43 @@ export async function getConversationMessages(
   limit = 50,
 ) {
   const skip = (page - 1) * limit;
-  const total = await prisma.message.count({ where: { conversationId } });
 
-  // FIX 3: Ordena pela coluna `timestamp` (timestamp real do WhatsApp) e usa
-  // `createdAt` como desempate. Busca DECRESCENTE (mais recentes primeiro)
-  // para paginar por histórico, mas retorna em ordem CRESCENTE (cronológica)
-  // para o chat — sem o .reverse() que era frágil com timestamps idênticos.
+  const currentConv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    include: { contact: true },
+  });
+
+  let targetConvIds = [conversationId];
+
+  if (currentConv?.contact) {
+    const rawPhone = currentConv.contact.phone;
+    const cleanPhone = rawPhone.replace('@s.whatsapp.net', '').replace(/:\d+$/, '');
+
+    const matchingConversations = await prisma.conversation.findMany({
+      where: {
+        whatsappId: currentConv.whatsappId,
+        contact: {
+          OR: [
+            { phone: rawPhone },
+            { phone: cleanPhone },
+            { phone: `${cleanPhone}@s.whatsapp.net` },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+
+    if (matchingConversations.length > 0) {
+      targetConvIds = Array.from(new Set([...targetConvIds, ...matchingConversations.map(c => c.id)]));
+    }
+  }
+
+  const where = { conversationId: { in: targetConvIds } };
+
+  const total = await prisma.message.count({ where });
+
   const messages = await prisma.message.findMany({
-    where: { conversationId },
+    where,
     orderBy: [
       { createdAt: 'desc' },
       { id: 'desc' },
@@ -98,16 +127,15 @@ export async function getConversationMessages(
   });
 
   await prisma.message.updateMany({
-    where: { conversationId, isRead: false },
+    where: { conversationId: { in: targetConvIds }, isRead: false },
     data: { isRead: true },
   });
 
-  await prisma.conversation.update({
-    where: { id: conversationId },
+  await prisma.conversation.updateMany({
+    where: { id: { in: targetConvIds } },
     data: { unreadCount: 0 },
   });
 
-  // Reverte para ordem cronológica (mais antigo primeiro) para o frontend
   return { total, page, limit, messages: messages.reverse() };
 }
 

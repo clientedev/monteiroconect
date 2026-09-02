@@ -793,9 +793,15 @@ class WhatsAppSessionManager extends EventEmitter {
           },
         });
       } catch (dbErr: any) {
-        if (dbErr?.code === 'P2002') return; // Já gravado
-        throw dbErr;
+        if (dbErr?.code === 'P2002' && waMsgId) {
+          savedMessage = await prisma.message.findFirst({
+            where: { conversationId: conversation.id, waMsgId },
+          });
+        } else {
+          throw dbErr;
+        }
       }
+      if (!savedMessage) return;
 
       if (ts > (conversation.lastMessageAt || new Date(0))) {
         await prisma.conversation.update({
@@ -1211,29 +1217,41 @@ class WhatsAppSessionManager extends EventEmitter {
           },
         });
       } catch (dbErr: any) {
-        if (dbErr?.code === 'P2002') return;
-        logger.warn(`[${accountId}] Salvando mensagem em modo compatível: ${dbErr?.message?.slice(0, 120)}`);
-        try {
-          savedMessage = await prisma.message.create({
-            data: {
-              conversationId: conversation.id,
-              whatsappId: accountId,
-              type: msgType,
-              content,
-              mediaType,
-              mediaUrl: savedMediaUrl,
-              isFromMe: false,
-              quotedMessageId,
-              quotedContent,
-              messageId: waMsgId,
-              fromPhone: fromPhone,
-            },
+        if (dbErr?.code === 'P2002' && waMsgId) {
+          savedMessage = await prisma.message.findFirst({
+            where: { conversationId: conversation.id, waMsgId },
           });
-        } catch (fallbackErr: any) {
-          logger.error(`[${accountId}] ERRO CRÍTICO ao salvar mensagem incoming:`, fallbackErr);
-          return;
+        } else {
+          logger.warn(`[${accountId}] Salvando mensagem em modo compatível: ${dbErr?.message?.slice(0, 120)}`);
+          try {
+            savedMessage = await prisma.message.create({
+              data: {
+                conversationId: conversation.id,
+                whatsappId: accountId,
+                type: msgType,
+                content,
+                mediaType,
+                mediaUrl: savedMediaUrl,
+                isFromMe: false,
+                quotedMessageId,
+                quotedContent,
+                messageId: waMsgId,
+                fromPhone: fromPhone,
+              },
+            });
+          } catch (fallbackErr: any) {
+            if (fallbackErr?.code === 'P2002' && waMsgId) {
+              savedMessage = await prisma.message.findFirst({
+                where: { conversationId: conversation.id, waMsgId },
+              });
+            } else {
+              logger.error(`[${accountId}] ERRO CRÍTICO ao salvar mensagem incoming:`, fallbackErr);
+              return;
+            }
+          }
         }
       }
+      if (!savedMessage) return;
 
       await prisma.conversation.update({
         where: { id: conversation.id },
@@ -1396,29 +1414,40 @@ class WhatsAppSessionManager extends EventEmitter {
           },
         });
       } catch (dbErr: any) {
-        if (dbErr?.code === 'P2002') return; // Já enviado/gravado
-        // Fallback: schema sem campos novos
-        logger.warn(`[${accountId}] saveOutgoingMessage modo compatível: ${dbErr?.message?.slice(0, 120)}`);
-        try {
-          savedMessage = await prisma.message.create({
-            data: {
-              conversationId: conversation.id,
-              whatsappId: accountId,
-              type,
-              content,
-              mediaUrl,
-              mediaType: type === 'text' ? null : type,
-              isFromMe: true,
-              isRead: true,
-              messageId: waMsgId,
-              toPhone: toPhone,
-            },
+        if (dbErr?.code === 'P2002' && waMsgId) {
+          savedMessage = await prisma.message.findFirst({
+            where: { conversationId: conversation.id, waMsgId },
           });
-        } catch (fallbackErr: any) {
-          logger.error(`[${accountId}] ERRO CRÍTICO ao salvar mensagem saída:`, fallbackErr);
-          return;
+        } else {
+          logger.warn(`[${accountId}] saveOutgoingMessage modo compatível: ${dbErr?.message?.slice(0, 120)}`);
+          try {
+            savedMessage = await prisma.message.create({
+              data: {
+                conversationId: conversation.id,
+                whatsappId: accountId,
+                type,
+                content,
+                mediaUrl,
+                mediaType: type === 'text' ? null : type,
+                isFromMe: true,
+                isRead: true,
+                messageId: waMsgId,
+                toPhone: toPhone,
+              },
+            });
+          } catch (fallbackErr: any) {
+            if (fallbackErr?.code === 'P2002' && waMsgId) {
+              savedMessage = await prisma.message.findFirst({
+                where: { conversationId: conversation.id, waMsgId },
+              });
+            } else {
+              logger.error(`[${accountId}] ERRO CRÍTICO ao salvar mensagem saída:`, fallbackErr);
+              return;
+            }
+          }
         }
       }
+      if (!savedMessage) return;
 
       // FIX 6: usa timestamp real para lastMessageAt
       await prisma.conversation.update({

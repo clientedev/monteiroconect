@@ -418,6 +418,9 @@ export default function ConversationsPage() {
     setNewMessage('');
     try {
       await conversationApi.send(selectedAccountId, selectedConv.contactPhone, text);
+      if (selectedConvRef.current) {
+        await loadMessages(selectedConvRef.current.id, 1);
+      }
     } catch (err: any) {
       setNewMessage(text);
       alert('Erro ao enviar: ' + (err.message || 'tente novamente'));
