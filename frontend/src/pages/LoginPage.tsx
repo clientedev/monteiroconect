@@ -97,10 +97,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          <p className="text-center text-xs text-white/30 mt-8">
-            Monteiro Conecta v1.0 — Powered by Baileys
-          </p>
         </div>
       </div>
     </div>
