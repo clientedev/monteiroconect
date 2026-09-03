@@ -4,8 +4,9 @@ import { Eye, EyeOff, Zap } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState(() => localStorage.getItem('remembered_username') || '');
+  const [password, setPassword] = useState(() => localStorage.getItem('remembered_password') || '');
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('remember_me') === 'true');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14,6 +15,17 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
+
+    if (rememberMe) {
+      localStorage.setItem('remember_me', 'true');
+      localStorage.setItem('remembered_username', username);
+      localStorage.setItem('remembered_password', password);
+    } else {
+      localStorage.removeItem('remember_me');
+      localStorage.removeItem('remembered_username');
+      localStorage.removeItem('remembered_password');
+    }
+
     try {
       await login(username, password);
     } catch (err: any) {
@@ -80,6 +92,18 @@ export default function LoginPage() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between px-1">
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-white/70 hover:text-white transition-colors select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-white/30 bg-white/15 text-monte-verde focus:ring-0 focus:ring-offset-0 cursor-pointer accent-monte-verde"
+                />
+                <span>Lembrar senha</span>
+              </label>
             </div>
 
             <button
