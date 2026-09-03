@@ -6,6 +6,7 @@ interface User {
   username: string;
   email?: string;
   role: string;
+  mustChangePassword?: boolean;
 }
 
 interface AuthContextValue {
@@ -13,6 +14,8 @@ interface AuthContextValue {
   token: string | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  updateUser: (partial: Partial<User>) => void;
+  reloadUser: () => Promise<void>;
   loading: boolean;
 }
 
@@ -22,6 +25,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const reloadUser = async () => {
+    try {
+      const u = await authApi.me();
+      setUser(u as User);
+    } catch {
+      localStorage.removeItem('wa_token');
+      api.setToken(null);
+      setUser(null);
+      setToken(null);
+    }
+  };
 
   useEffect(() => {
     api.loadToken();
@@ -54,8 +69,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.setToken(null);
   };
 
+  const updateUser = (partial: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...partial } : null));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, updateUser, reloadUser, loading }}>
       {children}
     </AuthContext.Provider>
   );

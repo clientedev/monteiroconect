@@ -1,8 +1,10 @@
 import { Router } from 'express';
-import { login, createUser, listUsers, updateUser, deleteUser } from '../services/authService.js';
+import { login, createUser, listUsers, updateUser, deleteUser, resetPassword, changePassword } from '../services/authService.js';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { z } from 'zod';
 import { setUserWhatsAppAssignments } from '../services/accessService.js';
+import { prisma } from '../database/client.js';
+import { AppError } from '../utils/errors.js';
 
 const router = Router();
 
@@ -28,8 +30,39 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-router.get('/me', authMiddleware, (req: AuthRequest, res) => {
-  res.json(req.user);
+router.get('/me', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.user) throw new AppError('Não autenticado', 401);
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, username: true, email: true, role: true, mustChangePassword: true, isActive: true },
+    });
+    if (!user || !user.isActive) throw new AppError('Usuário inválido ou inativo', 401);
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/change-password', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { newPassword } = z.object({ newPassword: z.string().min(6) }).parse(req.body);
+    if (!req.user) throw new AppError('Não autenticado', 401);
+    await changePassword(req.user.id, newPassword);
+    res.json({ message: 'Senha alterada com sucesso' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/users/:id/reset-password', authMiddleware, requireRole('admin'), async (req, res, next) => {
+  try {
+    const { newPassword } = z.object({ newPassword: z.string().min(6) }).parse(req.body);
+    await resetPassword(String(req.params.id), newPassword);
+    res.json({ message: 'Senha resetada com sucesso. O usuário precisará trocá-la no próximo acesso.' });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.post('/users', authMiddleware, requireRole('admin'), async (req, res, next) => {

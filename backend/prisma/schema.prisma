@@ -9,14 +9,15 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  email     String   @unique
-  password  String
-  role      String   @default("attendant") // admin, supervisor, attendant
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  username           String   @unique
+  email              String   @unique
+  password           String
+  role               String   @default("attendant") // admin, supervisor, attendant
+  isActive           Boolean  @default(true)
+  mustChangePassword Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   assignments ConversationAssignment[]
   whatsappAssignments WhatsAppAssignment[]

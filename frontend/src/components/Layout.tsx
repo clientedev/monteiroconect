@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { disconnectSocket } from '../lib/socket';
+import ForceChangePasswordModal from './ForceChangePasswordModal';
 import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone, UserCheck,
   LogOut, Search, Menu, X, Bot,
@@ -420,6 +421,8 @@ export default function Layout() {
           </PageErrorBoundary>
         </main>
       </div>
+
+      <ForceChangePasswordModal />
     </div>
   );
 }

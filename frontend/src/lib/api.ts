@@ -92,13 +92,17 @@ export const api = new ApiClient();
 // Auth
 export const authApi = {
   login: (username: string, password: string) =>
-    api.post<{ token: string; user: { id: string; username: string; email: string; role: string } }>('/auth/login', { username, password }),
-  me: () => api.get<{ id: string; username: string; role: string }>('/auth/me'),
+    api.post<{ token: string; user: { id: string; username: string; email: string; role: string; mustChangePassword?: boolean } }>('/auth/login', { username, password }),
+  me: () => api.get<{ id: string; username: string; email?: string; role: string; mustChangePassword?: boolean }>('/auth/me'),
   listUsers: () => api.get<any[]>('/auth/users'),
   createUser: (data: { username: string; email: string; password: string; role: string }) =>
     api.post('/auth/users', data),
   updateUser: (id: string, data: { role?: string; isActive?: boolean }) =>
     api.put(`/auth/users/${id}`, data),
+  resetPassword: (userId: string, newPassword: string) =>
+    api.post<{ message: string }>(`/auth/users/${userId}/reset-password`, { newPassword }),
+  changePassword: (newPassword: string) =>
+    api.post<{ message: string }>('/auth/change-password', { newPassword }),
   deleteUser: (id: string) => api.del(`/auth/users/${id}`),
   setWhatsApps: (id: string, whatsappIds: string[]) => api.put(`/auth/users/${id}/whatsapps`, { whatsappIds }),
 };

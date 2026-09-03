@@ -9,6 +9,7 @@ export interface AuthRequest extends Request {
     id: string;
     username: string;
     role: string;
+    mustChangePassword?: boolean;
   };
 }
 
@@ -20,7 +21,7 @@ export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunct
     }
 
     const token = header.slice(7);
-    const decoded = jwt.verify(token, env.jwtSecret) as { id: string; username: string; role: string };
+    const decoded = jwt.verify(token, env.jwtSecret) as { id: string; username: string; role: string; mustChangePassword?: boolean };
     req.user = decoded;
     next();
   } catch (err) {
