@@ -137,6 +137,9 @@ h1, h2, h3, h4, h5, h6 {
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0px);
   }
+  .pt-safe-island {
+    padding-top: calc(max(env(safe-area-inset-top, 0px), 48px) + 10px);
+  }
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -149,6 +152,12 @@ h1, h2, h3, h4, h5, h6 {
   .h-screen-safe {
     height: 100vh;
     height: 100dvh;
+  }
+}
+
+@media (min-width: 1024px) {
+  .lg\:pt-0-safe {
+    padding-top: 0px !important;
   }
 }
 

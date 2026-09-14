@@ -247,7 +247,7 @@ export default function Layout() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex flex-col h-full pt-safe pb-safe">
+        <div className="flex flex-col h-full pt-safe-island pb-safe">
           {/* Logo */}
           <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
             <div className="flex items-center gap-3">
@@ -341,7 +341,7 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top bar */}
-        <header className={`bg-white/70 backdrop-blur-md border-b border-monte-sereno/20 px-4 lg:px-6 h-16 pt-safe flex items-center gap-4 flex-shrink-0 z-20 ${
+        <header className={`bg-white/70 backdrop-blur-md border-b border-monte-sereno/20 px-4 lg:px-6 pt-safe-island pb-3 lg:pb-0 lg:pt-0-safe lg:h-16 flex items-center gap-4 flex-shrink-0 z-20 ${
           isMobileChatOpen ? 'hidden lg:flex' : 'flex'
         }`}>
           <button

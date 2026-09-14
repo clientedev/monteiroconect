@@ -822,7 +822,7 @@ export default function ConversationsPage() {
         selectedConv ? 'hidden lg:flex' : 'flex h-full pb-20 lg:pb-0'
       }`}>
         {/* Mobile Header da lista estilo WhatsApp */}
-        <div className="px-4 pt-3 pb-2 flex items-center justify-between lg:hidden border-b border-monte-sereno/10 bg-white/90">
+        <div className="px-4 pt-safe-island pb-3 flex items-center justify-between lg:hidden border-b border-monte-sereno/10 bg-white/95 shadow-2xs">
           <div>
             <h2 className="text-xl font-bold font-display text-monte-azul leading-none">Conversas</h2>
             <p className="text-[11px] text-monte-sereno mt-0.5 font-medium">
@@ -969,8 +969,8 @@ export default function ConversationsPage() {
       }`}>
         {selectedConv ? (
           <>
-            {/* Header estilo WhatsApp */}
-            <div className="bg-white/90 backdrop-blur-md border-b border-monte-sereno/15 px-3 sm:px-4 py-2.5 pt-safe flex items-center justify-between gap-3 shadow-2xs z-10">
+            {/* Header estilo WhatsApp com espaço seguro para Dynamic Island */}
+            <div className="bg-white/95 backdrop-blur-md border-b border-monte-sereno/15 px-3 sm:px-4 pt-safe-island pb-2.5 lg:pt-2.5 flex items-center justify-between gap-3 shadow-2xs z-10">
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <button
                   type="button"
