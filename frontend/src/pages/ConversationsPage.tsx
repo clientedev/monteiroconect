@@ -1,9 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useOutletContext } from 'react-router-dom';
 import { api, authApi, tagApi, whatsappApi, conversationApi } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
-import { MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon, Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon, X, UserCheck } from 'lucide-react';
+import {
+  MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon,
+  Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
+  X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon
+} from 'lucide-react';
 
 interface ConvItem {
   id: string;
@@ -116,10 +120,12 @@ export default function ConversationsPage() {
   const { socket } = useSocket();
   const { user } = useAuth();
   const location = useLocation();
+  const { setIsMobileChatOpen } = (useOutletContext<any>() || {});
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [conversations, setConversations] = useState<ConvItem[]>([]);
   const [selectedConv, setSelectedConv] = useState<ConvItem | null>(null);
+  const [showContactDetails, setShowContactDetails] = useState(false);
   const [messages, setMessages] = useState<Map<string, Msg>>(new Map());
   const [newMessage, setNewMessage] = useState('');
   const [search, setSearch] = useState('');
@@ -137,6 +143,17 @@ export default function ConversationsPage() {
   const [msgPage, setMsgPage] = useState(1);
   const [msgTotal, setMsgTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // Sincroniza estado de chat aberto no mobile para o Layout
+  useEffect(() => {
+    setIsMobileChatOpen?.(!!selectedConv);
+  }, [selectedConv, setIsMobileChatOpen]);
+
+  useEffect(() => {
+    return () => {
+      setIsMobileChatOpen?.(false);
+    };
+  }, [setIsMobileChatOpen]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesTopRef = useRef<HTMLDivElement>(null);
@@ -574,9 +591,17 @@ export default function ConversationsPage() {
     }
   };
 
+  const handleBackToConversations = () => {
+    setSelectedConv(null);
+    setIsMobileChatOpen?.(false);
+    setMessages(new Map());
+    setShowContactDetails(false);
+  };
+
   const handleSelectConv = (conv: ConvItem) => {
     stickToBottomRef.current = true;
     setSelectedConv(conv);
+    setIsMobileChatOpen?.(true);
     setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
     setMessages(new Map());
     setMsgPage(1);
@@ -791,11 +816,31 @@ export default function ConversationsPage() {
           )}
         </div>
       )}
-      <div className="flex h-[calc(100vh-8rem)] -m-4 lg:-m-6 rounded-3xl overflow-hidden shadow-lg border border-monte-sereno/15">
+      <div className="flex flex-1 h-full lg:h-[calc(100vh-8rem)] -m-0 lg:-m-6 rounded-none lg:rounded-3xl overflow-hidden lg:shadow-lg lg:border border-monte-sereno/15 relative">
       {/* Sidebar - conversations list */}
-      <div className="w-80 bg-white/80 backdrop-blur-md flex flex-col flex-shrink-0 border-r border-monte-sereno/15">
+      <div className={`w-full lg:w-80 bg-white/85 backdrop-blur-md flex flex-col flex-shrink-0 lg:border-r border-monte-sereno/15 ${
+        selectedConv ? 'hidden lg:flex' : 'flex h-full pb-20 lg:pb-0'
+      }`}>
+        {/* Mobile Header da lista estilo WhatsApp */}
+        <div className="px-4 pt-3 pb-2 flex items-center justify-between lg:hidden border-b border-monte-sereno/10 bg-white/90">
+          <div>
+            <h2 className="text-xl font-bold font-display text-monte-azul leading-none">Conversas</h2>
+            <p className="text-[11px] text-monte-sereno mt-0.5 font-medium">
+              {accounts.length > 0 && selectedAccountId !== ALL_ACCOUNTS
+                ? (accounts.find(a => a.id === selectedAccountId)?.name || 'WhatsApp')
+                : 'Todas as contas'}
+            </p>
+          </div>
+          {syncing && (
+            <div className="flex items-center gap-1.5 text-xs text-monte-verde font-semibold bg-monte-verde/10 px-2.5 py-1 rounded-full animate-pulse">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              Sincronizando
+            </div>
+          )}
+        </div>
+
         {accounts.length > 1 && (
-          <div className="p-3 border-b border-monte-sereno/15">
+          <div className="p-2.5 sm:p-3 border-b border-monte-sereno/15">
             <select className="input-rect text-sm" value={selectedAccountId} onChange={e => setSelectedAccountId(e.target.value)}>
               <option value={ALL_ACCOUNTS}>Todos os WhatsApps</option>
               {accounts.map((a: any) => (
@@ -919,78 +964,107 @@ export default function ConversationsPage() {
       </div>
 
       {/* Chat area */}
-      <div className="flex-1 flex flex-col bg-monte-areia">
+      <div className={`flex-1 flex flex-col bg-monte-areia ${
+        !selectedConv ? 'hidden lg:flex' : 'flex h-full fixed inset-0 z-40 lg:static lg:z-auto'
+      }`}>
         {selectedConv ? (
           <>
-            {/* Header */}
-            <div className="bg-white/80 backdrop-blur-md border-b border-monte-sereno/15 px-4 py-3 flex items-start gap-3">
-              <button onClick={() => { setSelectedConv(null); setMessages(new Map()); }} className="lg:hidden text-monte-azul hover:text-monte-verde">
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <Avatar contactId={selectedConv.contactId} name={selectedConv.contactName} phone={selectedConv.contactPhone} />
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-monte-azul font-display">{selectedConv.contactName || formatContactPhone(selectedConv.contactPhone)}</p>
-                <p className="text-xs text-monte-sereno">
-                  {selectedConv.contactPhone.includes('@g.us')
-                    ? '👥 Grupo'
-                    : selectedConv.contactPhone.includes('@lid')
-                      ? 'WhatsApp'
-                      : selectedConv.contactPhone}
-                </p>
-                {selectedAccountId === ALL_ACCOUNTS && selectedConv.accountName && (
-                  <p className="text-[11px] text-monte-verde font-medium">
-                    {selectedConv.accountName}{selectedConv.accountPhone ? ` · ${selectedConv.accountPhone}` : ''}
-                  </p>
-                )}
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  {(selectedConv.tags || []).map((tag: ConversationTag) => (
-                    <span
-                      key={tag.id}
-                      className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold"
-                      style={{ color: tag.color, borderColor: tag.color, backgroundColor: `${tag.color}12` }}
-                    >
-                      <TagIcon className="w-3 h-3" />
-                      {tag.name}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTag(tag.id)}
-                        disabled={tagBusy}
-                        aria-label={`Remover etiqueta ${tag.name}`}
-                        className="rounded-full hover:bg-black/10 disabled:opacity-50"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                  {availableTags.some(tag => !(selectedConv.tags || []).some(current => current.id === tag.id)) && (
-                    <select
-                      className="input-rect py-1 px-2 text-[10px] w-auto max-w-[170px]"
-                      value=""
-                      onChange={e => handleAddTag(e.target.value)}
-                      disabled={tagBusy}
-                      aria-label="Adicionar etiqueta"
-                    >
-                      <option value="">+ Etiqueta</option>
-                      {availableTags
-                        .filter(tag => !(selectedConv.tags || []).some(current => current.id === tag.id))
-                        .map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-                    </select>
-                  )}
-                  {!availableTags.length && (
-                    <Link to="/tags" className="inline-flex items-center gap-1 text-[10px] text-monte-verde hover:underline">
-                      <TagIcon className="w-3 h-3" /> Criar etiqueta
-                    </Link>
-                  )}
+            {/* Header estilo WhatsApp */}
+            <div className="bg-white/90 backdrop-blur-md border-b border-monte-sereno/15 px-3 sm:px-4 py-2.5 pt-safe flex items-center justify-between gap-3 shadow-2xs z-10">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={handleBackToConversations}
+                  className="p-1.5 -ml-1.5 text-monte-azul hover:text-monte-verde rounded-full active:scale-95 transition-transform"
+                  title="Voltar para a lista"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <div
+                  onClick={() => setShowContactDetails(true)}
+                  className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer hover:opacity-90 transition-opacity"
+                >
+                  <Avatar contactId={selectedConv.contactId} name={selectedConv.contactName} phone={selectedConv.contactPhone} size="w-10 h-10" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-sm sm:text-base text-monte-azul font-display truncate leading-tight">
+                      {selectedConv.contactName || formatContactPhone(selectedConv.contactPhone)}
+                    </p>
+                    <p className="text-[11px] text-monte-sereno truncate mt-0.5 flex items-center gap-1.5">
+                      {selectedConv.aiEnabled === false ? (
+                        <span className="text-monte-terracota font-medium flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-monte-terracota" />
+                          Atendimento humano
+                        </span>
+                      ) : (
+                        <span className="text-monte-verde font-medium flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-monte-verde" />
+                          IA ativa
+                        </span>
+                      )}
+                      {selectedAccountId === ALL_ACCOUNTS && selectedConv.accountName && (
+                        <span className="text-monte-sereno/80">· {selectedConv.accountName}</span>
+                      )}
+                    </p>
+                  </div>
                 </div>
+              </div>
+
+              {/* Botão de Opções do Contato (Drawer / Sheet) */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowContactDetails(v => !v)}
+                  className="p-2 text-monte-azul/70 hover:text-monte-azul hover:bg-monte-areiaSecao rounded-full transition-colors flex items-center gap-1.5"
+                  title="Opções da conversa"
+                >
+                  <SlidersHorizontal className="w-5 h-5" />
+                  <span className="hidden sm:inline text-xs font-medium">Opções</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Linha secundária de opções rápidas no Desktop */}
+            <div className="hidden lg:flex items-center justify-between px-4 py-2 bg-white/60 backdrop-blur-xs border-b border-monte-sereno/10 text-xs gap-3">
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                {(selectedConv.tags || []).map((tag: ConversationTag) => (
+                  <span
+                    key={tag.id}
+                    className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                    style={{ color: tag.color, borderColor: tag.color, backgroundColor: `${tag.color}12` }}
+                  >
+                    <TagIcon className="w-3 h-3" />
+                    {tag.name}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(tag.id)}
+                      disabled={tagBusy}
+                      className="rounded-full hover:bg-black/10 disabled:opacity-50"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {availableTags.some(tag => !(selectedConv.tags || []).some(current => current.id === tag.id)) && (
+                  <select
+                    className="input-rect py-0.5 px-2 text-[10px] w-auto max-w-[150px]"
+                    value=""
+                    onChange={e => handleAddTag(e.target.value)}
+                    disabled={tagBusy}
+                  >
+                    <option value="">+ Etiqueta</option>
+                    {availableTags
+                      .filter(tag => !(selectedConv.tags || []).some(current => current.id === tag.id))
+                      .map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                  </select>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 flex-shrink-0">
                 {attendants.length > 0 && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <UserCheck className="w-3.5 h-3.5 text-monte-sereno flex-shrink-0" />
-                    <label htmlFor="conversation-assignee" className="text-[10px] font-semibold text-monte-sereno flex-shrink-0">
-                      Encaminhar para
-                    </label>
+                  <div className="flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-monte-sereno" />
                     <select
-                      id="conversation-assignee"
-                      className="input-rect py-1 px-2 text-[10px] min-w-0 max-w-[190px]"
+                      className="input-rect py-0.5 px-2 text-[10px] w-auto max-w-[150px]"
                       value={selectedConv.assignedUser?.id || ''}
                       onChange={e => handleAssignConversation(e.target.value)}
                       disabled={assignmentBusy}
@@ -1000,31 +1074,20 @@ export default function ConversationsPage() {
                         <option key={attendant.id} value={attendant.id}>{attendant.username}</option>
                       ))}
                     </select>
-                    {assignmentBusy && <span className="text-[10px] text-monte-sereno">Salvando...</span>}
                   </div>
                 )}
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold ${
+                <button
+                  type="button"
+                  onClick={handleToggleAi}
+                  disabled={aiBusy}
+                  className={`text-[10px] font-semibold rounded-full px-2.5 py-0.5 border transition-colors disabled:opacity-50 ${
                     selectedConv.aiEnabled === false
-                      ? 'bg-monte-terracota/10 text-monte-terracota'
-                      : 'bg-monte-verde/10 text-monte-verde'
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${selectedConv.aiEnabled === false ? 'bg-monte-terracota' : 'bg-monte-verde'}`} />
-                    {selectedConv.aiEnabled === false ? 'Atendimento humano' : 'IA ativa'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleToggleAi}
-                    disabled={aiBusy}
-                    className={`text-[10px] font-semibold rounded-full px-2.5 py-1 border transition-colors disabled:opacity-50 ${
-                      selectedConv.aiEnabled === false
-                        ? 'border-monte-verde/30 text-monte-verde hover:bg-monte-verde/10'
-                        : 'border-monte-terracota/30 text-monte-terracota hover:bg-monte-terracota/10'
-                    }`}
-                  >
-                    {aiBusy ? 'Salvando...' : selectedConv.aiEnabled === false ? 'Reativar IA' : 'Desligar IA e assumir'}
-                  </button>
-                </div>
+                      ? 'border-monte-verde/30 text-monte-verde hover:bg-monte-verde/10'
+                      : 'border-monte-terracota/30 text-monte-terracota hover:bg-monte-terracota/10'
+                  }`}
+                >
+                  {aiBusy ? 'Salvando...' : selectedConv.aiEnabled === false ? 'Reativar IA' : 'Desligar IA e assumir'}
+                </button>
               </div>
             </div>
 
@@ -1144,16 +1207,16 @@ export default function ConversationsPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
-            <div className="bg-white/80 backdrop-blur-md border-t border-monte-sereno/15 p-3">
+            {/* Input com Safe Area do iPhone */}
+            <div className="bg-white/90 backdrop-blur-md border-t border-monte-sereno/15 p-2 sm:p-3 pb-safe">
               {attendants.length > 0 && (
-                <div className="flex items-center justify-end gap-2 mb-2">
-                  <label htmlFor="attendant-select" className="text-[11px] font-semibold text-monte-sereno">
-                    Enviar como
+                <div className="flex items-center justify-end gap-2 mb-1.5 px-1">
+                  <label htmlFor="attendant-select" className="text-[10px] font-semibold text-monte-sereno">
+                    Enviar como:
                   </label>
                   <select
                     id="attendant-select"
-                    className="input-rect py-1.5 px-2 text-xs w-auto max-w-[190px]"
+                    className="bg-transparent text-[11px] font-medium text-monte-azul focus:outline-none cursor-pointer"
                     value={selectedAttendantName}
                     onChange={e => setSelectedAttendantName(e.target.value)}
                     disabled={sending}
@@ -1165,25 +1228,29 @@ export default function ConversationsPage() {
                 </div>
               )}
               <div className="flex items-end gap-2">
-                <label className={`p-2 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem">
+                <label className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem">
                   <ImageIcon className="w-5 h-5" />
                   <input type="file" accept="image/*" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
-                 <label className={`p-2 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem, documento ou áudio">
+                <label className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar documento ou mídia">
                   <Paperclip className="w-5 h-5" />
-                   <input type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
+                  <input type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
                 <textarea
-                  className="input-rect flex-1 resize-none min-h-[40px]"
+                  className="input-rect flex-1 resize-none min-h-[42px] max-h-32 text-base sm:text-sm py-2 px-3.5 leading-relaxed rounded-2xl"
                   rows={1}
-                  placeholder={isConnected ? 'Digite uma mensagem...' : 'WhatsApp desconectado...'}
+                  placeholder={isConnected ? 'Mensagem...' : 'WhatsApp desconectado...'}
                   value={newMessage}
                   onChange={e => setNewMessage(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   disabled={!isConnected}
-                  autoFocus
                 />
-                <button onClick={handleSend} disabled={!newMessage.trim() || sending || !isConnected} className="btn-primary p-2.5 rounded-full disabled:opacity-50 transition-opacity">
+                <button
+                  onClick={handleSend}
+                  disabled={!newMessage.trim() || sending || !isConnected}
+                  className="btn-primary p-2.5 rounded-full disabled:opacity-50 transition-all flex-shrink-0 flex items-center justify-center shadow-sm"
+                  title="Enviar mensagem"
+                >
                   {sending
                     ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     : <Send className="w-5 h-5" />
@@ -1194,15 +1261,168 @@ export default function ConversationsPage() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-monte-sereno">
-            <div className="text-center">
+            <div className="text-center p-6">
               <MessageSquare className="w-16 h-16 mx-auto mb-3 opacity-20" />
-              <p className="text-lg font-display font-semibold">Selecione uma conversa</p>
-              <p className="text-sm mt-1 opacity-60">Escolha uma conversa na lista para começar</p>
+              <p className="text-lg font-display font-semibold text-monte-azul">Selecione uma conversa</p>
+              <p className="text-sm mt-1 opacity-70 max-w-xs mx-auto">Escolha uma conversa na lista lateral para iniciar ou continuar o atendimento.</p>
             </div>
           </div>
         )}
       </div>
       </div>
+
+      {/* Drawer / Modal de Detalhes da Conversa (Mobile & Desktop) */}
+      {showContactDetails && selectedConv && (
+        <div className="fixed inset-0 z-50 bg-monte-azul/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          <div
+            className="fixed inset-0"
+            onClick={() => setShowContactDetails(false)}
+          />
+          <div className="relative w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-monte-sereno/20 p-5 z-10 max-h-[85vh] overflow-y-auto pb-safe animate-in slide-in-from-bottom-6 duration-200">
+            {/* Header do modal */}
+            <div className="flex items-center justify-between pb-3 border-b border-monte-sereno/15">
+              <h3 className="font-bold text-base text-monte-azul font-display flex items-center gap-2">
+                <Info className="w-4 h-4 text-monte-verde" /> Detalhes da Conversa
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowContactDetails(false)}
+                className="p-1.5 rounded-full text-monte-sereno hover:text-monte-azul hover:bg-monte-areiaSecao transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Informações do contato */}
+            <div className="py-4 text-center border-b border-monte-sereno/10">
+              <div className="flex justify-center mb-2">
+                <Avatar contactId={selectedConv.contactId} name={selectedConv.contactName} phone={selectedConv.contactPhone} size="w-16 h-16" textClass="text-2xl" />
+              </div>
+              <h4 className="font-bold text-lg text-monte-azul font-display">
+                {selectedConv.contactName || formatContactPhone(selectedConv.contactPhone)}
+              </h4>
+              <p className="text-xs text-monte-sereno mt-0.5">
+                {selectedConv.contactPhone.includes('@g.us')
+                  ? 'Grupo do WhatsApp'
+                  : selectedConv.contactPhone}
+              </p>
+              {selectedConv.accountName && (
+                <span className="inline-block mt-1.5 text-[11px] font-medium bg-monte-verde/10 text-monte-verde px-2.5 py-0.5 rounded-full">
+                  WhatsApp: {selectedConv.accountName}
+                </span>
+              )}
+            </div>
+
+            {/* Controle da IA */}
+            <div className="py-3 border-b border-monte-sereno/10">
+              <p className="text-xs font-bold text-monte-sereno uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Bot className="w-3.5 h-3.5" /> Inteligência Artificial
+              </p>
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-monte-areiaSecao/60 border border-monte-sereno/10">
+                <div>
+                  <p className="text-sm font-semibold text-monte-azul">
+                    {selectedConv.aiEnabled === false ? 'Atendimento Humano' : 'IA Ativa'}
+                  </p>
+                  <p className="text-[11px] text-monte-sereno mt-0.5">
+                    {selectedConv.aiEnabled === false
+                      ? 'A IA está pausada para este contato.'
+                      : 'A IA responde às perguntas do contato automaticamente.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleAi}
+                  disabled={aiBusy}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all disabled:opacity-50 flex-shrink-0 ${
+                    selectedConv.aiEnabled === false
+                      ? 'border-monte-verde bg-monte-verde text-white shadow-xs'
+                      : 'border-monte-terracota text-monte-terracota hover:bg-monte-terracota/10'
+                  }`}
+                >
+                  {aiBusy ? 'Salvando...' : selectedConv.aiEnabled === false ? 'Reativar IA' : 'Pausar IA'}
+                </button>
+              </div>
+            </div>
+
+            {/* Atendente responsável */}
+            <div className="py-3 border-b border-monte-sereno/10">
+              <p className="text-xs font-bold text-monte-sereno uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5" /> Atendente Responsável
+              </p>
+              {attendants.length > 0 ? (
+                <select
+                  className="input-rect text-sm w-full"
+                  value={selectedConv.assignedUser?.id || ''}
+                  onChange={e => handleAssignConversation(e.target.value)}
+                  disabled={assignmentBusy}
+                >
+                  <option value="">Nenhum atendente (Livre)</option>
+                  {attendants.map(attendant => (
+                    <option key={attendant.id} value={attendant.id}>{attendant.username}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-xs text-monte-sereno">Nenhum atendente cadastrado no sistema.</p>
+              )}
+            </div>
+
+            {/* Etiquetas */}
+            <div className="py-3">
+              <p className="text-xs font-bold text-monte-sereno uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <TagIcon className="w-3.5 h-3.5" /> Etiquetas do Contato
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                {(selectedConv.tags || []).map((tag: ConversationTag) => (
+                  <span
+                    key={tag.id}
+                    className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold"
+                    style={{ color: tag.color, borderColor: tag.color, backgroundColor: `${tag.color}15` }}
+                  >
+                    <TagIcon className="w-3 h-3" />
+                    {tag.name}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(tag.id)}
+                      disabled={tagBusy}
+                      className="rounded-full hover:bg-black/10 p-0.5"
+                      title="Remover"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {!selectedConv.tags?.length && (
+                  <span className="text-xs text-monte-sereno italic">Sem etiquetas aplicadas.</span>
+                )}
+              </div>
+
+              {availableTags.some(tag => !(selectedConv.tags || []).some(current => current.id === tag.id)) && (
+                <select
+                  className="input-rect text-xs w-full"
+                  value=""
+                  onChange={e => handleAddTag(e.target.value)}
+                  disabled={tagBusy}
+                >
+                  <option value="">+ Adicionar uma etiqueta...</option>
+                  {availableTags
+                    .filter(tag => !(selectedConv.tags || []).some(current => current.id === tag.id))
+                    .map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                </select>
+              )}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-monte-sereno/15 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowContactDetails(false)}
+                className="btn-primary w-full py-2.5 text-sm font-semibold"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

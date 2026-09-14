@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { disconnectSocket } from '../lib/socket';
@@ -81,7 +81,9 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -94,6 +96,13 @@ export default function Layout() {
   const [showNotif, setShowNotif] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Redefine mobile chat state ao mudar de página
+  useEffect(() => {
+    if (!location.pathname.startsWith('/conversations')) {
+      setIsMobileChatOpen(false);
+    }
+  }, [location.pathname]);
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
@@ -222,11 +231,11 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-monte-areia">
+    <div className="flex h-screen-safe overflow-hidden bg-monte-areia">
       {/* Backdrop overlay for mobile */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-30 bg-monte-azul/30 backdrop-blur-sm lg:hidden transition-opacity duration-300"
+          className="fixed inset-0 z-40 bg-monte-azul/40 backdrop-blur-sm lg:hidden transition-opacity duration-300"
           onClick={closeSidebar}
         />
       )}
@@ -234,11 +243,11 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         ref={sidebarRef}
-        className={`fixed inset-y-0 left-0 z-40 w-72 sidebar-glass transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 sidebar-glass transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full pt-safe pb-safe">
           {/* Logo */}
           <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
             <div className="flex items-center gap-3">
@@ -332,7 +341,9 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top bar */}
-        <header className="bg-white/70 backdrop-blur-md border-b border-monte-sereno/20 px-4 lg:px-6 h-16 flex items-center gap-4 flex-shrink-0">
+        <header className={`bg-white/70 backdrop-blur-md border-b border-monte-sereno/20 px-4 lg:px-6 h-16 pt-safe flex items-center gap-4 flex-shrink-0 z-20 ${
+          isMobileChatOpen ? 'hidden lg:flex' : 'flex'
+        }`}>
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden p-2 rounded-full text-monte-azul hover:bg-monte-areiaSecao transition-colors"
@@ -692,12 +703,92 @@ export default function Layout() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6" onClick={() => { setShowSearch(false); }}>
+        <main
+          className={`flex-1 overflow-y-auto ${
+            location.pathname.startsWith('/conversations')
+              ? 'p-0 lg:p-6'
+              : 'p-4 lg:p-6 pb-24 lg:pb-6'
+          }`}
+          onClick={() => { setShowSearch(false); }}
+        >
           <PageErrorBoundary>
-            <Outlet />
+            <Outlet context={{ isMobileChatOpen, setIsMobileChatOpen }} />
           </PageErrorBoundary>
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation Bar (Estilo WhatsApp / iOS) */}
+      {!isMobileChatOpen && (
+        <nav
+          aria-label="Navegação móvel inferior"
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-2xl border-t border-monte-sereno/20 pb-safe px-3 pt-1.5 flex items-center justify-around shadow-lg"
+        >
+          <NavLink
+            to="/conversations"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-3 min-w-[62px] rounded-2xl transition-all ${
+                isActive ? 'text-monte-verde font-bold scale-105' : 'text-monte-sereno hover:text-monte-azul'
+              }`
+            }
+          >
+            <div className="relative">
+              <MessageSquare className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 bg-monte-terracota text-white text-[9px] font-bold rounded-full min-w-[17px] h-4 flex items-center justify-center px-1 shadow-xs">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] mt-1 tracking-tight">Conversas</span>
+          </NavLink>
+
+          <NavLink
+            to="/whatsapp"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-3 min-w-[62px] rounded-2xl transition-all ${
+                isActive ? 'text-monte-verde font-bold scale-105' : 'text-monte-sereno hover:text-monte-azul'
+              }`
+            }
+          >
+            <Smartphone className="w-5 h-5" />
+            <span className="text-[10px] mt-1 tracking-tight">Whatsapps</span>
+          </NavLink>
+
+          <NavLink
+            to="/contacts"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-3 min-w-[62px] rounded-2xl transition-all ${
+                isActive ? 'text-monte-verde font-bold scale-105' : 'text-monte-sereno hover:text-monte-azul'
+              }`
+            }
+          >
+            <Users className="w-5 h-5" />
+            <span className="text-[10px] mt-1 tracking-tight">Contatos</span>
+          </NavLink>
+
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-3 min-w-[62px] rounded-2xl transition-all ${
+                isActive ? 'text-monte-verde font-bold scale-105' : 'text-monte-sereno hover:text-monte-azul'
+              }`
+            }
+          >
+            <LayoutDashboard className="w-5 h-5" />
+            <span className="text-[10px] mt-1 tracking-tight">Painel</span>
+          </NavLink>
+
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="flex flex-col items-center justify-center py-1 px-3 min-w-[62px] rounded-2xl text-monte-sereno hover:text-monte-azul transition-all"
+          >
+            <Menu className="w-5 h-5" />
+            <span className="text-[10px] mt-1 tracking-tight">Menu</span>
+          </button>
+        </nav>
+      )}
 
       <ForceChangePasswordModal />
     </div>

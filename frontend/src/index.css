@@ -132,4 +132,37 @@ h1, h2, h3, h4, h5, h6 {
   .table-row {
     @apply px-5 py-3 text-sm align-middle hover:bg-monte-areiaSecao/50 transition-colors;
   }
+
+  /* iOS Safe Area Utilities */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pl-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  .pr-safe {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .h-screen-safe {
+    height: 100vh;
+    height: 100dvh;
+  }
 }
+
+/* iOS Optimizations */
+@supports (-webkit-touch-callout: none) {
+  /* Evita zoom indesejado ao focar em inputs em iPhones */
+  @media (max-width: 768px) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
