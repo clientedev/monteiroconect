@@ -7,19 +7,22 @@ export async function globalSearch(query: string) {
     prisma.contact.findMany({
       where: {
         OR: [
-          { name: { contains: query } },
-          { phone: { contains: query } },
+          { name: { contains: query, mode: 'insensitive' } },
+          { phone: { contains: query, mode: 'insensitive' } },
         ],
       },
       take: 20,
-      include: { whatsapp: { select: { id: true, name: true, status: true } } },
+      include: {
+        whatsapp: { select: { id: true, name: true, status: true } },
+        conversations: { select: { id: true }, take: 1 },
+      },
     }),
     prisma.conversation.findMany({
       where: {
         OR: [
-          { contact: { name: { contains: query } } },
-          { contact: { phone: { contains: query } } },
-          { lastMessage: { contains: query } },
+          { contact: { name: { contains: query, mode: 'insensitive' } } },
+          { contact: { phone: { contains: query, mode: 'insensitive' } } },
+          { lastMessage: { contains: query, mode: 'insensitive' } },
         ],
       },
       take: 20,
@@ -31,7 +34,7 @@ export async function globalSearch(query: string) {
       orderBy: { lastMessageAt: 'desc' },
     }),
     prisma.message.findMany({
-      where: { content: { contains: query } },
+      where: { content: { contains: query, mode: 'insensitive' } },
       take: 20,
       include: {
         conversation: {

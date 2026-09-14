@@ -5,10 +5,30 @@ import { disconnectSocket } from '../lib/socket';
 import ForceChangePasswordModal from './ForceChangePasswordModal';
 import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone, UserCheck,
-  LogOut, Search, Menu, X, Bot,
+  LogOut, Search, Menu, X, Bot, User, Clock, ArrowRight, Loader2, Sparkles, Phone,
 } from 'lucide-react';
 import { Component, type ErrorInfo, type ReactNode, useState, useRef, useEffect, useCallback } from 'react';
 import { dashboardApi } from '../lib/api';
+
+// Highlight matching search query in texts
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  if (!text || !query.trim()) return <>{text}</>;
+  const q = query.trim().toLowerCase();
+  const index = text.toLowerCase().indexOf(q);
+  if (index === -1) return <>{text}</>;
+
+  const before = text.substring(0, index);
+  const match = text.substring(index, index + q.length);
+  const after = text.substring(index + q.length);
+
+  return (
+    <>
+      {before}
+      <span className="bg-amber-200/90 text-monte-azul font-semibold px-0.5 rounded">{match}</span>
+      {after}
+    </>
+  );
+}
 
 class PageErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -65,12 +85,15 @@ export default function Layout() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchFilter, setSearchFilter] = useState<'all' | 'contacts' | 'conversations' | 'messages'>('all');
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadConversations, setUnreadConversations] = useState<any[]>([]);
   const [assignedCount, setAssignedCount] = useState(0);
   const [assignedConversations, setAssignedConversations] = useState<any[]>([]);
   const [showNotif, setShowNotif] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
@@ -86,7 +109,11 @@ export default function Layout() {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowSearch(true);
+        setTimeout(() => searchInputRef.current?.focus(), 60);
+      } else if (e.key === 'Escape') {
         setSidebarOpen(false);
         setShowSearch(false);
         setShowNotif(false);
@@ -95,6 +122,29 @@ export default function Layout() {
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const { searchApi } = await import('../lib/api');
+        const res = await searchApi.search(searchQuery.trim());
+        setSearchResults(res);
+      } catch (err) {
+        console.error('Erro na busca global:', err);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const loadUnreadCount = useCallback(async () => {
     try {
@@ -127,20 +177,41 @@ export default function Layout() {
     };
   }, [socket, loadUnreadCount]);
 
-
   const handleLogout = () => {
     disconnectSocket();
     logout();
     navigate('/login');
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    try {
-      const { searchApi } = await import('../lib/api');
-      const res = await searchApi.search(searchQuery);
-      setSearchResults(res);
-    } catch {}
+  const handleOpenContact = (contact: any) => {
+    setShowSearch(false);
+    const convId = contact.conversations?.[0]?.id || contact.conversationId;
+    if (convId) {
+      navigate('/conversations', {
+        state: { conversationId: convId, accountId: contact.whatsappId || contact.whatsapp?.id },
+      });
+    } else {
+      navigate('/contacts', {
+        state: { search: contact.phone || contact.name },
+      });
+    }
+  };
+
+  const handleOpenConversation = (conv: any) => {
+    setShowSearch(false);
+    navigate('/conversations', {
+      state: { conversationId: conv.id, accountId: conv.whatsappId || conv.whatsapp?.id },
+    });
+  };
+
+  const handleOpenMessage = (msg: any) => {
+    setShowSearch(false);
+    navigate('/conversations', {
+      state: {
+        conversationId: msg.conversationId || msg.conversation?.id,
+        accountId: msg.conversation?.whatsappId || msg.conversation?.whatsapp?.id,
+      },
+    });
   };
 
   const openConversation = (conv: any) => {
@@ -270,52 +341,258 @@ export default function Layout() {
           </button>
 
           {/* Search */}
-          <div className="relative flex-1 max-w-lg">
+          <div className="relative flex-1 max-w-xl">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-monte-sereno" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-monte-sereno pointer-events-none" />
               <input
+                ref={searchInputRef}
                 type="text"
-                placeholder="Buscar contatos, mensagens..."
-                className="w-full pl-10 pr-4 py-2.5 bg-monte-areiaSecao/80 border border-monte-sereno/20 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-monte-verde/30 focus:bg-white transition-all"
+                placeholder="Buscar contatos, mensagens... (Ctrl+K)"
+                className="w-full pl-10 pr-20 py-2.5 bg-monte-areiaSecao/90 hover:bg-white focus:bg-white border border-monte-sereno/20 focus:border-monte-verde/50 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-monte-verde/20 transition-all shadow-xs"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 onFocus={() => setShowSearch(true)}
               />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                {searchLoading ? (
+                  <Loader2 className="w-4 h-4 text-monte-verde animate-spin" />
+                ) : searchQuery ? (
+                  <button
+                    onClick={() => { setSearchQuery(''); setSearchResults(null); }}
+                    className="p-1 text-monte-sereno hover:text-monte-azul rounded-full hover:bg-monte-areiaSecao transition-colors"
+                    title="Limpar busca"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-semibold text-monte-sereno bg-white/80 border border-monte-sereno/30 rounded-md shadow-2xs">
+                    Ctrl K
+                  </kbd>
+                )}
+              </div>
             </div>
-            {showSearch && searchResults && (
+
+            {/* Results Popover / Command Palette */}
+            {showSearch && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowSearch(false)} />
-                <div className="absolute top-full mt-2 w-full bg-white/90 backdrop-blur-xl rounded-3xl shadow-xl border border-monte-sereno/20 z-50 max-h-96 overflow-y-auto p-2">
-                  {searchResults.contacts?.length > 0 && (
-                    <div>
-                      <p className="text-[11px] font-semibold text-monte-sereno uppercase tracking-wider px-3 mb-1">Contatos</p>
-                      {searchResults.contacts.map((c: any) => (
-                        <div key={c.id} className="px-3 py-2.5 hover:bg-monte-areiaSecao rounded-2xl cursor-pointer text-sm transition-colors">
-                          <p className="font-medium text-monte-azul">{c.name || c.phone}</p>
-                          <p className="text-xs text-monte-sereno">{c.phone}</p>
-                        </div>
-                      ))}
+                <div className="fixed inset-0 z-40 bg-monte-azul/10 backdrop-blur-2xs" onClick={() => setShowSearch(false)} />
+                <div className="absolute top-full mt-2 left-0 right-0 sm:-left-8 sm:-right-8 md:-left-16 md:-right-16 bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-monte-sereno/20 z-50 overflow-hidden flex flex-col max-h-[82vh] animate-in fade-in zoom-in-95 duration-150">
+                  {/* Category Filter Tabs */}
+                  {searchResults && (
+                    <div className="flex items-center gap-1 px-4 py-2.5 border-b border-monte-sereno/15 bg-monte-areiaSecao/50 overflow-x-auto">
+                      <button
+                        onClick={() => setSearchFilter('all')}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                          searchFilter === 'all'
+                            ? 'bg-monte-verde text-white shadow-xs'
+                            : 'text-monte-sereno hover:text-monte-azul hover:bg-white'
+                        }`}
+                      >
+                        Todos ({((searchResults.contacts?.length || 0) + (searchResults.conversations?.length || 0) + (searchResults.messages?.length || 0))})
+                      </button>
+                      <button
+                        onClick={() => setSearchFilter('contacts')}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                          searchFilter === 'contacts'
+                            ? 'bg-monte-verde text-white shadow-xs'
+                            : 'text-monte-sereno hover:text-monte-azul hover:bg-white'
+                        }`}
+                      >
+                        Contatos ({searchResults.contacts?.length || 0})
+                      </button>
+                      <button
+                        onClick={() => setSearchFilter('conversations')}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                          searchFilter === 'conversations'
+                            ? 'bg-monte-verde text-white shadow-xs'
+                            : 'text-monte-sereno hover:text-monte-azul hover:bg-white'
+                        }`}
+                      >
+                        Conversas ({searchResults.conversations?.length || 0})
+                      </button>
+                      <button
+                        onClick={() => setSearchFilter('messages')}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                          searchFilter === 'messages'
+                            ? 'bg-monte-verde text-white shadow-xs'
+                            : 'text-monte-sereno hover:text-monte-azul hover:bg-white'
+                        }`}
+                      >
+                        Mensagens ({searchResults.messages?.length || 0})
+                      </button>
                     </div>
                   )}
-                  {searchResults.conversations?.length > 0 && (
-                    <div>
-                      <p className="text-[11px] font-semibold text-monte-sereno uppercase tracking-wider px-3 mb-1">Conversas</p>
-                      {searchResults.conversations.slice(0, 5).map((c: any) => (
-                        <div
-                          key={c.id}
-                          className="px-3 py-2.5 hover:bg-monte-areiaSecao rounded-2xl cursor-pointer text-sm transition-colors"
-                          onClick={() => { navigate('/conversations'); setShowSearch(false); }}
-                        >
-                          <p className="font-medium text-monte-azul">{c.contact?.name || c.contact?.phone}</p>
-                          <p className="text-xs text-monte-sereno truncate">{c.lastMessage}</p>
+
+                  {/* Results Container */}
+                  <div className="overflow-y-auto flex-1 p-3 space-y-3">
+                    {/* Initial State */}
+                    {(!searchQuery || searchQuery.trim().length < 2) && (
+                      <div className="py-8 px-4 text-center">
+                        <div className="w-12 h-12 rounded-2xl bg-monte-verde/10 text-monte-verde flex items-center justify-center mx-auto mb-3">
+                          <Search className="w-6 h-6" />
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {(!searchResults?.contacts?.length && !searchResults?.conversations?.length) && (
-                    <p className="p-6 text-sm text-monte-sereno text-center">Nenhum resultado encontrado</p>
-                  )}
+                        <h4 className="text-sm font-bold text-monte-azul font-display">Busca Global do Sistema</h4>
+                        <p className="text-xs text-monte-sereno max-w-sm mx-auto mt-1">
+                          Digite pelo menos 2 caracteres para localizar contatos, conversas e mensagens instantaneamente.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Results Loading */}
+                    {searchLoading && (
+                      <div className="py-8 text-center text-monte-sereno">
+                        <Loader2 className="w-6 h-6 mx-auto animate-spin text-monte-verde mb-2" />
+                        <p className="text-xs">Buscando em tempo real...</p>
+                      </div>
+                    )}
+
+                    {/* Results Content */}
+                    {!searchLoading && searchResults && (
+                      <>
+                        {/* Contacts Section */}
+                        {(searchFilter === 'all' || searchFilter === 'contacts') && searchResults.contacts?.length > 0 && (
+                          <div>
+                            <div className="flex items-center justify-between px-2 mb-1.5">
+                              <span className="text-[11px] font-bold text-monte-sereno uppercase tracking-wider flex items-center gap-1.5">
+                                <Users className="w-3.5 h-3.5" /> Contatos ({searchResults.contacts.length})
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              {searchResults.contacts.map((c: any) => (
+                                <div
+                                  key={c.id}
+                                  onClick={() => handleOpenContact(c)}
+                                  className="group flex items-center justify-between p-2.5 rounded-2xl hover:bg-monte-areiaSecao cursor-pointer transition-all border border-transparent hover:border-monte-sereno/15"
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-monte-verde to-monte-azul text-white font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                      {(c.name || c.phone)?.[0]?.toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-monte-azul truncate group-hover:text-monte-verde transition-colors">
+                                        <HighlightMatch text={c.name || c.phone} query={searchQuery} />
+                                      </p>
+                                      <p className="text-xs text-monte-sereno truncate flex items-center gap-1.5">
+                                        <Phone className="w-3 h-3 flex-shrink-0" />
+                                        <HighlightMatch text={c.phone} query={searchQuery} />
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {c.whatsapp?.name && (
+                                      <span className="text-[10px] font-medium bg-monte-verde/10 text-monte-verde px-2 py-0.5 rounded-full">
+                                        {c.whatsapp.name}
+                                      </span>
+                                    )}
+                                    <span className="text-xs font-semibold text-monte-verde flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      Abrir <ArrowRight className="w-3.5 h-3.5" />
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Conversations Section */}
+                        {(searchFilter === 'all' || searchFilter === 'conversations') && searchResults.conversations?.length > 0 && (
+                          <div>
+                            <div className="flex items-center justify-between px-2 mb-1.5">
+                              <span className="text-[11px] font-bold text-monte-sereno uppercase tracking-wider flex items-center gap-1.5">
+                                <MessageSquare className="w-3.5 h-3.5" /> Conversas ({searchResults.conversations.length})
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              {searchResults.conversations.map((c: any) => (
+                                <div
+                                  key={c.id}
+                                  onClick={() => handleOpenConversation(c)}
+                                  className="group flex items-center justify-between p-2.5 rounded-2xl hover:bg-monte-areiaSecao cursor-pointer transition-all border border-transparent hover:border-monte-sereno/15"
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-9 h-9 rounded-full bg-monte-sereno/20 text-monte-azul font-bold text-xs flex items-center justify-center flex-shrink-0">
+                                      {(c.contact?.name || c.contact?.phone || 'C')?.[0]?.toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-sm font-semibold text-monte-azul truncate group-hover:text-monte-verde transition-colors">
+                                          <HighlightMatch text={c.contact?.name || c.contact?.phone || 'Conversa'} query={searchQuery} />
+                                        </p>
+                                        {c.unreadCount > 0 && (
+                                          <span className="w-2 h-2 rounded-full bg-monte-terracota" />
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-monte-sereno truncate">
+                                        <HighlightMatch text={c.lastMessage || 'Sem mensagens'} query={searchQuery} />
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0 text-right">
+                                    {c.whatsapp?.name && (
+                                      <span className="text-[10px] font-medium bg-monte-azul/10 text-monte-azul px-2 py-0.5 rounded-full">
+                                        {c.whatsapp.name}
+                                      </span>
+                                    )}
+                                    <span className="text-xs font-semibold text-monte-verde flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      Conversar <ArrowRight className="w-3.5 h-3.5" />
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Messages Section */}
+                        {(searchFilter === 'all' || searchFilter === 'messages') && searchResults.messages?.length > 0 && (
+                          <div>
+                            <div className="flex items-center justify-between px-2 mb-1.5">
+                              <span className="text-[11px] font-bold text-monte-sereno uppercase tracking-wider flex items-center gap-1.5">
+                                <Search className="w-3.5 h-3.5" /> Mensagens encontradas ({searchResults.messages.length})
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              {searchResults.messages.map((m: any) => (
+                                <div
+                                  key={m.id}
+                                  onClick={() => handleOpenMessage(m)}
+                                  className="group p-2.5 rounded-2xl hover:bg-monte-areiaSecao cursor-pointer transition-all border border-transparent hover:border-monte-sereno/15"
+                                >
+                                  <div className="flex items-center justify-between text-xs text-monte-sereno mb-1">
+                                    <span className="font-semibold text-monte-azul flex items-center gap-1.5">
+                                      <User className="w-3 h-3 text-monte-verde" />
+                                      {m.conversation?.contact?.name || m.conversation?.contact?.phone || 'Conversa'}
+                                    </span>
+                                    <span className="flex items-center gap-1 text-[11px]">
+                                      <Clock className="w-3 h-3" />
+                                      {new Date(m.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-monte-azul/90 bg-white/70 p-2 rounded-xl border border-monte-sereno/10 group-hover:border-monte-verde/30 transition-colors">
+                                    <HighlightMatch text={m.content} query={searchQuery} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Empty Result */}
+                        {(!searchResults.contacts?.length && !searchResults.conversations?.length && !searchResults.messages?.length) && (
+                          <div className="py-8 text-center text-monte-sereno">
+                            <p className="text-sm font-medium text-monte-azul">Nenhum resultado encontrado para "{searchQuery}"</p>
+                            <p className="text-xs mt-1 text-monte-sereno/80">Tente buscar por partes do nome, número de telefone ou outras palavras.</p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Footer with Keyboard Hints */}
+                  <div className="px-4 py-2 border-t border-monte-sereno/15 bg-monte-areiaSecao/60 flex items-center justify-between text-[11px] text-monte-sereno">
+                    <span>Clique em qualquer resultado para abrir diretamente</span>
+                    <span className="font-medium">ESC para fechar</span>
+                  </div>
                 </div>
               </>
             )}
