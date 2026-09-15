@@ -26,10 +26,10 @@ export default function MobileNotificationBanner() {
   // Estilo minimalista de "Contagem" (Count mode)
   if (iosDisplayMode === 'count') {
     return (
-      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-sm animate-in fade-in slide-in-from-top-4 duration-300">
+      <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-60 w-[92%] max-w-sm animate-in fade-in slide-in-from-top-4 duration-300">
         <div
           onClick={handleClick}
-          className="bg-monte-azul/95 backdrop-blur-2xl text-white px-4 py-2.5 rounded-full shadow-2xl border border-white/20 flex items-center justify-between cursor-pointer active:scale-95 transition-transform"
+          className="bg-monte-azul/95 text-white px-4 py-2.5 rounded-full shadow-2xl border border-white/20 flex items-center justify-between cursor-pointer active:scale-95 transition-transform"
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-7 h-7 rounded-full bg-monte-verde text-white flex items-center justify-center font-bold text-xs shadow-xs">
@@ -56,7 +56,7 @@ export default function MobileNotificationBanner() {
   // Estilo "Empilhadas" (Stack mode)
   if (iosDisplayMode === 'stack') {
     return (
-      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md animate-in fade-in slide-in-from-top-6 duration-300">
+      <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-60 w-[92%] max-w-md animate-in fade-in slide-in-from-top-6 duration-300">
         <div className="relative">
           {/* Stack background layer 2 */}
           <div className="absolute top-2 left-3 right-3 h-12 bg-white/40 backdrop-blur-md rounded-3xl border border-white/30 -z-20 scale-95 shadow-xs" />
@@ -94,10 +94,10 @@ export default function MobileNotificationBanner() {
 
   // Estilo "Banner" padrão (Dynamic Island iOS Banner)
   return (
-    <div className="fixed top-2 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md animate-in fade-in slide-in-from-top-8 duration-300">
+    <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-60 w-[94%] max-w-md animate-in fade-in slide-in-from-top-8 duration-300">
       <div
         onClick={handleClick}
-        className="group relative bg-monte-azul/95 backdrop-blur-2xl text-white p-3.5 rounded-[28px] shadow-2xl border border-white/20 cursor-pointer active:scale-98 transition-all overflow-hidden"
+        className="group relative bg-monte-azul/95 text-white p-3.5 rounded-[28px] shadow-2xl border border-white/20 cursor-pointer active:scale-98 transition-all overflow-hidden pt-safe"
       >
         {/* Glowing top line */}
         <div className="absolute top-0 left-8 right-8 h-[2px] bg-gradient-to-r from-transparent via-monte-verde to-transparent opacity-80" />

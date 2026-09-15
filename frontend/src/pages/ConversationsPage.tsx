@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useLocation, useOutletContext } from 'react-router-dom';
+import { Link, useLocation, useOutletContext, useNavigate } from 'react-router-dom';
 import { api, authApi, tagApi, whatsappApi, conversationApi } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 import {
   MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon,
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
@@ -659,6 +660,14 @@ export default function ConversationsPage() {
       setConversations(prev => prev.map(conv =>
         conv.id === selectedConv.id ? { ...conv, assignedUser } : conv
       ));
+
+      // Trigger notification for the attendant about the assignment
+      if (assignedUser) {
+        const contactName = selectedConv.contactName || selectedConv.contactPhone || 'Contato';
+        const unreadCount = 1; // assignment implies a new unread event
+        const messagePreview = `Conversa atribuída a ${assignedUser.name || 'você'}`;
+        triggerNotification(contactName, unreadCount, messagePreview, selectedConv.id, selectedConv.accountId);
+      }
     } catch (err: any) {
       alert(err.message || 'Não foi possível encaminhar a conversa');
     } finally {
