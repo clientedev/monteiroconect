@@ -26,7 +26,7 @@ export default function MobileNotificationBanner() {
   // Estilo minimalista de "Contagem" (Count mode)
   if (iosDisplayMode === 'count') {
     return (
-      <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-60 w-[92%] max-w-sm animate-in fade-in slide-in-from-top-4 duration-300">
+      <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-[9999] w-[92%] max-w-sm animate-in fade-in slide-in-from-top-4 duration-300">
         <div
           onClick={handleClick}
           className="bg-monte-azul/95 text-white px-4 py-2.5 rounded-full shadow-2xl border border-white/20 flex items-center justify-between cursor-pointer active:scale-95 transition-transform"
@@ -56,7 +56,7 @@ export default function MobileNotificationBanner() {
   // Estilo "Empilhadas" (Stack mode)
   if (iosDisplayMode === 'stack') {
     return (
-      <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-60 w-[92%] max-w-md animate-in fade-in slide-in-from-top-6 duration-300">
+      <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-[9999] w-[92%] max-w-md animate-in fade-in slide-in-from-top-6 duration-300">
         <div className="relative">
           {/* Stack background layer 2 */}
           <div className="absolute top-2 left-3 right-3 h-12 bg-white/40 backdrop-blur-md rounded-3xl border border-white/30 -z-20 scale-95 shadow-xs" />
@@ -94,7 +94,7 @@ export default function MobileNotificationBanner() {
 
   // Estilo "Banner" padrão (Dynamic Island iOS Banner)
   return (
-    <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-60 w-[94%] max-w-md animate-in fade-in slide-in-from-top-8 duration-300">
+    <div className="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-[9999] w-[94%] max-w-md animate-in fade-in slide-in-from-top-8 duration-300">
       <div
         onClick={handleClick}
         className="group relative bg-monte-azul/95 text-white p-3.5 rounded-[28px] shadow-2xl border border-white/20 cursor-pointer active:scale-98 transition-all overflow-hidden pt-safe"
