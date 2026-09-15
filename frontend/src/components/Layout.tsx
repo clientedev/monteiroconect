@@ -348,7 +348,7 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top bar */}
-        <header className={`bg-white border-b border-monte-sereno/15 px-4 lg:px-6 py-2.5 lg:py-0 lg:h-16 flex items-center gap-4 flex-shrink-0 z-20 ${
+        <header className={`sticky top-0 w-full bg-white border-b border-monte-sereno/15 px-4 lg:px-6 mobile-header-safe py-2.5 lg:py-0 lg:h-16 flex items-center gap-4 flex-shrink-0 z-30 ${
           isMobileChatOpen ? 'hidden lg:flex' : 'flex'
         }`}>
           <button

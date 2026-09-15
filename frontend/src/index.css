@@ -134,11 +134,14 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   /* iOS Safe Area Utilities */
+  .mobile-header-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), 50px);
+  }
   .pt-safe {
-    padding-top: max(env(safe-area-inset-top, 0px), 46px);
+    padding-top: max(env(safe-area-inset-top, 0px), 50px);
   }
   .pt-safe-island {
-    padding-top: max(env(safe-area-inset-top, 0px), 46px);
+    padding-top: max(env(safe-area-inset-top, 0px), 50px);
   }
   .pb-safe {
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
@@ -158,7 +161,8 @@ h1, h2, h3, h4, h5, h6 {
 @media (min-width: 1024px) {
   .lg\:pt-0-safe,
   .pt-safe,
-  .pt-safe-island {
+  .pt-safe-island,
+  .mobile-header-safe {
     padding-top: 0px !important;
   }
 }
