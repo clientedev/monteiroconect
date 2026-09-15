@@ -561,12 +561,20 @@ export default function ConversationsPage() {
       );
     };
 
+    const onConvDeleted = (data: { accountId: string; conversationId: string }) => {
+      setConversations(prev => prev.filter(c => c.id !== data.conversationId));
+      if (selectedConvRef.current?.id === data.conversationId) {
+        setSelectedConv(null);
+      }
+    };
+
     socket.on('message:new', onNewMsg);
     socket.on('message:sent', onSent);
     socket.on('contacts:updated', onContactsUpdated);
     socket.on('history:imported', onHistory);
     socket.on('sync:progress', onSyncProgress);
     socket.on('conversation:read', onConvRead);
+    socket.on('conversation:deleted', onConvDeleted);
     return () => {
       socket.off('message:new', onNewMsg);
       socket.off('message:sent', onSent);
@@ -574,6 +582,7 @@ export default function ConversationsPage() {
       socket.off('history:imported', onHistory);
       socket.off('sync:progress', onSyncProgress);
       socket.off('conversation:read', onConvRead);
+      socket.off('conversation:deleted', onConvDeleted);
     };
   }, [socket, isAccountVisible, loadConversations, loadMessages, scheduleConversationsRefresh, user]);
 

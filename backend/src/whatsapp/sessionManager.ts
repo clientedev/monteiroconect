@@ -1252,7 +1252,16 @@ class WhatsAppSessionManager extends EventEmitter {
       const recent = limit > 0 ? msgs.slice(-limit) : msgs;
 
       const contactPhone = this.jidToContactPhone(jid);
-      const displayName = this.cachedContactName(accountId, jid) || nameByJid.get(jid) || null;
+
+      let extractedName = null;
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const m = recent[i];
+        if (!m.key.fromMe && m.pushName) {
+          extractedName = m.pushName;
+          break;
+        }
+      }
+      const displayName = this.cachedContactName(accountId, jid) || nameByJid.get(jid) || extractedName || null;
 
       let contact = await prisma.contact.findUnique({
         where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
