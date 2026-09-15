@@ -135,13 +135,13 @@ h1, h2, h3, h4, h5, h6 {
 
   /* iOS Safe Area Utilities */
   .pt-safe {
-    padding-top: max(env(safe-area-inset-top, 0px), 8px);
+    padding-top: max(env(safe-area-inset-top, 0px), 46px);
   }
   .pt-safe-island {
-    padding-top: max(env(safe-area-inset-top, 0px), 10px);
+    padding-top: max(env(safe-area-inset-top, 0px), 46px);
   }
   .pb-safe {
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 6px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
   }
   .pl-safe {
     padding-left: env(safe-area-inset-left, 0px);
@@ -156,7 +156,9 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @media (min-width: 1024px) {
-  .lg\:pt-0-safe {
+  .lg\:pt-0-safe,
+  .pt-safe,
+  .pt-safe-island {
     padding-top: 0px !important;
   }
 }

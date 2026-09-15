@@ -36,24 +36,24 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-monte-verde via-monte-azul to-monte-verde">
-      <div className="w-full max-w-md px-4">
-        <div className="bg-white/20 backdrop-blur-xl rounded-4xl p-8 shadow-2xl border border-white/30">
-          <div className="text-center mb-8">
+    <div className="h-screen-safe overflow-y-auto flex items-center justify-center p-4 bg-gradient-to-br from-monte-verde via-monte-azul to-monte-verde">
+      <div className="w-full max-w-md my-auto">
+        <div className="bg-white/20 backdrop-blur-xl rounded-4xl p-6 sm:p-8 shadow-2xl border border-white/30">
+          <div className="text-center mb-6 sm:mb-8">
             <img
               src="/logo.png"
               alt="Monteiro Conecta"
-              className="w-20 h-20 rounded-2xl mx-auto mb-4 shadow-lg object-cover"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl mx-auto mb-3 sm:mb-4 shadow-lg object-cover"
             />
-            <h1 className="text-3xl font-bold font-display text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-bold font-display text-white tracking-tight">
               Monteiro Conecta
             </h1>
-            <p className="text-white/50 mt-2 text-sm">
+            <p className="text-white/60 mt-1 sm:mt-2 text-xs sm:text-sm">
               Central de Atendimento Inteligente
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
             {error && (
               <div className="bg-red-500/20 backdrop-blur-sm border border-red-400/30 text-red-100 px-4 py-3 rounded-2xl text-sm">
                 {error}
@@ -61,7 +61,7 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-white/70 mb-2">Usuário</label>
+              <label className="block text-sm font-medium text-white/70 mb-1.5 sm:mb-2">Usuário</label>
               <input
                 type="text"
                 className="w-full px-4 py-3 bg-white/15 backdrop-blur-sm border border-white/20 rounded-full text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-white/30 focus:bg-white/20 transition-all"
@@ -69,7 +69,6 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Digite seu usuário"
                 required
-                autoFocus
               />
             </div>
 

@@ -97,13 +97,18 @@ export default function Layout() {
   const [assignedConversations, setAssignedConversations] = useState<any[]>([]);
   const [showNotif, setShowNotif] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Redefine mobile chat state ao mudar de página
+  // Redefine mobile chat state e reseta o scroll ao topo ao mudar de página
   useEffect(() => {
     if (!location.pathname.startsWith('/conversations')) {
       setIsMobileChatOpen(false);
     }
+    if (mainRef.current) {
+      mainRef.current.scrollTop = 0;
+    }
+    window.scrollTo(0, 0);
   }, [location.pathname]);
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
@@ -717,6 +722,7 @@ export default function Layout() {
 
         {/* Page content */}
         <main
+          ref={mainRef}
           className={`flex-1 overflow-y-auto ${
             location.pathname.startsWith('/conversations')
               ? 'p-0 lg:p-6'
