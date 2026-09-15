@@ -242,7 +242,7 @@ export default function Layout() {
       {/* Backdrop overlay for mobile */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-monte-azul/40 backdrop-blur-sm lg:hidden transition-opacity duration-300"
+          className="fixed inset-0 z-50 bg-monte-azul/50 pt-safe flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
           onClick={closeSidebar}
         />
       )}
@@ -254,7 +254,7 @@ export default function Layout() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex flex-col h-full pb-safe">
+        <div className="flex flex-col h-full pt-safe pb-safe">
           {/* Logo */}
           <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
             <div className="flex items-center gap-3">
@@ -393,7 +393,7 @@ export default function Layout() {
             {/* Results Popover / Command Palette */}
             {showSearch && (
               <>
-                <div className="fixed inset-0 z-40 bg-monte-azul/10 backdrop-blur-2xs" onClick={() => setShowSearch(false)} />
+                <div className="fixed inset-0 z-[100] bg-monte-azul/80 pt-safe flex items-center justify-center p-4" onClick={() => setShowSearch(false)} />
                 <div className="absolute top-full mt-2 left-0 right-0 sm:-left-8 sm:-right-8 md:-left-16 md:-right-16 bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-monte-sereno/20 z-50 overflow-hidden flex flex-col max-h-[82vh] animate-in fade-in zoom-in-95 duration-150">
                   {/* Category Filter Tabs */}
                   {searchResults && (

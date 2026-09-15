@@ -31,7 +31,7 @@ h1, h2, h3, h4, h5, h6 {
 @layer components {
   /* Sidebar glassmorphism */
   .sidebar-glass {
-    @apply bg-monte-verde/95 backdrop-blur-xl;
+    @apply bg-monte-verde/95;
   }
 
   /* Sidebar nav links */

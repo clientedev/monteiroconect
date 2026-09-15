@@ -44,7 +44,7 @@ export default function ForceChangePasswordModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-monte-azul/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-monte-azul/50 pt-safe flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl sm:rounded-4xl p-6 sm:p-8 w-full max-w-md shadow-2xl border border-white/20 relative animate-in fade-in zoom-in duration-200">
         <div className="text-center mb-6">
           <div className="w-14 h-14 bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-3">

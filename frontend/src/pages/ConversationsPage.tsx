@@ -970,7 +970,7 @@ export default function ConversationsPage() {
         {selectedConv ? (
           <>
             {/* Header estilo WhatsApp */}
-            <div className="bg-white border-b border-monte-sereno/15 px-3 sm:px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xs z-10">
+            <div className="bg-white border-b border-monte-sereno/15 px-3 sm:px-4 pt-safe pb-2.5 flex items-center justify-between gap-3 shadow-2xs z-10">
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <button
                   type="button"
