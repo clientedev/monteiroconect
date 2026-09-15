@@ -205,6 +205,7 @@ class WhatsAppSessionManager extends EventEmitter {
 
       const socket = makeWASocket({
         version,
+        browser: ['Monteiro Conecta', 'Chrome', '1.0.0'],
         auth: {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(state.keys, makeLogger()),
