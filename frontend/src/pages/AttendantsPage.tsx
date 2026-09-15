@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { authApi, whatsappApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import {
-  Users, Plus, Trash2, Shield, Eye, UserCheck, Key, Smartphone,
+  Users, Plus, Trash2, Shield, Eye, EyeOff, UserCheck, Key, Smartphone,
   Lock, AlertCircle, CheckCircle2, Search, Filter, Check, X,
   UserPlus, Mail, ShieldAlert, Sparkles, CheckSquare, Square
 } from 'lucide-react';
