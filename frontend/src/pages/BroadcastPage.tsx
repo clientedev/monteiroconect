@@ -131,8 +131,15 @@ export default function BroadcastPage() {
   const toggleContact = (id: string) => {
     setSelectedIds(current => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        if (next.size >= 12) {
+          alert('Você só pode selecionar até 12 pessoas por vez.');
+          return current;
+        }
+        next.add(id);
+      }
       return next;
     });
   };
@@ -141,7 +148,22 @@ export default function BroadcastPage() {
     setSelectedIds(current => {
       const next = new Set(current);
       const allSelected = visibleIds.length > 0 && visibleIds.every(id => next.has(id));
-      visibleIds.forEach(id => allSelected ? next.delete(id) : next.add(id));
+      
+      if (allSelected) {
+        visibleIds.forEach(id => next.delete(id));
+      } else {
+        let addedCount = 0;
+        visibleIds.forEach(id => {
+          if (!next.has(id) && next.size < 12) {
+            next.add(id);
+            addedCount++;
+          }
+        });
+        
+        if (next.size >= 12 && addedCount > 0 && visibleIds.length > 12) {
+          alert('Foram selecionados apenas os primeiros 12 contatos visíveis para respeitar o limite.');
+        }
+      }
       return next;
     });
   };
