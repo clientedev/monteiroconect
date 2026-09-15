@@ -57,6 +57,7 @@ model WhatsAppAccount {
   logs          SystemLog[]
   chatbots      Chatbot[]
   assignments   WhatsAppAssignment[]
+  baileysAuth   BaileysAuthState[]
 
   @@index([status])
 }
@@ -257,4 +258,17 @@ model AutoReply {
 
   @@index([chatbotId])
   @@index([isActive])
+}
+
+model BaileysAuthState {
+  id             String   @id @default(cuid())
+  whatsappId     String
+  whatsapp       WhatsAppAccount @relation(fields: [whatsappId], references: [id], onDelete: Cascade)
+  dataId         String   // ex: 'creds', 'app-state-sync-key-xxx'
+  data           String   @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([whatsappId, dataId])
+  @@index([whatsappId])
 }

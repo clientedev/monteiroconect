@@ -5,7 +5,6 @@ import makeWASocket, {
   DisconnectReason,
   WASocket,
   makeCacheableSignalKeyStore,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
 } from '@whiskeysockets/baileys';
@@ -18,6 +17,7 @@ import { AppError } from '../utils/errors.js';
 import { calculateBackoff, sleep } from '../utils/helpers.js';
 import { findMatchingReply, getGreetingForAccount, getAiChatbot } from '../services/chatbotService.js';
 import { generateAiReply } from '../services/aiService.js';
+import { usePrismaAuthState } from './usePrismaAuthState.js';
 
 type SessionStatus = 'CONNECTING' | 'QR_CODE' | 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING' | 'ERROR';
 type SyncProgressStatus = 'syncing' | 'completed' | 'error';
@@ -78,8 +78,7 @@ class WhatsAppSessionManager extends EventEmitter {
 
     const accounts = await prisma.whatsAppAccount.findMany();
     for (const account of accounts) {
-      const sessionDir = path.join(env.sessionsPath, account.id);
-      const hasSession = await this.sessionExists(sessionDir);
+      const hasSession = await this.sessionExists(account.id);
 
       if (hasSession) {
         logger.info(`Restaurando sessão: ${account.name} (${account.id})`);
@@ -157,9 +156,6 @@ class WhatsAppSessionManager extends EventEmitter {
       data: { name, status: 'CONNECTING' },
     });
 
-    const sessionDir = path.join(env.sessionsPath, account.id);
-    await fs.mkdir(sessionDir, { recursive: true });
-
     const info: SessionInfo = {
       id: account.id,
       name,
@@ -197,10 +193,7 @@ class WhatsAppSessionManager extends EventEmitter {
       this.updateAccountStatus(accountId, 'CONNECTING');
       this.emitStatus(accountId);
 
-      const sessionDir = path.join(env.sessionsPath, accountId);
-      await fs.mkdir(sessionDir, { recursive: true });
-
-      const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+      const { state, saveCreds } = await usePrismaAuthState(accountId);
       const { version } = await fetchLatestBaileysVersion();
 
       const socket = makeWASocket({
@@ -478,12 +471,8 @@ class WhatsAppSessionManager extends EventEmitter {
     }
 
     if (logout) {
-      const sessionDir = path.join(env.sessionsPath, accountId);
-      try {
-        await fs.rm(sessionDir, { recursive: true, force: true });
-      } catch {
-        // ignore
-      }
+      const { clearState } = await usePrismaAuthState(accountId);
+      await clearState();
     }
 
     session.status = 'DISCONNECTED';
@@ -2083,10 +2072,9 @@ class WhatsAppSessionManager extends EventEmitter {
     session.isDestroying = false;
     session.reconnectAttempts = 0;
 
-    // Destroy old session data on disk to force a fresh QR
-    const sessionDir = path.join(env.sessionsPath, accountId);
-    try { await fs.rm(sessionDir, { recursive: true, force: true }); } catch {}
-    await fs.mkdir(sessionDir, { recursive: true });
+    // Destroy old session data to force a fresh QR
+    const { clearState } = await usePrismaAuthState(accountId);
+    await clearState();
 
     await this.connectSession(accountId, true);
 
@@ -2114,22 +2102,15 @@ class WhatsAppSessionManager extends EventEmitter {
     this.cancelReconnect(accountId);
     session.isDestroying = false;
     session.reconnectAttempts = 0;
-    const sessionDir = path.join(env.sessionsPath, accountId);
-    const hasSession = await this.sessionExists(sessionDir);
+    const hasSession = await this.sessionExists(accountId);
 
     await this.connectSession(accountId, !hasSession);
     return { status: session.status, qrCode: session.qrCode };
   }
 
-  private async sessionExists(dir: string): Promise<boolean> {
-    try {
-      const stat = await fs.stat(dir);
-      if (!stat.isDirectory()) return false;
-      const files = await fs.readdir(dir);
-      return files.length > 0;
-    } catch {
-      return false;
-    }
+  private async sessionExists(accountId: string): Promise<boolean> {
+    const count = await prisma.baileysAuthState.count({ where: { whatsappId: accountId } });
+    return count > 0;
   }
 
   async destroy(): Promise<void> {
