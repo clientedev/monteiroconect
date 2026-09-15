@@ -1676,6 +1676,10 @@ class WhatsAppSessionManager extends EventEmitter {
           if (contactMsgCount === 1) {
             const greeting = await getGreetingForAccount(accountId);
             if (greeting) {
+              await session.socket.sendPresenceUpdate('composing', remoteJid);
+              await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 500));
+              await session.socket.sendPresenceUpdate('paused', remoteJid);
+              
               await session.socket.sendMessage(remoteJid, { text: greeting });
               await this.saveOutgoingMessage(accountId, remoteJid, greeting, 'text', null, { key: { id: `greeting-${Date.now()}` } });
               logger.info(`Saudação enviada para ${fromPhone} via chatbot`);
@@ -1688,6 +1692,10 @@ class WhatsAppSessionManager extends EventEmitter {
           // 1. Tenta regras exatas/palavras-chave PRIMEIRO (Ignora o fallback nesta etapa)
           const ruleMatch = await findMatchingReply(accountId, content, isFirstMsg, true);
           if (ruleMatch) {
+            await session.socket.sendPresenceUpdate('composing', remoteJid);
+            await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 500));
+            await session.socket.sendPresenceUpdate('paused', remoteJid);
+
             let sendResult: any;
             if (ruleMatch.mediaType === 'image' && ruleMatch.mediaUrl) {
               sendResult = await session.socket.sendMessage(remoteJid, {
@@ -1709,13 +1717,21 @@ class WhatsAppSessionManager extends EventEmitter {
             const aiCanTrigger = aiBot && (aiBot.triggerMode === 'any' || (aiBot.triggerMode === 'first_message' && isFirstMsg));
 
             if (aiCanTrigger) {
+              // Acusar instantaneamente que está "digitando..."
+              await session.socket.sendPresenceUpdate('composing', remoteJid);
+
               const aiReply = await generateAiReply(conversation.id, content);
               if (aiReply) {
+                // Demorar um "tico" extra para simular digitação natural
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                await session.socket.sendPresenceUpdate('paused', remoteJid);
                 const aiResult = await session.socket.sendMessage(remoteJid, { text: aiReply });
                 await this.saveOutgoingMessage(accountId, remoteJid, aiReply, 'text', null, aiResult);
                 logger.info(`Resposta IA (Gemini) enviada para ${fromPhone}`);
                 replied = true;
               } else {
+                await session.socket.sendPresenceUpdate('paused', remoteJid);
                 logger.warn(`Gemini não respondeu para ${fromPhone} — tentando fallback`);
               }
             }
@@ -1725,6 +1741,10 @@ class WhatsAppSessionManager extends EventEmitter {
           if (!replied) {
             const fallbackMatch = await findMatchingReply(accountId, content, isFirstMsg, false);
             if (fallbackMatch) {
+              await session.socket.sendPresenceUpdate('composing', remoteJid);
+              await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 500));
+              await session.socket.sendPresenceUpdate('paused', remoteJid);
+
               const sendResult = await session.socket.sendMessage(remoteJid, { text: fallbackMatch.reply });
               await this.saveOutgoingMessage(accountId, remoteJid, fallbackMatch.reply, fallbackMatch.mediaType, fallbackMatch.mediaUrl ?? null, sendResult);
               logger.info(`Fallback enviado para ${fromPhone} via chatbot "${fallbackMatch.chatbotName}"`);
