@@ -135,13 +135,13 @@ h1, h2, h3, h4, h5, h6 {
 
   /* iOS Safe Area Utilities */
   .pt-safe {
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: max(env(safe-area-inset-top, 0px), 8px);
   }
   .pt-safe-island {
-    padding-top: calc(max(env(safe-area-inset-top, 0px), 48px) + 10px);
+    padding-top: max(env(safe-area-inset-top, 0px), 10px);
   }
   .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 6px);
   }
   .pl-safe {
     padding-left: env(safe-area-inset-left, 0px);

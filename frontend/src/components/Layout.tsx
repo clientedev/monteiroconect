@@ -343,7 +343,7 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top bar */}
-        <header className={`bg-white/70 backdrop-blur-md border-b border-monte-sereno/20 px-4 lg:px-6 pt-safe-island pb-3 lg:pb-0 lg:pt-0-safe lg:h-16 flex items-center gap-4 flex-shrink-0 z-20 ${
+        <header className={`bg-white border-b border-monte-sereno/15 px-4 lg:px-6 py-2.5 lg:py-0 lg:h-16 flex items-center gap-4 flex-shrink-0 z-20 ${
           isMobileChatOpen ? 'hidden lg:flex' : 'flex'
         }`}>
           <button
@@ -734,7 +734,7 @@ export default function Layout() {
       {!isMobileChatOpen && (
         <nav
           aria-label="Navegação móvel inferior"
-          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-2xl border-t border-monte-sereno/20 pb-safe px-3 pt-1.5 flex items-center justify-around shadow-lg"
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-monte-sereno/15 pb-safe pt-2 px-1 flex items-center justify-around shadow-[0_-4px_16px_rgba(0,0,0,0.06)]"
         >
           <NavLink
             to="/conversations"
