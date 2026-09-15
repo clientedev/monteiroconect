@@ -1682,13 +1682,33 @@ class WhatsAppSessionManager extends EventEmitter {
             }
           }
 
-          const aiBot = await getAiChatbot(accountId);
-          const firstMessageOnly = !!aiBot && aiBot.triggerMode === 'first_message';
-          if (!firstMessageOnly || contactMsgCount === 1) {
-            let replied = false;
+          const isFirstMsg = contactMsgCount === 1;
+          let replied = false;
 
-            // IA (Gemini) tem prioridade quando habilitada
-            if (aiBot) {
+          // 1. Tenta regras exatas/palavras-chave PRIMEIRO (Ignora o fallback nesta etapa)
+          const ruleMatch = await findMatchingReply(accountId, content, isFirstMsg, true);
+          if (ruleMatch) {
+            let sendResult: any;
+            if (ruleMatch.mediaType === 'image' && ruleMatch.mediaUrl) {
+              sendResult = await session.socket.sendMessage(remoteJid, {
+                image: await this.mediaPayload(ruleMatch.mediaUrl),
+                caption: ruleMatch.reply,
+              });
+            } else {
+              sendResult = await session.socket.sendMessage(remoteJid, { text: ruleMatch.reply });
+            }
+            await this.saveOutgoingMessage(accountId, remoteJid, ruleMatch.reply, ruleMatch.mediaType, ruleMatch.mediaUrl ?? null, sendResult);
+            logger.info(`Auto-resposta enviada para ${fromPhone} via chatbot "${ruleMatch.chatbotName}"`);
+            replied = true;
+          }
+
+          // 2. IA (Gemini) se nenhuma regra específica bateu e a IA estiver ativa
+          if (!replied) {
+            const aiBot = await getAiChatbot(accountId);
+            // IA só responde se o triggerMode permitir (any ou first_message na 1a msg)
+            const aiCanTrigger = aiBot && (aiBot.triggerMode === 'any' || (aiBot.triggerMode === 'first_message' && isFirstMsg));
+
+            if (aiCanTrigger) {
               const aiReply = await generateAiReply(conversation.id, content);
               if (aiReply) {
                 const aiResult = await session.socket.sendMessage(remoteJid, { text: aiReply });
@@ -1696,26 +1716,18 @@ class WhatsAppSessionManager extends EventEmitter {
                 logger.info(`Resposta IA (Gemini) enviada para ${fromPhone}`);
                 replied = true;
               } else {
-                logger.warn(`Gemini não respondeu para ${fromPhone} — usando regras de auto-resposta`);
+                logger.warn(`Gemini não respondeu para ${fromPhone} — tentando fallback`);
               }
             }
+          }
 
-            // Regras de palavras-chave (fallback da IA ou modo sem IA)
-            if (!replied) {
-              const match = await findMatchingReply(accountId, content);
-              if (match) {
-                let sendResult: any;
-                if (match.mediaType === 'image' && match.mediaUrl) {
-                   sendResult = await session.socket.sendMessage(remoteJid, {
-                     image: await this.mediaPayload(match.mediaUrl),
-                     caption: match.reply,
-                   });
-                } else {
-                  sendResult = await session.socket.sendMessage(remoteJid, { text: match.reply });
-                }
-                await this.saveOutgoingMessage(accountId, remoteJid, match.reply, match.mediaType, match.mediaUrl ?? null, sendResult);
-                logger.info(`Auto-resposta enviada para ${fromPhone} via chatbot "${match.chatbotName}"`);
-              }
+          // 3. Fallback (apenas se nenhuma regra bateu e IA não respondeu)
+          if (!replied) {
+            const fallbackMatch = await findMatchingReply(accountId, content, isFirstMsg, false);
+            if (fallbackMatch) {
+              const sendResult = await session.socket.sendMessage(remoteJid, { text: fallbackMatch.reply });
+              await this.saveOutgoingMessage(accountId, remoteJid, fallbackMatch.reply, fallbackMatch.mediaType, fallbackMatch.mediaUrl ?? null, sendResult);
+              logger.info(`Fallback enviado para ${fromPhone} via chatbot "${fallbackMatch.chatbotName}"`);
             }
           }
         } catch (botErr) {

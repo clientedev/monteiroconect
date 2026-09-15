@@ -125,10 +125,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setPushSupported(isSupported);
   }, []);
 
-  // Inicializa contexto de áudio na primeira interação da página
+  // Inicializa contexto de áudio e solicita permissão de push na primeira interação se for default
   useEffect(() => {
     const handleGesture = () => {
       initAudioContext();
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        subscribeToPush();
+      }
       window.removeEventListener('click', handleGesture);
       window.removeEventListener('touchstart', handleGesture);
     };
@@ -138,24 +141,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       window.removeEventListener('click', handleGesture);
       window.removeEventListener('touchstart', handleGesture);
     };
-  }, []);
+  }, [subscribeToPush]);
 
   // Sincroniza automaticamente a assinatura do Push quando já houver permissão concedida
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      navigator.serviceWorker.ready.then(async (reg) => {
-        try {
-          const sub = await reg.pushManager.getSubscription();
-          if (sub) {
-            setPushSubscribed(true);
-            setSettings(prev => ({ ...prev, browserPushEnabled: true }));
-            pushApi.subscribe(sub.toJSON() as any).catch(() => {});
-          }
-        } catch {}
-      });
+      subscribeToPush();
     }
-  }, []);
+  }, [subscribeToPush]);
 
   const updateSetting = <K extends keyof NotificationSettings>(key: K, value: NotificationSettings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }));

@@ -194,7 +194,7 @@ export default function ConversationsPage() {
       .then(([tags, users]) => {
         if (!active) return;
         setAvailableTags(tags || []);
-        setAttendants((users || []).filter((attendant: Attendant) => attendant.isActive));
+        setAttendants((users || []).filter((attendant: any) => attendant.isActive && attendant.showInSendAs !== false));
       })
       .catch(() => {});
     return () => { active = false; };
@@ -425,15 +425,19 @@ export default function ConversationsPage() {
     if (!socket) return;
 
     const onNewMsg = (data: any) => {
+      if (!data || !data.message) return;
       const currentConv = selectedConvRef.current;
+      const isTargetActiveConv = currentConv?.id === data.conversationId;
+      const belongsToVisibleAccount = !data.accountId || isAccountVisible(data.accountId);
 
-      if (!isAccountVisible(data.accountId)) return;
+      // Se a mensagem não pertence à conta visível e também não é da conversa aberta, ignora
+      if (!belongsToVisibleAccount && !isTargetActiveConv) return;
 
       // Atualização cirúrgica da conversa na lista
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === data.conversationId);
         if (idx === -1) {
-          scheduleConversationsRefresh();
+          scheduleConversationsRefresh(100);
           return prev;
         }
         const updated = [...prev];
@@ -441,7 +445,7 @@ export default function ConversationsPage() {
           ...updated[idx],
           lastMessage: data.conversation?.lastMessage ?? data.message.content,
           lastMessageAt: data.conversation?.lastMessageAt ?? data.message.createdAt,
-          unreadCount: currentConv?.id === data.conversationId
+          unreadCount: isTargetActiveConv
             ? 0
             : (updated[idx].unreadCount || 0) + 1,
         };
@@ -451,7 +455,7 @@ export default function ConversationsPage() {
         return updated;
       });
 
-      if (currentConv?.id === data.conversationId) {
+      if (isTargetActiveConv) {
         setMessages(prev => {
           if (prev.has(data.message.id)) return prev;
           const map = new Map(prev);
@@ -476,14 +480,17 @@ export default function ConversationsPage() {
         conversationApi.markRead(data.conversationId).then(() => {
           socket.emit('conversation-read', data.conversationId);
         }).catch(() => {});
-         scrollToBottom();
+        scrollToBottom();
       }
     };
 
     const onSent = (data: any) => {
+      if (!data || !data.message) return;
       const currentConv = selectedConvRef.current;
+      const isTargetActiveConv = currentConv?.id === data.conversationId;
+      const belongsToVisibleAccount = !data.accountId || isAccountVisible(data.accountId);
 
-      if (!isAccountVisible(data.accountId)) return;
+      if (!belongsToVisibleAccount && !isTargetActiveConv) return;
 
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === data.conversationId);
@@ -569,6 +576,41 @@ export default function ConversationsPage() {
       socket.off('conversation:read', onConvRead);
     };
   }, [socket, isAccountVisible, loadConversations, loadMessages, scheduleConversationsRefresh, user]);
+
+  // Atualização instantânea ao desbloquear celular ou voltar ao PWA
+  useEffect(() => {
+    const handleResume = () => {
+      if (document.visibilityState === 'visible') {
+        loadConversations();
+        if (selectedConvRef.current) {
+          loadMessages(selectedConvRef.current.id, 1, true);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('online', handleResume);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('online', handleResume);
+    };
+  }, [loadConversations, loadMessages]);
+
+  // Polling leve contínuo de contingência (caso a rede móvel oscile a conexão WebSocket)
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      loadConversations();
+      if (selectedConvRef.current && !loadingMore && !sending) {
+        loadMessages(selectedConvRef.current.id, 1, true);
+      }
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [loadConversations, loadMessages, loadingMore, sending]);
 
   const handleSync = async () => {
     if (!selectedAccountId || selectedAccountId === ALL_ACCOUNTS || syncing) return;

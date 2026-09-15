@@ -143,7 +143,7 @@ export async function deleteAutoReply(id: string) {
   return { deleted: true };
 }
 
-export async function findMatchingReply(whatsappAccountId: string, messageContent: string) {
+export async function findMatchingReply(whatsappAccountId: string, messageContent: string, isFirstMessage: boolean, skipFallback = false) {
   const chatbots = await prisma.chatbot.findMany({
     where: { whatsappAccountId, isActive: true },
     include: {
@@ -154,7 +154,9 @@ export async function findMatchingReply(whatsappAccountId: string, messageConten
     },
   });
 
-  for (const chatbot of chatbots) {
+  const validChatbots = chatbots.filter(c => c.triggerMode === 'any' || (c.triggerMode === 'first_message' && isFirstMessage));
+
+  for (const chatbot of validChatbots) {
     for (const rule of chatbot.autoReplies) {
       if (matchesTrigger(rule.triggerType, rule.trigger, messageContent)) {
         return {
@@ -167,9 +169,11 @@ export async function findMatchingReply(whatsappAccountId: string, messageConten
     }
   }
 
-  // Fallback apenas no modo "any" — responde qualquer mensagem
-  for (const chatbot of chatbots) {
-    if (chatbot.fallbackMessage && chatbot.triggerMode === 'any') {
+  if (skipFallback) return null;
+
+  // Fallback
+  for (const chatbot of validChatbots) {
+    if (chatbot.fallbackMessage) {
       return {
         reply: chatbot.fallbackMessage,
         mediaType: 'text',

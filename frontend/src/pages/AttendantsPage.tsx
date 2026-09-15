@@ -144,6 +144,16 @@ export default function AttendantsPage() {
     }
   };
 
+  const toggleShowInSendAs = async (u: any) => {
+    try {
+      const newValue = u.showInSendAs === false ? true : false;
+      await authApi.updateUser(u.id, { showInSendAs: newValue });
+      load();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao atualizar configuração de exibição');
+    }
+  };
+
   const roleDetails = (role: string) => {
     switch (role) {
       case 'admin':
@@ -439,6 +449,14 @@ export default function AttendantsPage() {
                           <Key className="w-3.5 h-3.5" /> Senha
                         </button>
                         <button
+                          onClick={() => toggleShowInSendAs(u)}
+                          className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl transition-colors font-medium border ${u.showInSendAs !== false ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200' : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border-gray-200'}`}
+                          title={u.showInSendAs !== false ? 'Ocultar do Enviar Como' : 'Mostrar no Enviar Como'}
+                        >
+                          {u.showInSendAs !== false ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                          Visível
+                        </button>
+                        <button
                           onClick={() => handleDelete(u.id, u.username)}
                           className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors font-medium border border-red-200"
                           title="Remover Usuário"
@@ -570,6 +588,13 @@ export default function AttendantsPage() {
                                 title="Resetar Senha do Usuário"
                               >
                                 <Key className="w-3.5 h-3.5" /> Senha
+                              </button>
+                              <button
+                                onClick={() => toggleShowInSendAs(u)}
+                                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl transition-colors font-medium border ${u.showInSendAs !== false ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200' : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border-gray-200'}`}
+                                title={u.showInSendAs !== false ? 'Ocultar do Enviar Como' : 'Mostrar no Enviar Como'}
+                              >
+                                {u.showInSendAs !== false ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                               </button>
                               <button
                                 onClick={() => handleDelete(u.id, u.username)}

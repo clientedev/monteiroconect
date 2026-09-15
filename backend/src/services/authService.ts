@@ -75,7 +75,7 @@ export async function ensureAdminExists(): Promise<void> {
 
 export async function listUsers() {
   return prisma.user.findMany({
-    select: { id: true, username: true, email: true, role: true, isActive: true, mustChangePassword: true, createdAt: true,
+    select: { id: true, username: true, email: true, role: true, isActive: true, showInSendAs: true, mustChangePassword: true, createdAt: true,
       whatsappAssignments: {
         select: {
           whatsappId: true,
@@ -87,11 +87,11 @@ export async function listUsers() {
   });
 }
 
-export async function updateUser(id: string, data: { role?: string; isActive?: boolean }) {
+export async function updateUser(id: string, data: { role?: string; isActive?: boolean; showInSendAs?: boolean }) {
   return prisma.user.update({
     where: { id },
     data,
-    select: { id: true, username: true, email: true, role: true, isActive: true, mustChangePassword: true },
+    select: { id: true, username: true, email: true, role: true, isActive: true, showInSendAs: true, mustChangePassword: true },
   });
 }
 

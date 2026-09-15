@@ -86,8 +86,8 @@ router.get('/users', authMiddleware, async (_req, res, next) => {
 
 router.put('/users/:id', authMiddleware, requireRole('admin'), async (req, res, next) => {
   try {
-    const { role, isActive } = req.body;
-    const user = await updateUser(String(req.params.id), { role, isActive });
+    const { role, isActive, showInSendAs } = req.body;
+    const user = await updateUser(String(req.params.id), { role, isActive, showInSendAs });
     res.json(user);
   } catch (err) {
     next(err);

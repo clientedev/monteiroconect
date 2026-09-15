@@ -321,15 +321,6 @@ export default function MobileNotificationSettings() {
                 >
                   {pushLoading ? 'Conectando...' : pushSubscribed ? 'Notificações Ativas ✓' : 'Ativar no Celular'}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => sendTestPush()}
-                  className="px-3 py-2 bg-white text-monte-azul hover:bg-monte-azul hover:text-white border border-monte-sereno/20 rounded-xl text-xs font-bold transition-all shadow-xs"
-                  title="Envia notificação pelo servidor para você fechar o app e ver chegando"
-                >
-                  Testar com App Fechado
-                </button>
               </div>
             </div>
 

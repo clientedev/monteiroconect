@@ -97,7 +97,7 @@ export const authApi = {
   listUsers: () => api.get<any[]>('/auth/users'),
   createUser: (data: { username: string; email: string; password: string; role: string }) =>
     api.post('/auth/users', data),
-  updateUser: (id: string, data: { role?: string; isActive?: boolean }) =>
+  updateUser: (id: string, data: { role?: string; isActive?: boolean; showInSendAs?: boolean }) =>
     api.put(`/auth/users/${id}`, data),
   resetPassword: (userId: string, newPassword: string) =>
     api.post<{ message: string }>(`/auth/users/${userId}/reset-password`, { newPassword }),
