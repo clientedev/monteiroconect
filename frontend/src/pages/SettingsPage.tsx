@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Settings as SettingsIcon, Shield, Key, Bell, Database, Info } from 'lucide-react';
+import MobileNotificationSettings from '../components/MobileNotificationSettings';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -84,13 +85,8 @@ export default function SettingsPage() {
       )}
 
       {tab === 'notifications' && (
-        <div className="card-static p-8 space-y-4">
-          <h3 className="text-lg font-bold font-display text-monte-azul">Notificações</h3>
-          <p className="text-sm text-monte-sereno leading-relaxed">
-            Notificações são recebidas em tempo real via WebSocket. Novas mensagens atualizam
-            automaticamente o dashboard, contadores e conversas sem necessidade de refresh.
-            O badge na sidebar mostra o total de mensagens não lidas de todas as contas.
-          </p>
+        <div className="space-y-6">
+          <MobileNotificationSettings />
         </div>
       )}
 

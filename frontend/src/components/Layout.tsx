@@ -5,10 +5,11 @@ import { disconnectSocket } from '../lib/socket';
 import ForceChangePasswordModal from './ForceChangePasswordModal';
 import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone, UserCheck,
-  LogOut, Search, Menu, X, Bot, User, Clock, ArrowRight, Loader2, Sparkles, Phone,
+  LogOut, Search, Menu, X, Bot, User, Clock, ArrowRight, Loader2, Sparkles, Phone, Settings,
 } from 'lucide-react';
 import { Component, type ErrorInfo, type ReactNode, useState, useRef, useEffect, useCallback } from 'react';
 import { dashboardApi } from '../lib/api';
+import MobileNotificationBanner from './MobileNotificationBanner';
 
 // Highlight matching search query in texts
 function HighlightMatch({ text, query }: { text: string; query: string }) {
@@ -75,6 +76,7 @@ const manageItems = [
   { to: '/contacts', icon: Users, label: 'Contatos' },
   { to: '/attendants', icon: Users, label: 'Atendentes' },
   { to: '/tags', icon: Tags, label: 'Etiquetas' },
+  { to: '/settings', icon: Settings, label: 'Notificações & Config' },
 ];
 
 export default function Layout() {
@@ -627,13 +629,24 @@ export default function Layout() {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowNotif(false)} />
                 <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white/95 backdrop-blur-xl rounded-3xl shadow-xl border border-monte-sereno/20 z-50 max-h-96 overflow-y-auto overflow-x-hidden">
-                  <div className="px-4 py-3 border-b border-monte-sereno/15 sticky top-0 bg-white/95 backdrop-blur-xl">
-                    <p className="text-sm font-bold font-display text-monte-azul">Notificações</p>
-                    <p className="text-xs text-monte-sereno">
-                      {(unreadCount + assignedCount) > 0
-                        ? `${unreadCount} mensagem${unreadCount !== 1 ? 's' : ''} não lida${unreadCount !== 1 ? 's' : ''}${assignedCount ? ` · ${assignedCount} demanda${assignedCount !== 1 ? 's' : ''}` : ''}`
-                        : 'Tudo em dia'}
-                    </p>
+                  <div className="px-4 py-3 border-b border-monte-sereno/15 sticky top-0 bg-white/95 backdrop-blur-xl flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold font-display text-monte-azul">Notificações</p>
+                      <p className="text-xs text-monte-sereno">
+                        {(unreadCount + assignedCount) > 0
+                          ? `${unreadCount} mensagem${unreadCount !== 1 ? 's' : ''} não lida${unreadCount !== 1 ? 's' : ''}${assignedCount ? ` · ${assignedCount} demanda${assignedCount !== 1 ? 's' : ''}` : ''}`
+                          : 'Tudo em dia'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setShowNotif(false); navigate('/settings'); }}
+                      className="p-1.5 text-monte-verde hover:bg-monte-verde/10 rounded-full transition-colors flex items-center gap-1 text-[11px] font-bold"
+                      title="Configurar Notificações Mobile"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Ajustes Mobile</span>
+                    </button>
                   </div>
                   {assignedConversations.length > 0 && (
                     <div className="border-b border-monte-sereno/15">
@@ -779,6 +792,18 @@ export default function Layout() {
             <span className="text-[10px] mt-1 tracking-tight">Painel</span>
           </NavLink>
 
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-3 min-w-[62px] rounded-2xl transition-all ${
+                isActive ? 'text-monte-verde font-bold scale-105' : 'text-monte-sereno hover:text-monte-azul'
+              }`
+            }
+          >
+            <Settings className="w-5 h-5" />
+            <span className="text-[10px] mt-1 tracking-tight">Notificações</span>
+          </NavLink>
+
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
@@ -790,6 +815,7 @@ export default function Layout() {
         </nav>
       )}
 
+      <MobileNotificationBanner />
       <ForceChangePasswordModal />
     </div>
   );
