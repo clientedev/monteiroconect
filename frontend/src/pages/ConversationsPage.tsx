@@ -121,6 +121,7 @@ export default function ConversationsPage() {
   const { socket } = useSocket();
   const { user } = useAuth();
   const location = useLocation();
+  const { triggerNotification } = useNotification();
   const { setIsMobileChatOpen } = (useOutletContext<any>() || {});
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
@@ -665,7 +666,7 @@ export default function ConversationsPage() {
       if (assignedUser) {
         const contactName = selectedConv.contactName || selectedConv.contactPhone || 'Contato';
         const unreadCount = 1; // assignment implies a new unread event
-        const messagePreview = `Conversa atribuída a ${assignedUser.name || 'você'}`;
+        const messagePreview = `Conversa atribuída a ${assignedUser.username || 'você'}`;
         triggerNotification(contactName, unreadCount, messagePreview, selectedConv.id, selectedConv.accountId);
       }
     } catch (err: any) {
