@@ -154,9 +154,9 @@ export async function findMatchingReply(whatsappAccountId: string, messageConten
     },
   });
 
-  const validChatbots = chatbots.filter(c => c.triggerMode === 'any' || (c.triggerMode === 'first_message' && isFirstMessage));
-
-  for (const chatbot of validChatbots) {
+  // Regras (autoReplies) sempre são avaliadas, independentemente do triggerMode do chatbot.
+  // Isso garante que se um menu tem opções (1, 2, 3), elas funcionem em qualquer mensagem.
+  for (const chatbot of chatbots) {
     for (const rule of chatbot.autoReplies) {
       if (matchesTrigger(rule.triggerType, rule.trigger, messageContent)) {
         return {
@@ -171,7 +171,9 @@ export async function findMatchingReply(whatsappAccountId: string, messageConten
 
   if (skipFallback) return null;
 
-  // Fallback
+  // Fallback só é enviado se o triggerMode permitir (qualquer mensagem ou apenas na primeira)
+  const validChatbots = chatbots.filter(c => c.triggerMode === 'any' || (c.triggerMode === 'first_message' && isFirstMessage));
+
   for (const chatbot of validChatbots) {
     if (chatbot.fallbackMessage) {
       return {

@@ -64,7 +64,7 @@ const BOT_TEMPLATES = [
     description: 'Apresenta um menu numérico para o cliente escolher o que precisa e recebe respostas instantâneas.',
     defaultName: 'Menu de Atendimento WhatsApp',
     useAi: false,
-    triggerMode: 'first_message',
+    triggerMode: 'any',
     greeting: 'Olá! Seja bem-vindo à Monteiro Corretora de Seguros.\n\nPor favor, digite o número da opção desejada:\n1️⃣ Planos de Saúde\n2️⃣ Seguro Auto e Residencial\n3️⃣ Falar com um Atendente',
     fallback: 'Não consegui identificar essa opção. Por favor, digite 1, 2 ou 3 para escolher o atendimento desejado.',
     rules: [

@@ -1673,6 +1673,7 @@ class WhatsAppSessionManager extends EventEmitter {
           });
 
           // Saudação na primeira mensagem do contato
+          let greetingSent = false;
           if (contactMsgCount === 1) {
             const greeting = await getGreetingForAccount(accountId);
             if (greeting) {
@@ -1683,6 +1684,7 @@ class WhatsAppSessionManager extends EventEmitter {
               await session.socket.sendMessage(remoteJid, { text: greeting });
               await this.saveOutgoingMessage(accountId, remoteJid, greeting, 'text', null, { key: { id: `greeting-${Date.now()}` } });
               logger.info(`Saudação enviada para ${fromPhone} via chatbot`);
+              greetingSent = true;
             }
           }
 
@@ -1744,6 +1746,13 @@ class WhatsAppSessionManager extends EventEmitter {
 
           // 3. Fallback (apenas se nenhuma regra bateu e IA não respondeu)
           if (!replied) {
+            // Se já enviamos uma saudação (como Menu) e é a primeira mensagem,
+            // não mandamos fallback para não enviar duas mensagens seguidas.
+            // O cliente lerá a saudação/menu e responderá.
+            if (greetingSent && isFirstMsg) {
+              return;
+            }
+
             const fallbackMatch = await findMatchingReply(accountId, content, isFirstMsg, false);
             if (fallbackMatch) {
               await session.socket.sendPresenceUpdate('composing', remoteJid);
