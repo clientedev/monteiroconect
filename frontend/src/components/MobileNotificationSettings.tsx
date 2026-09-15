@@ -20,6 +20,11 @@ export default function MobileNotificationSettings() {
     requestBrowserPushPermission,
     testNotificationSound,
     triggerNotification,
+    pushSupported,
+    pushSubscribed,
+    pushLoading,
+    subscribeToPush,
+    sendTestPush,
   } = useNotification();
 
   const [isPlayingTest, setIsPlayingTest] = useState(false);
@@ -279,30 +284,57 @@ export default function MobileNotificationSettings() {
             </div>
           </div>
 
-          {/* Section 3: Browser Push Notification */}
-          <div className="card-static p-6 space-y-3 bg-gradient-to-br from-emerald-50/50 to-teal-50/40 border-emerald-200/50">
-            <div className="flex items-start justify-between gap-4">
+          {/* Section 3: Browser Push Notification (App Fechado) */}
+          <div className="card-static p-6 space-y-4 bg-gradient-to-br from-emerald-50/70 to-teal-50/50 border-emerald-200/60 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
               <div>
-                <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-monte-verde" />
-                  Notificações de Servidor / Navegador (Web Push)
-                </h4>
-                <p className="text-xs text-monte-sereno mt-1">
-                  Receba alertas diretamente no sistema de notificações do seu celular ou computador, mesmo se o app estiver em segundo plano.
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-monte-verde" />
+                    Notificações com App Fechado (Web Push Nativo)
+                  </h4>
+                  {pushSubscribed ? (
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                      Ativo no Dispositivo ✓
+                    </span>
+                  ) : (
+                    <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
+                      Pendente de Ativação
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-monte-sereno mt-1.5 leading-relaxed">
+                  Permite que as mensagens cheguem em tempo real no seu iPhone ou celular mesmo com o aplicativo fechado ou tela bloqueada, igual a um aplicativo nativo da App Store.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={requestBrowserPushPermission}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 ${
-                  browserPushEnabled
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'bg-monte-verde text-white hover:bg-emerald-600 shadow-md'
-                }`}
-              >
-                {browserPushEnabled ? 'Notificações Ativas ✓' : 'Ativar Notificações Push'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={pushLoading}
+                  onClick={() => subscribeToPush()}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 ${
+                    pushSubscribed
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-monte-verde text-white hover:bg-emerald-600 shadow-md'
+                  }`}
+                >
+                  {pushLoading ? 'Conectando...' : pushSubscribed ? 'Notificações Ativas ✓' : 'Ativar no Celular'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => sendTestPush()}
+                  className="px-3 py-2 bg-white text-monte-azul hover:bg-monte-azul hover:text-white border border-monte-sereno/20 rounded-xl text-xs font-bold transition-all shadow-xs"
+                  title="Envia notificação pelo servidor para você fechar o app e ver chegando"
+                >
+                  Testar com App Fechado
+                </button>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 bg-white/70 border border-slate-200/60 p-3 rounded-xl">
+              💡 <strong>Dica para iPhone (iOS):</strong> Para receber notificações com a tela bloqueada ou app fechado, certifique-se de abrir o link no Safari, tocar em <strong>Compartilhar</strong> e escolher <strong>Adicionar à Tela de Início</strong> (requer iOS 16.4 ou superior). Em seguida, abra o app pelo ícone criado e clique em <em>Ativar no Celular</em>.
             </div>
           </div>
         </div>

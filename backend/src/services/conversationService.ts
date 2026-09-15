@@ -1,6 +1,7 @@
 import { prisma } from '../database/client.js';
 import { AppError } from '../utils/errors.js';
 import { assertAccountAccess, SessionUser } from './accessService.js';
+import { sendPushForAssignment } from './pushNotificationService.js';
 
 function publicContactName(name: string | null, phone: string): string | null {
   const value = name?.trim() || '';
@@ -100,7 +101,7 @@ export async function assignConversation(
 ) {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { id: true, whatsappId: true },
+    select: { id: true, whatsappId: true, contact: { select: { name: true, phone: true } } },
   });
   if (!conversation) throw new AppError('Conversa não encontrada', 404);
   await assertAccountAccess(requester, conversation.whatsappId);
@@ -131,6 +132,9 @@ export async function assignConversation(
     await prisma.conversationAssignment.create({
       data: { conversationId, userId: targetUser.id },
     });
+
+    const contactName = conversation.contact?.name || conversation.contact?.phone || 'Contato';
+    sendPushForAssignment(targetUser.id, contactName, conversationId, conversation.whatsappId).catch(() => {});
   }
 
   return { assignedUser: targetUser ? { id: targetUser.id, username: targetUser.username, role: targetUser.role } : null };

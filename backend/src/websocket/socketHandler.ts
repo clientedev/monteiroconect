@@ -4,6 +4,7 @@ import { env } from '../config/env.js';
 import { sessionManager } from '../whatsapp/sessionManager.js';
 import { prisma } from '../database/client.js';
 import { createLog } from '../services/logService.js';
+import { sendPushForNewMessage } from '../services/pushNotificationService.js';
 import { logger } from '../utils/logger.js';
 import jwt from 'jsonwebtoken';
 
@@ -100,6 +101,18 @@ export function setupWebSocket(httpServer: HttpServer): Server {
         body: data.message.content?.slice(0, 100),
       },
     }).catch(() => {});
+
+    // Notificação Web Push para dispositivos móveis com app fechado
+    if (!data.message?.isFromMe) {
+      sendPushForNewMessage({
+        message: data.message,
+        contact: data.contact,
+        conversation: data.conversation,
+        accountId: data.accountId,
+      }).catch((err) => {
+        logger.warn(`Erro ao disparar Web Push: ${err?.message || err}`);
+      });
+    }
   });
 
   sessionManager.on('message-sent', (data) => {

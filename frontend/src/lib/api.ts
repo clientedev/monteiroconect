@@ -222,3 +222,13 @@ export const chatbotApi = {
   updateReply: (replyId: string, data: any) => api.put(`/chatbots/replies/${replyId}`, data),
   deleteReply: (replyId: string) => api.del(`/chatbots/replies/${replyId}`),
 };
+
+// Web Push Notifications
+export const pushApi = {
+  getVapidPublicKey: () => api.get<{ publicKey: string }>('/notifications/vapid-public-key'),
+  subscribe: (subscription: PushSubscriptionJSON) =>
+    api.post<{ success: boolean; id: string }>('/notifications/subscribe', { subscription }),
+  unsubscribe: (endpoint: string) =>
+    api.post<{ success: boolean }>('/notifications/unsubscribe', { endpoint }),
+  test: () => api.post<{ success: boolean; message: string }>('/notifications/test'),
+};

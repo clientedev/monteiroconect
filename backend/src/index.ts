@@ -23,6 +23,7 @@ import logRoutes from './routes/logRoutes.js';
 import searchRoutes from './routes/searchRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import chatbotRoutes from './routes/chatbotRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 
 async function ensureMessageColumns(): Promise<void> {
   // O banco do Railway pode ter sido criado antes da inclusão de campos de
@@ -136,6 +137,7 @@ async function bootstrap() {
   app.use('/api/search', searchRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/chatbots', chatbotRoutes);
+  app.use('/api/notifications', notificationRoutes);
 
   // Serve frontend buildado (produção — mesma origem, sem CORS)
   const frontendDist = path.resolve(process.cwd(), '../frontend/dist');

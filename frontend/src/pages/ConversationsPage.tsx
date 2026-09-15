@@ -611,6 +611,45 @@ export default function ConversationsPage() {
     loadMessages(conv.id, 1);
   };
 
+  // Redireciona e abre a conversa quando chega de um clique em notificação (push nativo ou in-app)
+  useEffect(() => {
+    const targetConvId =
+      (location.state as any)?.conversationId ||
+      new URLSearchParams(location.search).get('convId');
+
+    if (!targetConvId) return;
+    if (selectedConv?.id === targetConvId) return;
+
+    const found = conversations.find(c => c.id === targetConvId);
+    if (found) {
+      handleSelectConv(found);
+      return;
+    }
+
+    // Se ainda não estiver na lista (por exemplo outra conta), busca individualmente
+    conversationApi.get(targetConvId).then((res: any) => {
+      if (!res) return;
+      const item: ConvItem = {
+        id: res.id,
+        contactId: res.contactId,
+        contactName: res.contact?.name || res.contact?.phone || 'Contato',
+        contactPhone: res.contact?.phone,
+        contactAvatarUrl: res.contact?.avatarUrl,
+        lastMessage: res.lastMessage,
+        lastMessageAt: res.lastMessageAt,
+        unreadCount: 0,
+        tags: (res.tags || []).map((t: any) => t.tag || t),
+        accountId: res.whatsappId,
+        assignedUser: res.assignments?.[0]?.user || null,
+        aiEnabled: res.aiEnabled,
+      };
+      if (res.whatsappId && selectedAccountId !== ALL_ACCOUNTS && selectedAccountId !== res.whatsappId) {
+        setSelectedAccountId(res.whatsappId);
+      }
+      handleSelectConv(item);
+    }).catch(() => {});
+  }, [location.state, location.search, conversations, selectedConv?.id, selectedAccountId]);
+
   const updateConversationTags = (conversationId: string, nextTags: ConversationTag[]) => {
     setConversations(prev => prev.map(conv =>
       conv.id === conversationId ? { ...conv, tags: nextTags } : conv
