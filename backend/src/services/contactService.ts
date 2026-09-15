@@ -37,7 +37,7 @@ export async function listContacts(opts: ListContactsOpts) {
     prisma.contact.findMany({
       where,
       include: { conversations: { select: { id: true } } },
-      orderBy: { name: 'asc' },
+      orderBy: { name: { sort: 'asc', nulls: 'last' } },
       skip,
       take: limit,
     }),
