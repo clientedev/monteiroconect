@@ -221,6 +221,20 @@ function matchesTrigger(triggerType: string, trigger: string, content: string): 
       }
     case 'contains':
     default:
-      return normalizedContent.includes(normalizedTrigger);
+      // Busca a palavra inteira (para que "oi" não dê match em "foi" ou "noite")
+      // Usa \b para bordas, mas em JS \b não pega acentos bem.
+      // Uma alternativa segura é usar regex com suporte a unicode (\p{L}) ou apenas fallback para includes se falhar.
+      try {
+        // Tenta buscar a palavra exata usando bordas flexíveis
+        const regex = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(normalizedTrigger)}([^\\p{L}\\p{N}]|$)`, 'iu');
+        return regex.test(normalizedContent);
+      } catch {
+        // Fallback antigo caso o regex falhe em algum ambiente antigo
+        return normalizedContent.includes(normalizedTrigger);
+      }
   }
+}
+
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }

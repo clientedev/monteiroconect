@@ -1720,19 +1720,24 @@ class WhatsAppSessionManager extends EventEmitter {
               // Acusar instantaneamente que está "digitando..."
               await session.socket.sendPresenceUpdate('composing', remoteJid);
 
-              const aiReply = await generateAiReply(conversation.id, content);
-              if (aiReply) {
-                // Demorar um "tico" extra para simular digitação natural
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                
+              try {
+                const aiReply = await generateAiReply(conversation.id, content);
+                if (aiReply) {
+                  // Demorar um "tico" extra para simular digitação natural
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                  
+                  await session.socket.sendPresenceUpdate('paused', remoteJid);
+                  const aiResult = await session.socket.sendMessage(remoteJid, { text: aiReply });
+                  await this.saveOutgoingMessage(accountId, remoteJid, aiReply, 'text', null, aiResult);
+                  logger.info(`Resposta IA (Gemini) enviada para ${fromPhone}`);
+                  replied = true;
+                } else {
+                  await session.socket.sendPresenceUpdate('paused', remoteJid);
+                  logger.warn(`Gemini não respondeu para ${fromPhone} — tentando fallback`);
+                }
+              } catch (aiErr) {
                 await session.socket.sendPresenceUpdate('paused', remoteJid);
-                const aiResult = await session.socket.sendMessage(remoteJid, { text: aiReply });
-                await this.saveOutgoingMessage(accountId, remoteJid, aiReply, 'text', null, aiResult);
-                logger.info(`Resposta IA (Gemini) enviada para ${fromPhone}`);
-                replied = true;
-              } else {
-                await session.socket.sendPresenceUpdate('paused', remoteJid);
-                logger.warn(`Gemini não respondeu para ${fromPhone} — tentando fallback`);
+                logger.error(`Erro ao tentar usar Gemini para ${fromPhone} — caindo para o fallback:`, aiErr);
               }
             }
           }
