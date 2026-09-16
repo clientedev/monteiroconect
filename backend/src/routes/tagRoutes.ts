@@ -41,8 +41,8 @@ router.post('/conversation', async (req, res, next) => {
 
 router.delete('/conversation', async (req, res, next) => {
   try {
-    const conversationId = String(req.query.conversationId);
-    const tagId = String(req.query.tagId);
+    const conversationId = req.query.conversationId ? String(req.query.conversationId) : '';
+    const tagId = req.query.tagId ? String(req.query.tagId) : '';
     res.json(await removeTagFromConversation(conversationId, tagId));
   } catch (err) { next(err); }
 });

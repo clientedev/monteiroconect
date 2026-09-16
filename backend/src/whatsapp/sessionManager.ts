@@ -560,6 +560,8 @@ class WhatsAppSessionManager extends EventEmitter {
     mediaMimeType?: string,
     mediaFileName?: string,
     senderName?: string,
+    quotedMessageId?: string,
+    quotedContent?: string,
   ): Promise<any> {
     const session = this.sessions.get(accountId);
     if (!session?.socket) {
@@ -571,33 +573,39 @@ class WhatsAppSessionManager extends EventEmitter {
     const recipientContent = this.outboundContent(content, senderName);
     let result: any;
 
+    const options: any = {};
+    if (quotedMessageId) {
+      options.quoted = {
+        key: { id: quotedMessageId, remoteJid: jid, fromMe: false },
+        message: { conversation: quotedContent || 'Mensagem citada' },
+      };
+    }
+
     if (type === 'text' || !resolvedMedia) {
-      result = await session.socket.sendMessage(jid, { text: recipientContent });
+      result = await session.socket.sendMessage(jid, { text: recipientContent }, options);
     } else if (type === 'image') {
       const image = await this.mediaPayload(mediaUrl!);
       result = await session.socket.sendMessage(jid, {
         image,
         caption: recipientContent || undefined,
         mimetype: mediaMimeType || undefined,
-      });
+      }, options);
     } else if (type === 'video') {
       const video = await this.mediaPayload(mediaUrl!);
       result = await session.socket.sendMessage(jid, {
         video,
         caption: recipientContent || undefined,
         mimetype: mediaMimeType || undefined,
-      });
+      }, options);
     } else if (type === 'audio') {
       const audio = await this.mediaPayload(mediaUrl!);
       result = await session.socket.sendMessage(jid, {
         audio,
         mimetype: mediaMimeType || 'audio/ogg; codecs=opus',
         ptt: false,
-      });
-      // O WhatsApp não oferece caption para áudio; envia a identificação
-      // como texto complementar para que o destinatário também veja o atendente.
+      }, options);
       if (recipientContent) {
-        await session.socket.sendMessage(jid, { text: recipientContent });
+        await session.socket.sendMessage(jid, { text: recipientContent }, options);
       }
     } else if (type === 'document') {
       const document = await this.mediaPayload(mediaUrl!);
@@ -606,12 +614,12 @@ class WhatsAppSessionManager extends EventEmitter {
         caption: recipientContent || undefined,
         mimetype: mediaMimeType || 'application/octet-stream',
         fileName: mediaFileName || content || 'documento',
-      });
+      }, options);
     } else {
-      result = await session.socket.sendMessage(jid, { text: recipientContent });
+      result = await session.socket.sendMessage(jid, { text: recipientContent }, options);
     }
 
-    await this.saveOutgoingMessage(accountId, jid, content, type, mediaUrl ?? null, result, senderName);
+    await this.saveOutgoingMessage(accountId, jid, content, type, mediaUrl ?? null, result, senderName, quotedMessageId, quotedContent);
     return result;
   }
 
@@ -1792,6 +1800,8 @@ class WhatsAppSessionManager extends EventEmitter {
     mediaUrl: string | null,
     result: any,
     senderName?: string,
+    quotedMessageId?: string,
+    quotedContent?: string,
   ): Promise<void> {
     try {
       const toPhone = this.jidToContactPhone(this.canonicalJid(accountId, jid));
@@ -1831,6 +1841,8 @@ class WhatsAppSessionManager extends EventEmitter {
             isFromMe: true,
             isRead: true,
             senderName: senderName || null,
+            quotedMessageId: quotedMessageId || null,
+            quotedContent: quotedContent || null,
             waMsgId,
             messageId: waMsgId,
             timestamp: now,
@@ -1857,6 +1869,8 @@ class WhatsAppSessionManager extends EventEmitter {
                 isFromMe: true,
                 isRead: true,
                 senderName: senderName || null,
+                quotedMessageId: quotedMessageId || null,
+                quotedContent: quotedContent || null,
                 messageId: waMsgId,
                 toPhone: toPhone,
               },

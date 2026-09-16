@@ -102,6 +102,8 @@ export async function sendWhatsAppMessage(
   mediaFileName?: string,
   user?: SessionUser,
   senderName?: string,
+  quotedMessageId?: string,
+  quotedContent?: string,
 ) {
   if (user) await assertAccountAccess(user, accountId);
   const selectedName = senderName?.trim();
@@ -123,6 +125,8 @@ export async function sendWhatsAppMessage(
     mediaMimeType,
     mediaFileName,
     selectedName || user?.username,
+    quotedMessageId,
+    quotedContent,
   );
 }
 

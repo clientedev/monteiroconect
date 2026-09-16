@@ -36,6 +36,8 @@ const sendSchema = z.object({
   mediaMimeType: z.string().max(200).optional(),
   mediaFileName: z.string().max(255).optional(),
   senderName: z.string().trim().min(1).max(50).optional(),
+  quotedMessageId: z.string().optional(),
+  quotedContent: z.string().optional(),
 }).refine(v => v.content.length > 0 || !!v.mediaUrl, {
   message: 'content ou mediaUrl é obrigatório',
 });
@@ -53,6 +55,8 @@ router.post('/send', async (req: AuthRequest, res, next) => {
       body.mediaFileName,
       req.user!,
       body.senderName,
+      body.quotedMessageId,
+      body.quotedContent,
     );
     res.json({ success: true, result });
   } catch (err) {

@@ -29,9 +29,11 @@ export async function addTagToConversation(conversationId: string, tagId: string
 }
 
 export async function removeTagFromConversation(conversationId: string, tagId: string) {
-  const record = await prisma.conversationTag.findUnique({
-    where: { conversationId_tagId: { conversationId, tagId } },
+  if (!conversationId || conversationId === 'undefined' || !tagId || tagId === 'undefined') {
+    throw new AppError('conversationId e tagId são obrigatórios', 400);
+  }
+  const result = await prisma.conversationTag.deleteMany({
+    where: { conversationId, tagId },
   });
-  if (!record) throw new AppError('Etiqueta não encontrada nesta conversa', 404);
-  return prisma.conversationTag.delete({ where: { id: record.id } });
+  return { ok: true, count: result.count };
 }

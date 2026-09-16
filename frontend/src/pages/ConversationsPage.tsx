@@ -8,7 +8,7 @@ import {
   MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon,
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
-  Maximize2, Minimize2, ExternalLink,
+  Maximize2, Minimize2, ExternalLink, Reply,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -34,6 +34,12 @@ interface ConversationTag {
   id: string;
   name: string;
   color: string;
+}
+
+interface ReplyingToState {
+  id: string;
+  content: string;
+  senderName: string;
 }
 
 interface Attendant {
@@ -149,6 +155,7 @@ export default function ConversationsPage() {
   const [msgTotal, setMsgTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedContactForCrm, setSelectedContactForCrm] = useState<any | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ReplyingToState | null>(null);
 
 
   // Sincroniza estado de chat aberto no mobile para o Layout
@@ -659,6 +666,7 @@ export default function ConversationsPage() {
   const handleSelectConv = (conv: ConvItem) => {
     stickToBottomRef.current = true;
     setSelectedConv(conv);
+    setReplyingTo(null);
     setIsMobileChatOpen?.(true);
     setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
     setMessages(new Map());
@@ -796,8 +804,10 @@ export default function ConversationsPage() {
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedConv || !selectedConv.accountId || !isConnected) return;
     const text = newMessage.trim();
+    const currentReply = replyingTo;
     setSending(true);
     setNewMessage('');
+    setReplyingTo(null);
     try {
       await conversationApi.send(
         selectedConv.accountId,
@@ -808,12 +818,15 @@ export default function ConversationsPage() {
         undefined,
         undefined,
         selectedAttendantName || user?.username,
+        currentReply?.id,
+        currentReply?.content,
       );
       if (selectedConvRef.current) {
         await loadMessages(selectedConvRef.current.id, 1);
       }
     } catch (err: any) {
       setNewMessage(text);
+      setReplyingTo(currentReply);
       alert('Erro ao enviar: ' + (err.message || 'tente novamente'));
     }
     finally { setSending(false); }
@@ -822,7 +835,9 @@ export default function ConversationsPage() {
   const handleSendFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedConv || !selectedConv.accountId || !isConnected) return;
+    const currentReply = replyingTo;
     setSending(true);
+    setReplyingTo(null);
     try {
        const uploaded = await api.upload<{
          url: string;
@@ -846,10 +861,13 @@ export default function ConversationsPage() {
         uploaded.mimetype,
         uploaded.originalName,
         selectedAttendantName || user?.username,
+        currentReply?.id,
+        currentReply?.content,
        );
        setNewMessage('');
       await loadMessages(selectedConv.id, 1);
     } catch (err: any) {
+      setReplyingTo(currentReply);
       alert('Erro ao enviar arquivo: ' + (err.message || 'tente novamente'));
     }
     finally {
@@ -1267,8 +1285,23 @@ export default function ConversationsPage() {
               )}
 
               {msgs.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] rounded-3xl px-4 py-2.5 shadow-sm ${
+                <div key={msg.id} className={`group relative flex items-center gap-1.5 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
+                  {!msg.isFromMe && (
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo({
+                        id: msg.id,
+                        content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
+                        senderName: msg.senderName || selectedConv.contactName || selectedConv.contactPhone || 'Contato',
+                      })}
+                      className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
+                      title="Responder esta mensagem"
+                    >
+                      <Reply className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  <div className={`max-w-[75%] rounded-3xl px-4 py-2.5 shadow-sm relative ${
                     msg.isFromMe
                       ? 'bg-monte-verde text-white rounded-br-lg'
                       : 'bg-white/80 backdrop-blur-sm border border-monte-sereno/15 text-monte-azul rounded-bl-lg'
@@ -1281,12 +1314,12 @@ export default function ConversationsPage() {
                     )}
                     {/* Mensagem respondida (reply) */}
                     {msg.quotedContent && (
-                      <div className={`mb-1.5 pl-2.5 border-l-[3px] rounded-md py-1 pr-2 ${
+                      <div className={`mb-1.5 pl-2.5 border-l-[3px] rounded-lg py-1 pr-2 text-xs ${
                         msg.isFromMe
-                          ? 'border-white/70 bg-white/15 text-white/85'
-                          : 'border-monte-terracota bg-monte-terracota/8 text-monte-azul/80'
+                          ? 'border-white/80 bg-white/20 text-white'
+                          : 'border-monte-verde bg-monte-verde/10 text-monte-azul'
                       }`}>
-                        <p className="text-xs line-clamp-3 break-words whitespace-pre-wrap">{msg.quotedContent}</p>
+                        <p className="line-clamp-3 break-words whitespace-pre-wrap text-[11px] opacity-90">{msg.quotedContent}</p>
                       </div>
                     )}
                     {msg.mediaType === 'image' && msg.mediaUrl && (
@@ -1323,16 +1356,33 @@ export default function ConversationsPage() {
                     )}
 
                     <div className={`flex items-center gap-1 mt-1 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
-                      <span className={`text-[10px] ${msg.isFromMe ? 'text-white/50' : 'text-monte-sereno'}`}>
+                      <span className={`text-[10px] ${msg.isFromMe ? 'text-white/70' : 'text-monte-sereno'}`}>
                         {formatTime(msg.timestamp || msg.createdAt)}
                       </span>
                       {msg.isFromMe && (
-                        msg.isRead
-                          ? <CheckCheck className="w-3.5 h-3.5 text-white/60" />
-                          : <Check className="w-3.5 h-3.5 text-white/60" />
+                        <span title={msg.isRead ? 'Mensagem lida' : 'Mensagem enviada'}>
+                          {msg.isRead
+                            ? <CheckCheck className="w-4 h-4 text-sky-300 drop-shadow-sm stroke-[2.5]" />
+                            : <CheckCheck className="w-4 h-4 text-white/90 stroke-[2]" />}
+                        </span>
                       )}
                     </div>
                   </div>
+
+                  {msg.isFromMe && (
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo({
+                        id: msg.id,
+                        content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
+                        senderName: msg.senderName || user?.username || 'Você',
+                      })}
+                      className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
+                      title="Responder esta mensagem"
+                    >
+                      <Reply className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               ))}
               {msgs.length === 0 && (
@@ -1349,6 +1399,28 @@ export default function ConversationsPage() {
 
             {/* Input com Safe Area do iPhone */}
             <div className="bg-white/90 backdrop-blur-md border-t border-monte-sereno/15 p-2 sm:p-3 pb-safe">
+              {/* Banner de resposta a mensagem citada */}
+              {replyingTo && (
+                <div className="bg-monte-areiaSecao/90 border border-monte-sereno/20 rounded-xl mb-2 px-3 py-2 flex items-center justify-between gap-2 text-xs shadow-xs">
+                  <div className="flex items-center gap-2 overflow-hidden border-l-4 border-monte-verde pl-2.5 py-0.5 min-w-0">
+                    <Reply className="w-4 h-4 text-monte-verde flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-monte-azul text-[11px] truncate">
+                        Respondendo a <span className="text-monte-verde font-bold">{replyingTo.senderName}</span>
+                      </p>
+                      <p className="text-monte-sereno truncate text-[11px] opacity-90">{replyingTo.content}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReplyingTo(null)}
+                    className="p-1 text-monte-sereno hover:text-monte-terracota rounded-full transition-colors flex-shrink-0"
+                    title="Cancelar resposta"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               {attendants.length > 0 && (
                 <div className="flex items-center justify-end gap-2 mb-1.5 px-1">
                   <label htmlFor="attendant-select" className="text-[10px] font-semibold text-monte-sereno">

@@ -141,7 +141,9 @@ export const conversationApi = {
     mediaMimeType?: string,
     mediaFileName?: string,
     senderName?: string,
-  ) => api.post('/conversations/send', { accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName, senderName }),
+    quotedMessageId?: string,
+    quotedContent?: string,
+  ) => api.post('/conversations/send', { accountId, to, content, type, mediaUrl, mediaMimeType, mediaFileName, senderName, quotedMessageId, quotedContent }),
   broadcast: (
     accountId: string,
     recipients: string[],
