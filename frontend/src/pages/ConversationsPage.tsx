@@ -1365,12 +1365,40 @@ export default function ConversationsPage() {
                           ? 'border-white/80 bg-white/20 text-white'
                           : 'border-monte-verde bg-monte-verde/10 text-monte-azul'
                       }`}>
-                        <p className="line-clamp-3 break-words whitespace-pre-wrap text-[11px] opacity-90">{msg.quotedContent}</p>
+                        <p className="line-clamp-3 break-words whitespace-pre-wrap text-[11px] opacity-90">
+                          {msg.quotedContent}
+                        </p>
                       </div>
                     )}
                     {msg.mediaType === 'image' && msg.mediaUrl && (
                       <div className="mb-2 -mx-1 -mt-1 rounded-t-3xl overflow-hidden">
-                        <img src={msg.mediaUrl} alt="Imagem" className="w-full object-cover cursor-pointer" loading="lazy" onClick={() => window.open(msg.mediaUrl!, '_blank')} />
+                        <img
+                          src={msg.mediaUrl}
+                          alt="Imagem"
+                          className="w-full max-h-96 object-cover cursor-pointer"
+                          loading="lazy"
+                          onClick={() => window.open(msg.mediaUrl!, '_blank')}
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
+                    {msg.mediaType === 'sticker' && (
+                      <div className="mb-2 p-1">
+                        {msg.mediaUrl ? (
+                          <img
+                            src={msg.mediaUrl}
+                            alt="Figurinha"
+                            className="w-32 h-32 object-contain cursor-pointer"
+                            onClick={() => window.open(msg.mediaUrl!, '_blank')}
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <p className="text-xs opacity-70">🎭 Figurinha</p>
+                        )}
                       </div>
                     )}
                     {msg.mediaType === 'video' && msg.mediaUrl && (
@@ -1378,14 +1406,24 @@ export default function ConversationsPage() {
                         <video src={msg.mediaUrl} controls className="rounded-2xl max-w-full max-h-80" />
                       </div>
                     )}
-                     {msg.mediaType === 'audio' && msg.mediaUrl && (
-                      <div className="mb-2">
-                        <audio src={msg.mediaUrl} controls className="max-w-full" />
+                    {msg.mediaType === 'audio' && msg.mediaUrl && (
+                      <div className="mb-2 space-y-1">
+                        <audio
+                          src={msg.mediaUrl}
+                          controls
+                          preload="metadata"
+                          className="max-w-full rounded-lg"
+                        />
+                        <div className="text-[10px] opacity-70 text-right">
+                          <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                            Baixar áudio
+                          </a>
+                        </div>
                       </div>
                     )}
-                     {msg.mediaType === 'audio' && !msg.mediaUrl && (
-                       <p className="text-xs opacity-70 mb-1">Áudio sem arquivo disponível</p>
-                     )}
+                    {msg.mediaType === 'audio' && !msg.mediaUrl && (
+                      <p className="text-xs opacity-70 mb-1">Áudio sem arquivo disponível</p>
+                    )}
                     {msg.content && (
                       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderContent(msg.content)}</p>
                     )}
@@ -1395,9 +1433,9 @@ export default function ConversationsPage() {
                         <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline break-all">{msg.content || 'Documento'}</a>
                       </div>
                     )}
-                    {(msg.mediaType === 'location' || msg.mediaType === 'sticker' || msg.mediaType === 'contact') && (
+                    {(msg.mediaType === 'location' || msg.mediaType === 'contact') && (
                       <p className="text-xs opacity-70 mb-1">
-                        {msg.mediaType === 'location' ? '📍 Localização' : msg.mediaType === 'sticker' ? '🎭 Figurinha' : '👤 Contato'}
+                        {msg.mediaType === 'location' ? '📍 Localização' : '👤 Contato'}
                       </p>
                     )}
 

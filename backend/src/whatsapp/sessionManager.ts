@@ -93,7 +93,10 @@ class WhatsAppSessionManager extends EventEmitter {
           qrCode: null,
           isDestroying: false,
         });
-        await this.connectSession(account.id, false);
+        this.connectSession(account.id, false).catch(err => {
+          logger.error(`Erro na reconexão inicial (${account.id}):`, err);
+        });
+        await sleep(2500);
       } else {
         logger.info(`Sessão sem dados: ${account.name} (${account.id})`);
         this.sessions.set(account.id, {
@@ -334,9 +337,18 @@ class WhatsAppSessionManager extends EventEmitter {
             try { (closedSocket as any).end?.(undefined); } catch {}
           }
 
-          // A sessão SÓ desconecta se o usuário efetivamente deslogou pelo WhatsApp ou pelo painel.
-          // Qualquer outro motivo (queda de rede, timeout, restart de servidor) tenta reconectar INDEFINIDAMENTE.
-          if (!isLoggedOut && !session.isDestroying) {
+          if (session.isDestroying) {
+            logger.info(`Conexão encerrada intencionalmente para ${session.name} (isDestroying)`);
+            return;
+          }
+
+          // Durante deploy ou restart, o WhatsApp pode responder temporariamente com 401/515
+          // por causa do encerramento do processo anterior. SE as credenciais existem no banco
+          // e o limite de retentativas não expirou, TENTA RECONECTAR antes de marcar deslogado.
+          const hasCreds = await this.sessionExists(accountId);
+          if (hasCreds && session.reconnectAttempts < (env.maxReconnectAttempts || 15)) {
+            this.scheduleReconnect(accountId);
+          } else if (!isLoggedOut) {
             this.scheduleReconnect(accountId);
           } else {
             session.status = 'DISCONNECTED';
@@ -1003,7 +1015,7 @@ class WhatsAppSessionManager extends EventEmitter {
         ? 'text'
         : (mediaType || messageType);
       const savedMediaUrl = mediaType
-        ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType)
+        ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType, accountId)
         : null;
 
       let savedMessage: any;
@@ -1358,7 +1370,7 @@ class WhatsAppSessionManager extends EventEmitter {
 
         let histMediaUrl: string | null = null;
         if (mediaType && ts >= mediaCutoff) {
-          histMediaUrl = await this.tryDownloadMedia(m, mid, mediaType);
+          histMediaUrl = await this.tryDownloadMedia(m, mid, mediaType, accountId);
         }
 
         const msgType = messageType === 'conversation' || messageType === 'extendedTextMessage'
@@ -1481,12 +1493,23 @@ class WhatsAppSessionManager extends EventEmitter {
     return typeof value === 'string' && value.trim() ? value.trim().split(';')[0] : null;
   }
 
-  private async tryDownloadMedia(msg: WAMessage, msgId: string, mediaType: string): Promise<string | null> {
+  private async tryDownloadMedia(msg: WAMessage, msgId: string, mediaType: string, accountId?: string): Promise<string | null> {
     const DOWNLOADABLE = ['image', 'video', 'audio', 'document', 'sticker'];
     if (!mediaType || !DOWNLOADABLE.includes(mediaType)) return null;
 
     try {
-      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const session = accountId ? this.sessions.get(accountId) : null;
+      const reupload = session?.socket?.updateMediaMessage;
+      const ctxOptions: any = {
+        logger: logger as any,
+        reuploadRequest: reupload || (async (m: any) => m),
+      };
+      const buffer = await downloadMediaMessage(
+        msg,
+        'buffer',
+        {},
+        ctxOptions,
+      );
       if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) return null;
 
       const extMap: Record<string, string> = {
@@ -1580,7 +1603,7 @@ class WhatsAppSessionManager extends EventEmitter {
         ? 'text'
         : (mediaType || messageType);
 
-      const savedMediaUrl = mediaType ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType) : null;
+      const savedMediaUrl = mediaType ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType, accountId) : null;
 
       let savedMessage: any;
       let alreadyStored = false;
@@ -2174,14 +2197,13 @@ class WhatsAppSessionManager extends EventEmitter {
   }
 
   async destroy(): Promise<void> {
-
-
     for (const accountId of this.reconnectTimers.keys()) this.cancelReconnect(accountId);
-    for (const [id] of this.sessions) {
-      try {
-        await this.disconnectSession(id, false);
-      } catch {
-        // ignore on shutdown
+    for (const [id, session] of this.sessions) {
+      session.isDestroying = true;
+      if (session.socket) {
+        try { (session.socket.ev as any).removeAllListeners(); } catch {}
+        try { (session.socket as any).end?.(undefined); } catch {}
+        session.socket = null;
       }
     }
     this.sessions.clear();

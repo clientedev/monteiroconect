@@ -503,7 +503,7 @@ export default function Layout() {
             {/* Results Popover / Command Palette */}
             {showSearch && (
               <>
-                <div className="fixed inset-0 z-[100] bg-monte-azul/80 pt-safe flex items-center justify-center p-4" onClick={() => setShowSearch(false)} />
+                <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-xs" onClick={() => setShowSearch(false)} />
                 <div className="absolute top-full mt-2 left-0 right-0 sm:-left-8 sm:-right-8 md:-left-16 md:-right-16 bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-monte-sereno/20 z-50 overflow-hidden flex flex-col max-h-[82vh] animate-in fade-in zoom-in-95 duration-150">
                   {/* Category Filter Tabs */}
                   {searchResults && (
