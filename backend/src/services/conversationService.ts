@@ -75,6 +75,7 @@ export async function listConversations(opts: ListConversationsOpts) {
       unreadCount: c.unreadCount,
       isOpen: c.isOpen,
       aiEnabled: c.aiEnabled,
+      isMuted: c.isMuted,
       tags: c.tags.map(t => t.tag),
       assignedUser: c.assignments[0]?.user || null,
     })),
@@ -92,6 +93,27 @@ export async function getConversation(id: string) {
   });
   if (!conversation) throw new AppError('Conversa não encontrada', 404);
   return conversation;
+}
+
+export async function setConversationMuted(
+  conversationId: string,
+  muted: boolean,
+  requester: SessionUser,
+) {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { id: true, whatsappId: true },
+  });
+  if (!conversation) throw new AppError('Conversa não encontrada', 404);
+  await assertAccountAccess(requester, conversation.whatsappId);
+
+  const updated = await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { isMuted: muted },
+    select: { id: true, isMuted: true },
+  });
+
+  return updated;
 }
 
 export async function assignConversation(

@@ -106,6 +106,7 @@ model Conversation {
   unreadCount    Int      @default(0)
   isOpen         Boolean  @default(true)
   aiEnabled      Boolean  @default(true)
+  isMuted        Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

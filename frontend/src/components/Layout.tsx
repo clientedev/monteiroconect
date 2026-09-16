@@ -718,8 +718,8 @@ export default function Layout() {
             )}
           </div>
 
-          {/* Botões de Ação Avançada do Canvas: Janela Destacada e Modo Foco */}
-          <div className="flex items-center gap-1 ml-auto">
+          {/* Botões de Ação Avançada do Canvas: Janela Destacada e Modo Foco (Disponíveis apenas no Desktop) */}
+          <div className="hidden md:flex items-center gap-1 ml-auto">
             <button
               type="button"
               onClick={togglePopoutWindow}

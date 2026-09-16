@@ -131,6 +131,8 @@ export const conversationApi = {
     api.put<{ assignedUser: { id: string; username: string; role: string } | null }>(`/conversations/${id}/assignment`, { userId }),
   setAiEnabled: (id: string, enabled: boolean) =>
     api.put<{ id: string; aiEnabled: boolean }>(`/conversations/${id}/ai`, { enabled }),
+  setMuted: (id: string, muted: boolean) =>
+    api.put<{ id: string; isMuted: boolean }>(`/conversations/${id}/mute`, { muted }),
   markRead: (id: string) => api.post(`/conversations/${id}/read`),
   send: (
     accountId: string,

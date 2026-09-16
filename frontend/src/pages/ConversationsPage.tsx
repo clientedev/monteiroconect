@@ -8,7 +8,7 @@ import {
   MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon,
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
-  Maximize2, Minimize2, ExternalLink, Reply,
+  Maximize2, Minimize2, ExternalLink, Reply, Bell, BellOff, ArrowLeft,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -28,6 +28,7 @@ interface ConvItem {
   accountPhone?: string | null;
   assignedUser?: { id: string; username: string; role: string } | null;
   aiEnabled?: boolean;
+  isMuted?: boolean;
 }
 
 interface ConversationTag {
@@ -127,6 +128,7 @@ const formatTime = (date?: string | null) => {
 const ALL_ACCOUNTS = '__all__';
 
 export default function ConversationsPage() {
+  const navigate = useNavigate();
   const { socket } = useSocket();
   const { user } = useAuth();
   const location = useLocation();
@@ -147,6 +149,7 @@ export default function ConversationsPage() {
   const [tagBusy, setTagBusy] = useState(false);
   const [assignmentBusy, setAssignmentBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const [muteBusy, setMuteBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -194,11 +197,6 @@ export default function ConversationsPage() {
   // Sincroniza refs para closure segura nos handlers de WebSocket
   useEffect(() => { selectedConvRef.current = selectedConv; }, [selectedConv]);
   useEffect(() => { selectedAccountIdRef.current = selectedAccountId; }, [selectedAccountId]);
-  useEffect(() => {
-    if (!selectedAttendantName && user?.username) {
-      setSelectedAttendantName(user.username);
-    }
-  }, [selectedAttendantName, user?.username]);
 
   useEffect(() => {
     let active = true;
@@ -657,10 +655,14 @@ export default function ConversationsPage() {
   };
 
   const handleBackToConversations = () => {
-    setSelectedConv(null);
-    setIsMobileChatOpen?.(false);
-    setMessages(new Map());
-    setShowContactDetails(false);
+    if (selectedConv) {
+      setSelectedConv(null);
+      setIsMobileChatOpen?.(false);
+      setMessages(new Map());
+      setShowContactDetails(false);
+    } else if ((location.state as any)?.from) {
+      navigate((location.state as any).from);
+    }
   };
 
   const handleSelectConv = (conv: ConvItem) => {
@@ -706,6 +708,7 @@ export default function ConversationsPage() {
         accountId: res.whatsappId,
         assignedUser: res.assignments?.[0]?.user || null,
         aiEnabled: res.aiEnabled,
+        isMuted: res.isMuted,
       };
       if (res.whatsappId && selectedAccountId !== ALL_ACCOUNTS && selectedAccountId !== res.whatsappId) {
         setSelectedAccountId(res.whatsappId);
@@ -796,6 +799,23 @@ export default function ConversationsPage() {
     }
   };
 
+  const handleToggleMuteConversation = async () => {
+    if (!selectedConv || muteBusy) return;
+    const nextMuted = !selectedConv.isMuted;
+    setMuteBusy(true);
+    try {
+      const result = await conversationApi.setMuted(selectedConv.id, nextMuted);
+      setSelectedConv(prev => prev?.id === selectedConv.id ? { ...prev, isMuted: result.isMuted } : prev);
+      setConversations(prev => prev.map(conv =>
+        conv.id === selectedConv.id ? { ...conv, isMuted: result.isMuted } : conv
+      ));
+    } catch (err: any) {
+      alert(err.message || 'Não foi possível alterar o silenciamento da conversa');
+    } finally {
+      setMuteBusy(false);
+    }
+  };
+
   const selectedAccount = accounts.find(a =>
     a.id === (selectedConv?.accountId || (selectedAccountId === ALL_ACCOUNTS ? '' : selectedAccountId))
   );
@@ -817,7 +837,7 @@ export default function ConversationsPage() {
         undefined,
         undefined,
         undefined,
-        selectedAttendantName || user?.username,
+        selectedAttendantName || undefined,
         currentReply?.id,
         currentReply?.content,
       );
@@ -860,7 +880,7 @@ export default function ConversationsPage() {
         uploaded.url,
         uploaded.mimetype,
         uploaded.originalName,
-        selectedAttendantName || user?.username,
+        selectedAttendantName || undefined,
         currentReply?.id,
         currentReply?.content,
        );
@@ -946,13 +966,25 @@ export default function ConversationsPage() {
       }`}>
         {/* Mobile Header da lista estilo WhatsApp */}
         <div className="px-4 py-3 flex items-center justify-between lg:hidden border-b border-monte-sereno/10 bg-white shadow-2xs">
-          <div>
-            <h2 className="text-xl font-bold font-display text-monte-azul leading-none">Conversas</h2>
-            <p className="text-[11px] text-monte-sereno mt-0.5 font-medium">
-              {accounts.length > 0 && selectedAccountId !== ALL_ACCOUNTS
-                ? (accounts.find(a => a.id === selectedAccountId)?.name || 'WhatsApp')
-                : 'Todas as contas'}
-            </p>
+          <div className="flex items-center gap-2">
+            {(location.state as any)?.from && (
+              <button
+                type="button"
+                onClick={() => navigate((location.state as any).from)}
+                className="p-1 -ml-1 text-monte-azul hover:text-monte-verde rounded-full"
+                title="Voltar para a página anterior"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            <div>
+              <h2 className="text-xl font-bold font-display text-monte-azul leading-none">Conversas</h2>
+              <p className="text-[11px] text-monte-sereno mt-0.5 font-medium">
+                {accounts.length > 0 && selectedAccountId !== ALL_ACCOUNTS
+                  ? (accounts.find(a => a.id === selectedAccountId)?.name || 'WhatsApp')
+                  : 'Todas as contas'}
+              </p>
+            </div>
           </div>
           {syncing && (
             <div className="flex items-center gap-1.5 text-xs text-monte-verde font-semibold bg-monte-verde/10 px-2.5 py-1 rounded-full animate-pulse">
@@ -1152,7 +1184,7 @@ export default function ConversationsPage() {
                   <button
                     type="button"
                     onClick={togglePopoutWindow}
-                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden sm:flex items-center gap-1 cursor-pointer"
+                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden md:flex items-center gap-1 cursor-pointer"
                     title="Abrir WhatsApp em Janela Destacada (Pop-out / Picture in Picture)"
                   >
                     <ExternalLink className="w-4.5 h-4.5" />
@@ -1162,7 +1194,7 @@ export default function ConversationsPage() {
                   <button
                     type="button"
                     onClick={() => setIsFocusMode((v: boolean) => !v)}
-                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden sm:flex items-center gap-1 cursor-pointer"
+                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden md:flex items-center gap-1 cursor-pointer"
                     title={isFocusMode ? 'Sair do Modo Foco' : 'Modo Foco Total (Destacar Canvas)'}
                   >
                     {isFocusMode ? <Minimize2 className="w-4.5 h-4.5 text-monte-terracota" /> : <Maximize2 className="w-4.5 h-4.5" />}
@@ -1234,6 +1266,20 @@ export default function ConversationsPage() {
                     </select>
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={handleToggleMuteConversation}
+                  disabled={muteBusy}
+                  className={`text-[10px] font-semibold rounded-full px-2.5 py-0.5 border transition-colors disabled:opacity-50 flex items-center gap-1 ${
+                    selectedConv.isMuted
+                      ? 'border-amber-500/40 text-amber-600 bg-amber-50'
+                      : 'border-monte-sereno/30 text-monte-sereno hover:bg-black/5'
+                  }`}
+                  title={selectedConv.isMuted ? 'Reativar notificações do contato' : 'Silenciar notificações do contato'}
+                >
+                  {selectedConv.isMuted ? <BellOff className="w-3 h-3" /> : <Bell className="w-3 h-3" />}
+                  <span>{selectedConv.isMuted ? 'Notificações silenciadas' : 'Notificações ativadas'}</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleToggleAi}
@@ -1433,6 +1479,7 @@ export default function ConversationsPage() {
                     onChange={e => setSelectedAttendantName(e.target.value)}
                     disabled={sending}
                   >
+                    <option value="">Sem identificação</option>
                     {attendants.map(attendant => (
                       <option key={attendant.id} value={attendant.username}>{attendant.username}</option>
                     ))}
@@ -1548,6 +1595,43 @@ export default function ConversationsPage() {
                   className="w-full py-2 bg-gradient-to-r from-monte-verde to-monte-azul text-white text-xs font-bold rounded-xl shadow-xs hover:opacity-95 transition-opacity flex items-center justify-center gap-2"
                 >
                   <ShieldCheck className="w-4 h-4" /> Ver Cadastro e Produtos Completo
+                </button>
+              </div>
+            </div>
+
+            {/* Silenciamento de Notificações do Contato */}
+            <div className="py-3 border-b border-monte-sereno/10">
+              <p className="text-xs font-bold text-monte-sereno uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                {selectedConv.isMuted ? <BellOff className="w-3.5 h-3.5 text-amber-600" /> : <Bell className="w-3.5 h-3.5 text-monte-verde" />} Notificações do Contato
+              </p>
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-monte-areiaSecao/60 border border-monte-sereno/10">
+                <div className="flex items-center gap-2.5">
+                  {selectedConv.isMuted ? (
+                    <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0">
+                      <BellOff className="w-4 h-4" />
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-monte-verde/10 text-monte-verde flex items-center justify-center flex-shrink-0">
+                      <Bell className="w-4 h-4" />
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-monte-azul">
+                      {selectedConv.isMuted ? 'Notificações silenciadas' : 'Notificações ativadas'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleMuteConversation}
+                  disabled={muteBusy}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all disabled:opacity-50 flex-shrink-0 ${
+                    selectedConv.isMuted
+                      ? 'border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                      : 'border-monte-sereno/30 text-monte-sereno hover:bg-black/5'
+                  }`}
+                >
+                  {muteBusy ? 'Salvando...' : selectedConv.isMuted ? 'Reativar' : 'Silenciar'}
                 </button>
               </div>
             </div>

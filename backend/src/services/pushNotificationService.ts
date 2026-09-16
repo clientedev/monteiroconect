@@ -149,6 +149,17 @@ export async function sendPushForNewMessage(data: {
     const bodyPreview = message?.content || (message?.mediaType ? `[${message.mediaType}]` : 'Nova mensagem recebida');
     const conversationId = conversation?.id || message?.conversationId;
 
+    if (conversationId) {
+      const convDb = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { isMuted: true },
+      });
+      if (convDb?.isMuted || conversation?.isMuted) {
+        logger.info(`Notificação Push suprimida para conversa silenciada: ${conversationId}`);
+        return;
+      }
+    }
+
     const payload: PushPayload = {
       title: `${contactName}`,
       body: bodyPreview,

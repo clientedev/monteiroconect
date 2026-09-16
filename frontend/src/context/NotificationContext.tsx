@@ -297,8 +297,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const conv = data.conversation || {};
       const contact = data.contact || conv.contact || {};
 
-      // Ignora mensagens enviadas por mim mesmo
-      if (msg.isFromMe) return;
+      // Ignora mensagens enviadas por mim mesmo ou de conversas silenciadas
+      if (msg.isFromMe || conv.isMuted || data.isMuted) return;
 
       const contactName = contact.name || contact.phone || msg.senderName || 'Contato WhatsApp';
       const unreadCount = conv.unreadCount || data.unreadCount || 1;

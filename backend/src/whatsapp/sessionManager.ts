@@ -129,6 +129,27 @@ class WhatsAppSessionManager extends EventEmitter {
     } catch (err) {
       logger.warn('Falha na limpeza de mensagens antigas:', err);
     }
+
+    // Purga conversas/mensagens fantasma criadas indevidamente por canais/newsletter
+    try {
+      await prisma.message.deleteMany({
+        where: {
+          OR: [
+            { conversation: { contact: { phone: { contains: 'newsletter' } } } },
+            { fromPhone: { contains: 'newsletter' } },
+            { toPhone: { contains: 'newsletter' } },
+          ],
+        },
+      });
+      await prisma.conversation.deleteMany({
+        where: { contact: { phone: { contains: 'newsletter' } } },
+      });
+      await prisma.contact.deleteMany({
+        where: { phone: { contains: 'newsletter' } },
+      });
+    } catch (err) {
+      logger.warn('Falha na limpeza de contatos/conversas newsletter:', err);
+    }
   }
 
   /**
@@ -205,7 +226,7 @@ class WhatsAppSessionManager extends EventEmitter {
         },
         printQRInTerminal: false,
         logger: makeLogger(),
-        shouldIgnoreJid: () => false,
+        shouldIgnoreJid: (jid: string) => !jid || jid.includes('@newsletter') || jid === 'status@broadcast' || false,
         // syncFullHistory: false evita que o WhatsApp Multi-Device envie ordens de
         // ressincronização total de AppState que travam e desfixam conversas no WhatsApp Web oficial
         syncFullHistory: false,
@@ -683,7 +704,7 @@ class WhatsAppSessionManager extends EventEmitter {
 
   private isUsableChatMessage(accountId: string, msg: WAMessage): boolean {
     const remoteJid = this.messageRemoteJid(msg);
-    if (!remoteJid || remoteJid === 'status@broadcast') return false;
+    if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.includes('@newsletter')) return false;
     const body: any = msg.message || {};
     if (body.protocolMessage || body.reactionMessage || body.senderKeyDistributionMessage) return false;
     return true;
@@ -952,11 +973,12 @@ class WhatsAppSessionManager extends EventEmitter {
   private async handleOutgoingFromDevice(accountId: string, msg: WAMessage): Promise<void> {
     try {
       const remoteJid = this.canonicalJid(accountId, this.messageRemoteJid(msg));
-      if (!remoteJid || remoteJid === 'status@broadcast') return;
+      if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.includes('@newsletter')) return;
 
       const waMsgId = msg.key.id || null;
 
       const contactPhone = this.jidToContactPhone(remoteJid);
+      const isGroup = remoteJid.endsWith('@g.us') || contactPhone.endsWith('@g.us');
       let contact = await prisma.contact.findUnique({
         where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
       });
@@ -971,7 +993,7 @@ class WhatsAppSessionManager extends EventEmitter {
       });
       if (!conversation) {
         conversation = await prisma.conversation.create({
-          data: { contactId: contact.id, whatsappId: accountId },
+          data: { contactId: contact.id, whatsappId: accountId, isMuted: isGroup },
         });
       }
 
@@ -1204,9 +1226,10 @@ class WhatsAppSessionManager extends EventEmitter {
 
     // Processa data.chats para registrar todas as conversas ativas (1:1 e grupos)
     for (const chat of data.chats || []) {
-      if (!chat?.id || chat.id === 'status@broadcast') continue;
+      if (!chat?.id || chat.id === 'status@broadcast' || chat.id.includes('@newsletter')) continue;
       const jid = this.canonicalJid(accountId, chat.id);
       const contactPhone = this.jidToContactPhone(jid);
+      const isGroupChat = jid.endsWith('@g.us') || chat.id.endsWith('@g.us') || contactPhone.endsWith('@g.us');
       const displayName = this.cachedContactName(accountId, jid) || nameByJid.get(jid) || chat.name || null;
       const chatLastMessageAt = this.whatsappTimestamp(
         chat.conversationTimestamp ?? chat.lastMessageRecvTimestamp ?? chat.timestamp,
@@ -1232,7 +1255,7 @@ class WhatsAppSessionManager extends EventEmitter {
       });
       if (!conversation) {
         conversation = await prisma.conversation.create({
-          data: { contactId: contact.id, whatsappId: accountId },
+          data: { contactId: contact.id, whatsappId: accountId, isMuted: isGroupChat },
         });
       }
       if (
@@ -1297,12 +1320,13 @@ class WhatsAppSessionManager extends EventEmitter {
         });
       }
 
+      const isGroupHistChat = jid.endsWith('@g.us') || contactPhone.endsWith('@g.us');
       let conversation = await prisma.conversation.findUnique({
         where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
       });
       if (!conversation) {
         conversation = await prisma.conversation.create({
-          data: { contactId: contact.id, whatsappId: accountId },
+          data: { contactId: contact.id, whatsappId: accountId, isMuted: isGroupHistChat },
         });
       }
 
@@ -1500,7 +1524,7 @@ class WhatsAppSessionManager extends EventEmitter {
   private async handleIncomingMessage(accountId: string, msg: WAMessage): Promise<void> {
     try {
       const remoteJid = this.canonicalJid(accountId, this.messageRemoteJid(msg));
-      if (!remoteJid || remoteJid === 'status@broadcast') return;
+      if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.includes('@newsletter')) return;
 
       const waMsgId = msg.key.id || null;
       const isGroup = remoteJid.endsWith('@g.us');
@@ -1545,6 +1569,7 @@ class WhatsAppSessionManager extends EventEmitter {
           data: {
             contactId: contact.id,
             whatsappId: accountId,
+            isMuted: isGroup,
           },
         });
       }

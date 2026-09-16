@@ -143,7 +143,7 @@ export default function ContactsPage() {
   const openConversation = (contact: any) => {
     if (!contact.conversationId) return;
     navigate('/conversations', {
-      state: { conversationId: contact.conversationId, accountId: selectedAccountId },
+      state: { conversationId: contact.conversationId, accountId: selectedAccountId, from: '/contacts' },
     });
   };
 
