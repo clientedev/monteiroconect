@@ -6,8 +6,9 @@ import ForceChangePasswordModal from './ForceChangePasswordModal';
 import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone, UserCheck,
   LogOut, Search, Menu, X, Bot, User, Clock, ArrowRight, Loader2, Sparkles, Phone, Settings,
+  PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, ExternalLink,
 } from 'lucide-react';
-import { Component, type ErrorInfo, type ReactNode, useState, useRef, useEffect, useCallback } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { dashboardApi } from '../lib/api';
 import MobileNotificationBanner from './MobileNotificationBanner';
 
@@ -84,7 +85,18 @@ export default function Layout() {
   const { socket } = useSocket();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Estados de navegação e exibição
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('sidebar_collapsed') === 'true'
+  );
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const isPopout = useMemo(
+    () => new URLSearchParams(location.search).get('popout') === 'true',
+    [location.search]
+  );
+
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
@@ -96,9 +108,27 @@ export default function Layout() {
   const [assignedCount, setAssignedCount] = useState(0);
   const [assignedConversations, setAssignedConversations] = useState<any[]>([]);
   const [showNotif, setShowNotif] = useState(false);
+
   const sidebarRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
+  const togglePopoutWindow = () => {
+    const url = window.location.origin + '/conversations?popout=true';
+    window.open(
+      url,
+      'WhatsAppConversationsPopout',
+      'width=1280,height=840,menubar=no,toolbar=no,location=no,status=no,resizable=yes'
+    );
+  };
 
   // Redefine mobile chat state e reseta o scroll ao topo ao mudar de página
   useEffect(() => {
@@ -133,11 +163,12 @@ export default function Layout() {
         setSidebarOpen(false);
         setShowSearch(false);
         setShowNotif(false);
+        if (isFocusMode) setIsFocusMode(false);
       }
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, []);
+  }, [isFocusMode]);
 
   // Debounced search
   useEffect(() => {
@@ -178,7 +209,7 @@ export default function Layout() {
     return () => clearInterval(interval);
   }, [loadUnreadCount]);
 
-  // Atualiza badge em tempo real: nova mensagem OU conversa lida
+  // Atualiza badge em tempo real
   useEffect(() => {
     if (!socket) return;
 
@@ -237,6 +268,61 @@ export default function Layout() {
     });
   };
 
+  // MODO JANELA DESTACADA OU FOCO TOTAL
+  if (isPopout || isFocusMode) {
+    return (
+      <div className="fixed inset-0 z-[9999] bg-monte-areia flex flex-col h-screen overflow-hidden">
+        {/* Barra Superior do Modo Foco / Popout */}
+        <div className="bg-white border-b border-monte-sereno/15 px-4 py-2 flex items-center justify-between shadow-2xs z-50 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="" className="w-6 h-6 rounded-lg object-cover" />
+            <span className="text-xs font-bold text-monte-azul font-display">
+              Monteiro Conecta — Modo Foco / WhatsApp
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!isPopout && (
+              <button
+                type="button"
+                onClick={() => setIsFocusMode(false)}
+                className="px-3 py-1 bg-monte-sereno/10 hover:bg-monte-sereno/20 text-monte-azul text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Sair do Modo Foco"
+              >
+                <Minimize2 className="w-3.5 h-3.5" /> Sair do Modo Foco (ESC)
+              </button>
+            )}
+            {isPopout && (
+              <button
+                type="button"
+                onClick={() => window.close()}
+                className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Fechar Janela"
+              >
+                <X className="w-3.5 h-3.5" /> Fechar Janela
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-hidden p-0 lg:p-4">
+          <PageErrorBoundary>
+            <Outlet
+              context={{
+                isMobileChatOpen,
+                setIsMobileChatOpen,
+                isPopout,
+                isFocusMode,
+                setIsFocusMode,
+                togglePopoutWindow,
+              }}
+            />
+          </PageErrorBoundary>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen-safe overflow-hidden bg-monte-areia pt-safe">
       {/* Backdrop overlay for mobile */}
@@ -250,27 +336,29 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         ref={sidebarRef}
-        className={`fixed inset-y-0 left-0 z-50 w-72 sidebar-glass transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${
+        className={`fixed inset-y-0 left-0 z-50 sidebar-glass transform transition-all duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        } ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-72'}`}
       >
         <div className="flex flex-col h-full pt-safe pb-safe">
-          {/* Logo */}
-          <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
-            <div className="flex items-center gap-3">
+          {/* Logo & Toggle */}
+          <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
+            <div className="flex items-center gap-3 min-w-0">
               <img
                 src="/logo.png"
                 alt="Monteiro Conecta"
-                className="w-10 h-10 rounded-xl object-cover shadow-lg"
+                className="w-10 h-10 rounded-xl object-cover shadow-lg flex-shrink-0"
               />
-              <div>
-                <h1 className="text-lg font-bold font-display text-white leading-tight tracking-tight">
-                  Monteiro Conecta
-                </h1>
-                <p className="text-[11px] text-white/40 font-medium">
-                  Central de Atendimento
-                </p>
-              </div>
+              {!sidebarCollapsed && (
+                <div className="min-w-0">
+                  <h1 className="text-lg font-bold font-display text-white leading-tight tracking-tight truncate">
+                    Monteiro Conecta
+                  </h1>
+                  <p className="text-[11px] text-white/40 font-medium truncate">
+                    Central de Atendimento
+                  </p>
+                </div>
+              )}
             </div>
             <button
               onClick={closeSidebar}
@@ -282,60 +370,72 @@ export default function Layout() {
 
           {/* Nav */}
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-            <p className="px-3 mb-2 text-[11px] font-semibold text-white/30 uppercase tracking-widest">
-              Menu
-            </p>
+            {!sidebarCollapsed && (
+              <p className="px-3 mb-2 text-[11px] font-semibold text-white/30 uppercase tracking-widest">
+                Menu
+              </p>
+            )}
             {navItems.map(item => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.to === '/'}
                 onClick={closeSidebar}
+                title={sidebarCollapsed ? item.label : undefined}
                 className={({ isActive }) =>
-                  `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'}`
+                  `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'} ${
+                    sidebarCollapsed ? 'justify-center px-0 py-3' : ''
+                  }`
                 }
               >
                 <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-                <span className="flex-1">{item.label}</span>
+                {!sidebarCollapsed && <span className="flex-1 truncate">{item.label}</span>}
                 {item.showBadge && unreadCount > 0 && (
-                  <span className="bg-monte-terracota text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 leading-none shadow-sm">
+                  <span className={`bg-monte-terracota text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 leading-none shadow-sm ${sidebarCollapsed ? 'absolute top-1 right-1' : ''}`}>
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
               </NavLink>
             ))}
 
-            <p className="px-3 mt-6 mb-2 text-[11px] font-semibold text-white/30 uppercase tracking-widest">
-              Gerenciar
-            </p>
+            {!sidebarCollapsed && (
+              <p className="px-3 mt-6 mb-2 text-[11px] font-semibold text-white/30 uppercase tracking-widest">
+                Gerenciar
+              </p>
+            )}
             {manageItems.map(item => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 onClick={closeSidebar}
+                title={sidebarCollapsed ? item.label : undefined}
                 className={({ isActive }) =>
-                  `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'}`
+                  `sidebar-link ${isActive ? 'sidebar-link-active' : 'sidebar-link-inactive'} ${
+                    sidebarCollapsed ? 'justify-center px-0 py-3' : ''
+                  }`
                 }
               >
                 <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-                <span className="flex-1">{item.label}</span>
+                {!sidebarCollapsed && <span className="flex-1 truncate">{item.label}</span>}
               </NavLink>
             ))}
           </nav>
 
           {/* User section */}
           <div className="px-3 py-4 border-t border-white/10">
-            <div className="flex items-center gap-3 px-2 py-1.5 rounded-full hover:bg-white/10 transition-colors">
-              <div className="w-9 h-9 bg-gradient-to-br from-monte-terracota to-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-sm">
+            <div className={`flex items-center gap-3 px-2 py-1.5 rounded-full hover:bg-white/10 transition-colors ${sidebarCollapsed ? 'flex-col justify-center' : ''}`}>
+              <div className="w-9 h-9 bg-gradient-to-br from-monte-terracota to-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-sm flex-shrink-0">
                 {user?.username?.[0].toUpperCase()}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white truncate">{user?.username}</p>
-                <p className="text-[11px] text-white/40 capitalize">{user?.role}</p>
-              </div>
+              {!sidebarCollapsed && (
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{user?.username}</p>
+                  <p className="text-[11px] text-white/40 capitalize">{user?.role}</p>
+                </div>
+              )}
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-full text-white/40 hover:text-monte-terracota hover:bg-white/10 transition-colors"
+                className="p-2 rounded-full text-white/40 hover:text-monte-terracota hover:bg-white/10 transition-colors cursor-pointer"
                 title="Sair"
               >
                 <LogOut className="w-4 h-4" />
@@ -346,9 +446,9 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 transition-all duration-300">
         {/* Top bar */}
-        <header className={`bg-white border-b border-monte-sereno/15 px-4 lg:px-6 py-2.5 lg:py-0 lg:h-16 flex items-center gap-4 flex-shrink-0 z-20 ${
+        <header className={`bg-white border-b border-monte-sereno/15 px-4 lg:px-6 py-2.5 lg:py-0 lg:h-16 flex items-center gap-3 flex-shrink-0 z-20 ${
           isMobileChatOpen ? 'hidden lg:flex' : 'flex'
         }`}>
           <button
@@ -356,6 +456,16 @@ export default function Layout() {
             className="lg:hidden p-2 rounded-full text-monte-azul hover:bg-monte-areiaSecao transition-colors"
           >
             <Menu className="w-5 h-5" />
+          </button>
+
+          {/* Botão de Recolher/Expandir Menu Lateral no Desktop */}
+          <button
+            type="button"
+            onClick={toggleSidebarCollapsed}
+            className="hidden lg:flex p-2 rounded-full text-monte-azul hover:bg-monte-areiaSecao transition-colors cursor-pointer"
+            title={sidebarCollapsed ? 'Expandir Menu Lateral' : 'Recolher Menu Lateral'}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
           </button>
 
           {/* Search */}
@@ -443,7 +553,6 @@ export default function Layout() {
 
                   {/* Results Container */}
                   <div className="overflow-y-auto flex-1 p-3 space-y-3">
-                    {/* Initial State */}
                     {(!searchQuery || searchQuery.trim().length < 2) && (
                       <div className="py-8 px-4 text-center">
                         <div className="w-12 h-12 rounded-2xl bg-monte-verde/10 text-monte-verde flex items-center justify-center mx-auto mb-3">
@@ -456,7 +565,6 @@ export default function Layout() {
                       </div>
                     )}
 
-                    {/* Results Loading */}
                     {searchLoading && (
                       <div className="py-8 text-center text-monte-sereno">
                         <Loader2 className="w-6 h-6 mx-auto animate-spin text-monte-verde mb-2" />
@@ -464,10 +572,8 @@ export default function Layout() {
                       </div>
                     )}
 
-                    {/* Results Content */}
                     {!searchLoading && searchResults && (
                       <>
-                        {/* Contacts Section */}
                         {(searchFilter === 'all' || searchFilter === 'contacts') && searchResults.contacts?.length > 0 && (
                           <div>
                             <div className="flex items-center justify-between px-2 mb-1.5">
@@ -512,7 +618,6 @@ export default function Layout() {
                           </div>
                         )}
 
-                        {/* Conversations Section */}
                         {(searchFilter === 'all' || searchFilter === 'conversations') && searchResults.conversations?.length > 0 && (
                           <div>
                             <div className="flex items-center justify-between px-2 mb-1.5">
@@ -561,7 +666,6 @@ export default function Layout() {
                           </div>
                         )}
 
-                        {/* Messages Section */}
                         {(searchFilter === 'all' || searchFilter === 'messages') && searchResults.messages?.length > 0 && (
                           <div>
                             <div className="flex items-center justify-between px-2 mb-1.5">
@@ -595,7 +699,6 @@ export default function Layout() {
                           </div>
                         )}
 
-                        {/* Empty Result */}
                         {(!searchResults.contacts?.length && !searchResults.conversations?.length && !searchResults.messages?.length) && (
                           <div className="py-8 text-center text-monte-sereno">
                             <p className="text-sm font-medium text-monte-azul">Nenhum resultado encontrado para "{searchQuery}"</p>
@@ -606,7 +709,6 @@ export default function Layout() {
                     )}
                   </div>
 
-                  {/* Footer with Keyboard Hints */}
                   <div className="px-4 py-2 border-t border-monte-sereno/15 bg-monte-areiaSecao/60 flex items-center justify-between text-[11px] text-monte-sereno">
                     <span>Clique em qualquer resultado para abrir diretamente</span>
                     <span className="font-medium">ESC para fechar</span>
@@ -616,8 +718,28 @@ export default function Layout() {
             )}
           </div>
 
+          {/* Botões de Ação Avançada do Canvas: Janela Destacada e Modo Foco */}
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              type="button"
+              onClick={togglePopoutWindow}
+              className="p-2 text-monte-azul/80 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors cursor-pointer"
+              title="Abrir WhatsApp em Janela Destacada (Pop-out / Picture in Picture)"
+            >
+              <ExternalLink className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFocusMode((v) => !v)}
+              className="p-2 text-monte-azul/80 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors cursor-pointer"
+              title={isFocusMode ? 'Sair do Modo Foco' : 'Modo Foco Total (Destacar Canvas)'}
+            >
+              {isFocusMode ? <Minimize2 className="w-5 h-5 text-monte-terracota" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+          </div>
+
           {/* Notification bell */}
-          <div className="relative ml-auto">
+          <div className="relative">
             <button
               onClick={() => setShowNotif(v => !v)}
               className="relative p-2.5 rounded-full text-monte-azul hover:bg-monte-areiaSecao transition-colors"
@@ -731,12 +853,23 @@ export default function Layout() {
           onClick={() => { setShowSearch(false); }}
         >
           <PageErrorBoundary>
-            <Outlet context={{ isMobileChatOpen, setIsMobileChatOpen }} />
+            <Outlet
+              context={{
+                isMobileChatOpen,
+                setIsMobileChatOpen,
+                isPopout,
+                isFocusMode,
+                setIsFocusMode,
+                togglePopoutWindow,
+                sidebarCollapsed,
+                toggleSidebarCollapsed,
+              }}
+            />
           </PageErrorBoundary>
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar (Estilo WhatsApp / iOS) */}
+      {/* Mobile Bottom Navigation Bar */}
       {!isMobileChatOpen && (
         <nav
           aria-label="Navegação móvel inferior"
@@ -797,32 +930,8 @@ export default function Layout() {
             <LayoutDashboard className="w-5 h-5" />
             <span className="text-[10px] mt-1 tracking-tight">Painel</span>
           </NavLink>
-
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-3 min-w-[62px] rounded-2xl transition-all ${
-                isActive ? 'text-monte-verde font-bold scale-105' : 'text-monte-sereno hover:text-monte-azul'
-              }`
-            }
-          >
-            <Settings className="w-5 h-5" />
-            <span className="text-[10px] mt-1 tracking-tight">Notificações</span>
-          </NavLink>
-
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            className="flex flex-col items-center justify-center py-1 px-3 min-w-[62px] rounded-2xl text-monte-sereno hover:text-monte-azul transition-all"
-          >
-            <Menu className="w-5 h-5" />
-            <span className="text-[10px] mt-1 tracking-tight">Menu</span>
-          </button>
         </nav>
       )}
-
-      <MobileNotificationBanner />
-      <ForceChangePasswordModal />
     </div>
   );
 }

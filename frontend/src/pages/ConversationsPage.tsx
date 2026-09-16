@@ -7,7 +7,8 @@ import { useNotification } from '../context/NotificationContext';
 import {
   MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon,
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
-  X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck
+  X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
+  Maximize2, Minimize2, ExternalLink,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -124,7 +125,7 @@ export default function ConversationsPage() {
   const { user } = useAuth();
   const location = useLocation();
   const { triggerNotification } = useNotification();
-  const { setIsMobileChatOpen } = (useOutletContext<any>() || {});
+  const { setIsMobileChatOpen, isPopout, isFocusMode, setIsFocusMode, togglePopoutWindow } = (useOutletContext<any>() || {});
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [conversations, setConversations] = useState<ConvItem[]>([]);
@@ -1129,10 +1130,30 @@ export default function ConversationsPage() {
                   <ShieldCheck className="w-4 h-4" />
                   <span className="hidden sm:inline">Ver Cadastro CRM</span>
                 </button>
+                {togglePopoutWindow && (
+                  <button
+                    type="button"
+                    onClick={togglePopoutWindow}
+                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden sm:flex items-center gap-1 cursor-pointer"
+                    title="Abrir WhatsApp em Janela Destacada (Pop-out / Picture in Picture)"
+                  >
+                    <ExternalLink className="w-4.5 h-4.5" />
+                  </button>
+                )}
+                {setIsFocusMode && (
+                  <button
+                    type="button"
+                    onClick={() => setIsFocusMode((v: boolean) => !v)}
+                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden sm:flex items-center gap-1 cursor-pointer"
+                    title={isFocusMode ? 'Sair do Modo Foco' : 'Modo Foco Total (Destacar Canvas)'}
+                  >
+                    {isFocusMode ? <Minimize2 className="w-4.5 h-4.5 text-monte-terracota" /> : <Maximize2 className="w-4.5 h-4.5" />}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowContactDetails(v => !v)}
-                  className="p-2 text-monte-azul/70 hover:text-monte-azul hover:bg-monte-areiaSecao rounded-full transition-colors flex items-center gap-1.5"
+                  className="p-2 text-monte-azul/70 hover:text-monte-azul hover:bg-monte-areiaSecao rounded-full transition-colors flex items-center gap-1.5 cursor-pointer"
                   title="Opções da conversa"
                 >
                   <SlidersHorizontal className="w-5 h-5" />

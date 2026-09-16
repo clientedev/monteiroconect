@@ -206,20 +206,32 @@ class WhatsAppSessionManager extends EventEmitter {
         printQRInTerminal: false,
         logger: makeLogger(),
         shouldIgnoreJid: () => false,
-         // Sem isso, dispositivos novos recebem apenas uma parte do histórico.
-         // A janela efetiva continua limitada por shouldSyncHistoryMessage.
-         syncFullHistory: true,
+        // syncFullHistory: false evita que o WhatsApp Multi-Device envie ordens de
+        // ressincronização total de AppState que travam e desfixam conversas no WhatsApp Web oficial
+        syncFullHistory: false,
         shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
           const ts = Number((msg as any).threadTs) || 0;
           if (!ts) return true;
           const cutoff = Date.now() / 1000 - Math.max(1, env.historySyncDays) * 86400;
           return ts >= cutoff;
         },
-        // Configurações para manter a sessão online 24/7 sem cair
+        // Callback getMessage para resposta de E2EE retries sem congelar clientes web
+        getMessage: async (key) => {
+          if (!key.id) return undefined;
+          try {
+            const msg = await prisma.message.findFirst({
+              where: { waMsgId: key.id },
+              select: { content: true },
+            });
+            if (msg?.content) return { conversation: msg.content };
+          } catch {}
+          return undefined;
+        },
+        // Configurações para manter a sessão online de forma transparente sem conflitar com o WhatsApp Web
         keepAliveIntervalMs: 25000,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
-        markOnlineOnConnect: true,
+        markOnlineOnConnect: false,
       });
 
       session.socket = socket;
