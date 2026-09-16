@@ -144,8 +144,21 @@ export default function ConversationsPage() {
   const [search, setSearch] = useState('');
   const [includeGroups, setIncludeGroups] = useState(true);
   const [availableTags, setAvailableTags] = useState<ConversationTag[]>([]);
-  const [attendants, setAttendants] = useState<Attendant[]>([]);
-  const [selectedAttendantName, setSelectedAttendantName] = useState('');
+  const [attendants, setAttendants] = useState<any[]>([]);
+  const [selectedAttendantName, setSelectedAttendantName] = useState<string>(() => {
+    try {
+      return localStorage.getItem('mc_selected_attendant_name') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const handleAttendantChange = (name: string) => {
+    setSelectedAttendantName(name);
+    try {
+      localStorage.setItem('mc_selected_attendant_name', name);
+    } catch {}
+  };
   const [tagBusy, setTagBusy] = useState(false);
   const [assignmentBusy, setAssignmentBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
@@ -534,7 +547,7 @@ export default function ConversationsPage() {
             fromPhone: null,
             quotedMessageId: data.message.quotedMessageId,
             quotedContent: data.message.quotedContent,
-            senderName: data.message.senderName || user?.username || null,
+            senderName: data.message.senderName || null,
           });
           return map;
         });
@@ -1459,7 +1472,7 @@ export default function ConversationsPage() {
                       onClick={() => setReplyingTo({
                         id: msg.id,
                         content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
-                        senderName: msg.senderName || user?.username || 'Você',
+                        senderName: msg.senderName || (msg.isFromMe ? 'Sem identificação' : (selectedConv.contactName || selectedConv.contactPhone || 'Contato')),
                       })}
                       className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
                       title="Responder esta mensagem"
@@ -1514,7 +1527,7 @@ export default function ConversationsPage() {
                     id="attendant-select"
                     className="bg-transparent text-[11px] font-medium text-monte-azul focus:outline-none cursor-pointer"
                     value={selectedAttendantName}
-                    onChange={e => setSelectedAttendantName(e.target.value)}
+                    onChange={e => handleAttendantChange(e.target.value)}
                     disabled={sending}
                   >
                     <option value="">Sem identificação</option>

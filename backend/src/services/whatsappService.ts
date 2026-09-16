@@ -124,7 +124,7 @@ export async function sendWhatsAppMessage(
     mediaUrl,
     mediaMimeType,
     mediaFileName,
-    selectedName || user?.username,
+    selectedName || undefined,
     quotedMessageId,
     quotedContent,
   );
@@ -156,7 +156,7 @@ export async function broadcastWhatsAppMessages(
         data.mediaUrl,
         data.mediaMimeType,
         data.mediaFileName,
-        user.username,
+        undefined,
       );
       results.push({ to, ok: true });
     } catch (err: any) {
