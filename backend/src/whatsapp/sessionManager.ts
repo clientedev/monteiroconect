@@ -2123,6 +2123,8 @@ class WhatsAppSessionManager extends EventEmitter {
   }
 
   async destroy(): Promise<void> {
+
+
     for (const accountId of this.reconnectTimers.keys()) this.cancelReconnect(accountId);
     for (const [id] of this.sessions) {
       try {

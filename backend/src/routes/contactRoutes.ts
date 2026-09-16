@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { listContacts, updateContact } from '../services/contactService.js';
-import { lookupContactInCrm, batchLookupContactsInCrm } from '../services/crmService.js';
+import { lookupContactInCrm, batchLookupContactsInCrm, createContactInCrm } from '../services/crmService.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { sessionManager } from '../whatsapp/sessionManager.js';
 import { prisma } from '../database/client.js';
 import { z } from 'zod';
 
 const router = Router();
+
 
 
 // Foto de perfil do contato, sempre fresca direto do WhatsApp.
@@ -46,6 +47,26 @@ router.get('/', async (req, res, next) => {
       page: parseInt(req.query.page as string) || 1,
       limit: parseInt(req.query.limit as string) || 50,
     });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/crm-create', async (req, res, next) => {
+  try {
+    const body = z.object({
+      name: z.string().trim().min(2, 'Nome é obrigatório'),
+      phone: z.string().trim().min(8, 'Telefone é obrigatório'),
+      email: z.string().trim().optional(),
+      document: z.string().trim().optional(),
+      type: z.string().trim().optional(),
+    }).parse(req.body);
+
+    const result = await createContactInCrm(body);
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error || 'Falha ao cadastrar contato no CRM' });
+    }
     res.json(result);
   } catch (err) {
     next(err);

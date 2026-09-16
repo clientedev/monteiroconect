@@ -181,6 +181,70 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
   }
 }
 
+export interface CreateCrmContactInput {
+  name: string;
+  phone: string;
+  email?: string;
+  document?: string;
+  type?: string;
+}
+
+/**
+ * Cadastra um novo contato no CRM da Monteiro Seguros.
+ * POST {CRM_BASE_URL}/api/v1/external/contacts
+ * Header: X-API-Key: {{CRM_API_KEY}}
+ */
+export async function createContactInCrm(input: CreateCrmContactInput): Promise<{ ok: boolean; data?: any; error?: string }> {
+  const cleanPhone = normalizePhoneForCrm(input.phone);
+  if (!cleanPhone) {
+    return { ok: false, error: 'Telefone inválido para cadastro no CRM' };
+  }
+
+  const crmUrl = `${env.crmBaseUrl}/api/v1/external/contacts`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    logger.info(`Cadastrando novo contato no CRM Monteiro Seguros: phone=${cleanPhone}, name=${input.name}`);
+
+    const res = await fetch(crmUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-API-Key': env.crmApiKey,
+      },
+      body: JSON.stringify({
+        name: input.name,
+        phone: cleanPhone,
+        email: input.email || undefined,
+        document: input.document || undefined,
+        type: input.type || 'PF',
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      logger.warn(`API CRM cadastro respondeu status ${res.status}: ${errText.slice(0, 200)}`);
+      return { ok: false, error: `CRM respondeu erro (HTTP ${res.status}): ${errText.slice(0, 150) || 'Falha ao cadastrar'}` };
+    }
+
+    const data = (await res.json()) as any;
+    return { ok: true, data };
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      return { ok: false, error: 'Timeout de 10s ao cadastrar no CRM' };
+    }
+    logger.error(`Erro ao cadastrar contato no CRM (${cleanPhone}):`, err?.message || err);
+    return { ok: false, error: err?.message || 'Falha de conexão com o CRM' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+
 /**
  * Consulta a API do CRM para múltiplos telefones em lote.
  */

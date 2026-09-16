@@ -1,5 +1,6 @@
 import { prisma } from '../database/client.js';
 import { SessionUser } from './accessService.js';
+import { sessionManager } from '../whatsapp/sessionManager.js';
 
 function startOfSaoPauloDay(now = new Date()): Date {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -17,8 +18,6 @@ function startOfSaoPauloDay(now = new Date()): Date {
 export async function getDashboardStats(user?: SessionUser) {
   const today = startOfSaoPauloDay();
   const [
-    connectedCount,
-    disconnectedCount,
     totalConversations,
     unreadMessages,
     totalMessages,
@@ -26,11 +25,9 @@ export async function getDashboardStats(user?: SessionUser) {
     recentMessages,
     recentConversations,
     unreadConversations,
-    messagesPerAccount,
+    rawAccounts,
     assignedConversations,
   ] = await Promise.all([
-    prisma.whatsAppAccount.count({ where: { status: 'CONNECTED' } }),
-    prisma.whatsAppAccount.count({ where: { status: { not: 'CONNECTED' } } }),
     prisma.conversation.count({ where: { isOpen: true } }),
     prisma.conversation.aggregate({ _sum: { unreadCount: true }, where: { unreadCount: { gt: 0 } } }),
     prisma.message.count(),
@@ -86,8 +83,31 @@ export async function getDashboardStats(user?: SessionUser) {
       : Promise.resolve([]),
   ]);
 
+  // Consulta o status em tempo real do WhatsAppSessionManager
+  const liveSessions = sessionManager.getAllSessions();
+  const sessionMap = new Map(liveSessions.map(s => [s.id, s]));
+
+  let connectedCount = 0;
+  let disconnectedCount = 0;
+
+  const messagesPerAccount = rawAccounts.map(acc => {
+    const live = sessionMap.get(acc.id);
+    const liveStatus = live?.status || acc.status;
+    if (liveStatus === 'CONNECTED') {
+      connectedCount++;
+    } else {
+      disconnectedCount++;
+    }
+    return {
+      id: acc.id,
+      name: acc.name,
+      status: liveStatus,
+      _count: { conversations: acc._count.conversations },
+    };
+  });
+
   const isVisibleConversation = (conversation: any) =>
-    conversation.contact.phone !== conversation.whatsapp?.phone &&
+    conversation.contact?.phone !== conversation.whatsapp?.phone &&
     !conversation.lastMessage?.includes('protocolMessage');
   const visibleUnreadConversations = unreadConversations.filter(isVisibleConversation);
 
@@ -106,3 +126,4 @@ export async function getDashboardStats(user?: SessionUser) {
     assignedCount: assignedConversations.length,
   };
 }
+

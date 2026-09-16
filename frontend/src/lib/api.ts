@@ -182,7 +182,10 @@ export const contactApi = {
     api.get<any>(`/contacts/${id}/crm`),
   crmBatchLookup: (phones: string[]) =>
     api.post<{ results: Record<string, any> }>('/contacts/crm-batch-lookup', { phones }),
+  crmCreate: (data: { name: string; phone: string; email?: string; document?: string; type?: string }) =>
+    api.post<{ ok: boolean; data?: any; error?: string }>('/contacts/crm-create', data),
 };
+
 
 
 

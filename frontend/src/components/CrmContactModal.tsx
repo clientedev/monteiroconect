@@ -15,7 +15,7 @@ import {
   Loader2,
   CheckCircle2,
   Phone,
-  Briefcase,
+  UserPlus,
 } from 'lucide-react';
 
 interface CrmContactModalProps {
@@ -38,26 +38,85 @@ export default function CrmContactModal({
   const [crmData, setCrmData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!contact) return;
+  // Estados do formulário de criação de contato no CRM
+  const [formName, setFormName] = useState('');
+  const [formPhone, setFormPhone] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formDocument, setFormDocument] = useState('');
+  const [formType, setFormType] = useState('PF');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
+
+  const fetchCrmData = (phone: string, id: string) => {
     setLoading(true);
     setError(null);
-    setCrmData(null);
 
     contactApi
-      .crmLookup(contact.phone)
+      .crmLookup(phone)
       .then((data) => {
         setCrmData(data);
       })
       .catch((err) => {
-        // Tenta por ID caso ocorra algum imprevisto no parâmetro de busca
         contactApi
-          .crmLookupById(contact.id)
+          .crmLookupById(id)
           .then((data) => setCrmData(data))
           .catch(() => setError(err?.message || 'Falha ao consultar CRM'));
       })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (!contact) return;
+    setCrmData(null);
+    setFormName(contact.name || '');
+    setFormPhone(contact.phone || '');
+    setFormEmail('');
+    setFormDocument('');
+    setFormType('PF');
+    setFormError(null);
+    setFormSuccess(null);
+
+    fetchCrmData(contact.phone, contact.id);
   }, [contact]);
+
+  const handleCreateCrmContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formName.trim() || !formPhone.trim()) {
+      setFormError('Por favor, informe o nome e telefone do contato.');
+      return;
+    }
+
+    setSubmitting(true);
+    setFormError(null);
+    setFormSuccess(null);
+
+    try {
+      const res = await contactApi.crmCreate({
+        name: formName.trim(),
+        phone: formPhone.trim(),
+        email: formEmail.trim() || undefined,
+        document: formDocument.trim() || undefined,
+        type: formType,
+      });
+
+      if (res.ok) {
+        setFormSuccess('Contato cadastrado com sucesso no CRM!');
+        // Atualiza a consulta para buscar os dados recém-cadastrados
+        setTimeout(() => {
+          if (contact) {
+            fetchCrmData(contact.phone, contact.id);
+          }
+        }, 1000);
+      } else {
+        setFormError(res.error || 'Não foi possível cadastrar o contato no CRM.');
+      }
+    } catch (err: any) {
+      setFormError(err?.message || 'Falha ao conectar com o servidor do CRM.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (!contact) return null;
 
@@ -151,7 +210,6 @@ export default function CrmContactModal({
                   </p>
                 )}
               </div>
-
 
               {/* 👤 Dados Cadastrais */}
               <div className="space-y-3">
@@ -294,22 +352,121 @@ export default function CrmContactModal({
               </div>
             </>
           ) : (
-            /* Contact Not Found in CRM */
-            <div className="py-8 px-4 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
-                <UserX className="w-8 h-8" />
+            /* Contact Not Found in CRM -> Render Form to Add Contact */
+            <div className="py-4 space-y-5">
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+                <UserX className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-bold text-amber-900">Contato não encontrado no CRM</h4>
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    O número <strong className="text-amber-950">{crmData?.query?.phone || contact.phone}</strong> ainda não consta na base do CRM da Monteiro Seguros.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="text-base font-bold text-monte-azul">Contato não encontrado no CRM</h4>
-                <p className="text-sm text-monte-sereno max-w-md mx-auto mt-2">
-                  O número <strong className="text-monte-azul">{crmData?.query?.phone || contact.phone}</strong> ainda não consta na base do CRM da Monteiro Seguros.
-                </p>
-              </div>
-              <div className="p-4 rounded-2xl bg-monte-areiaSecao/50 border border-monte-sereno/10 text-xs text-monte-sereno max-w-md mx-auto">
-                <p className="font-medium text-monte-azul">💡 Sugestão de atendimento:</p>
-                <p className="mt-1">
-                  Pergunte se o contato gostaria de realizar uma nova cotação de seguros ou planos de saúde.
-                </p>
+
+              <div className="bg-monte-areiaSecao/40 border border-monte-sereno/15 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
+                  <UserPlus className="w-5 h-5 text-monte-verde" />
+                  <h4 className="font-bold text-sm text-monte-azul">Cadastrar Contato no CRM Monteiro Seguros</h4>
+                </div>
+
+                {formError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {formSuccess && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>{formSuccess}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleCreateCrmContact} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-monte-sereno font-semibold mb-1">
+                      Nome Completo <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      className="input-rect text-xs w-full"
+                      placeholder="Ex: João da Silva"
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Telefone / WhatsApp</label>
+                      <input
+                        type="text"
+                        disabled
+                        className="input-rect text-xs w-full bg-monte-sereno/10 cursor-not-allowed"
+                        value={formPhone}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Tipo de Pessoa</label>
+                      <select
+                        className="input-rect text-xs w-full"
+                        value={formType}
+                        onChange={(e) => setFormType(e.target.value)}
+                      >
+                        <option value="PF">Pessoa Física (PF)</option>
+                        <option value="PJ">Pessoa Jurídica (PJ)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">E-mail (opcional)</label>
+                      <input
+                        type="email"
+                        className="input-rect text-xs w-full"
+                        placeholder="cliente@email.com"
+                        value={formEmail}
+                        onChange={(e) => setFormEmail(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">CPF / CNPJ (opcional)</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="000.000.000-00"
+                        value={formDocument}
+                        onChange={(e) => setFormDocument(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={submitting || !formName.trim()}
+                      className="w-full py-2.5 px-4 bg-gradient-to-r from-monte-verde to-monte-azul text-white font-bold rounded-xl shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Cadastrando no CRM...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-4 h-4" />
+                          <span>Salvar Cadastro no CRM</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
