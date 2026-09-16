@@ -8,7 +8,7 @@ import {
   MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon,
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
-  Maximize2, Minimize2, ExternalLink, Reply, Forward, Bell, BellOff, ArrowLeft,
+  Maximize2, Minimize2, ExternalLink, Reply, Share2, Bell, BellOff, ArrowLeft,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -1464,7 +1464,7 @@ export default function ConversationsPage() {
                         className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
                         title="Encaminhar esta mensagem"
                       >
-                        <Forward className="w-4 h-4" />
+                        <Share2 className="w-4 h-4" />
                       </button>
                     </div>
                   )}
@@ -1587,7 +1587,7 @@ export default function ConversationsPage() {
                         className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
                         title="Encaminhar esta mensagem"
                       >
-                        <Forward className="w-4 h-4" />
+                        <Share2 className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
@@ -1936,7 +1936,7 @@ export default function ConversationsPage() {
             {/* Header do Modal */}
             <div className="px-5 py-4 bg-monte-areiaSecao border-b border-monte-sereno/15 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Forward className="w-5 h-5 text-monte-verde" />
+                <Share2 className="w-5 h-5 text-monte-verde" />
                 <h3 className="font-bold font-display text-monte-azul text-base">Encaminhar mensagem</h3>
               </div>
               <button
@@ -2050,7 +2050,7 @@ export default function ConversationsPage() {
                   {forwardingBusy ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   ) : (
-                    <Forward className="w-3.5 h-3.5" />
+                    <Share2 className="w-3.5 h-3.5" />
                   )}
                   <span>Encaminhar</span>
                 </button>
