@@ -277,7 +277,98 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
   const timeout = setTimeout(() => controller.abort(), 10_000);
 
   try {
-    logger.info(`Cadastrando novo contato no CRM Monteiro Seguros: phone=${cleanPhone}, name=${input.name}`);
+    logger.info(`Cadastrando/Atualizando contato no CRM Monteiro Seguros: phone=${cleanPhone}, name=${input.name}`);
+
+    const payload = {
+      name: input.name,
+      nome: input.name,
+      fullName: input.name,
+      phone: cleanPhone,
+      telefone: cleanPhone,
+      whatsapp: cleanPhone,
+      type: input.type || 'PF',
+      tipo: input.type || 'PF',
+      email: input.email || undefined,
+      document: input.document || undefined,
+      cpf: input.type === 'PJ' ? undefined : (input.document || undefined),
+      cnpj: input.type === 'PJ' ? (input.document || undefined) : undefined,
+      cpfCnpj: input.document || undefined,
+      cpf_cnpj: input.document || undefined,
+      status: input.status || 'Ativo',
+      anniversaryDate: input.anniversaryDate || undefined,
+      birthDate: input.anniversaryDate || undefined,
+      dataNascimento: input.anniversaryDate || undefined,
+      secondaryPhone: input.secondaryPhone ? normalizePhoneForCrm(input.secondaryPhone) : undefined,
+      telefoneSecundario: input.secondaryPhone ? normalizePhoneForCrm(input.secondaryPhone) : undefined,
+      assignedToName: input.assignedToName || undefined,
+      consultor: input.assignedToName || undefined,
+      responsavel: input.assignedToName || undefined,
+
+      // Produto / Ramo no cadastro base do contato
+      product: input.product || undefined,
+      products: input.product ? [input.product] : undefined,
+      produto: input.product || undefined,
+      produtos: input.product ? [input.product] : undefined,
+      ramo: input.product || undefined,
+      ramoSeguro: input.product || undefined,
+      insurer: input.insurer || undefined,
+      seguradora: input.insurer || undefined,
+
+      // Endereço
+      zipCode: input.zipCode || undefined,
+      cep: input.zipCode || undefined,
+      address: input.address || undefined,
+      rua: input.address || undefined,
+      logradouro: input.address || undefined,
+      number: input.number || undefined,
+      numero: input.number || undefined,
+      complement: input.complement || undefined,
+      complemento: input.complement || undefined,
+      neighborhood: input.neighborhood || undefined,
+      bairro: input.neighborhood || undefined,
+      city: input.city || undefined,
+      cidade: input.city || undefined,
+      state: input.state || undefined,
+      uf: input.state || undefined,
+      estado: input.state || undefined,
+
+      // Apólice / Seguro inicial
+      insurance: input.product ? {
+        product: input.product,
+        produto: input.product,
+        ramo: input.product,
+        insurer: input.insurer || undefined,
+        seguradora: input.insurer || undefined,
+        policyNumber: input.policyNumber || undefined,
+        policy: input.policyNumber || undefined,
+        apolice: input.policyNumber || undefined,
+        numeroApolice: input.policyNumber || undefined,
+        premiumValue: input.premiumValue || undefined,
+        premio: input.premiumValue || undefined,
+        valorPremio: input.premiumValue || undefined,
+        valor: input.premiumValue || undefined,
+        expirationDate: input.expirationDate || undefined,
+        vencimento: input.expirationDate || undefined,
+        dataVencimento: input.expirationDate || undefined,
+      } : undefined,
+
+      // Negócio no Funil
+      pipeline: input.dealProduct ? {
+        product: input.dealProduct,
+        produto: input.dealProduct,
+        title: input.dealProduct,
+        titulo: input.dealProduct,
+        value: input.dealValue || undefined,
+        valor: input.dealValue || undefined,
+        dealValue: input.dealValue || undefined,
+        status: input.dealStatus || 'Cotação',
+        etapa: input.dealStatus || 'Cotação',
+        stage: input.dealStatus || 'Cotação',
+      } : undefined,
+
+      notes: input.notes || undefined,
+      observacoes: input.notes || undefined,
+    };
 
     const res = await fetch(crmUrl, {
       method: 'POST',
@@ -286,50 +377,7 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
         'Accept': 'application/json',
         'X-API-Key': env.crmApiKey,
       },
-      body: JSON.stringify({
-        name: input.name,
-        phone: cleanPhone,
-        type: input.type || 'PF',
-        email: input.email || undefined,
-        document: input.document || undefined,
-        status: input.status || 'Ativo',
-        anniversaryDate: input.anniversaryDate || undefined,
-        secondaryPhone: input.secondaryPhone ? normalizePhoneForCrm(input.secondaryPhone) : undefined,
-        assignedToName: input.assignedToName || undefined,
-
-        // Produto / Ramo no cadastro base do contato
-        product: input.product || undefined,
-        products: input.product ? [input.product] : undefined,
-        produto: input.product || undefined,
-        ramo: input.product || undefined,
-
-        // Endereço
-        zipCode: input.zipCode || undefined,
-        address: input.address || undefined,
-        number: input.number || undefined,
-        complement: input.complement || undefined,
-        neighborhood: input.neighborhood || undefined,
-        city: input.city || undefined,
-        state: input.state || undefined,
-
-        // Apólice / Seguro inicial
-        insurance: input.product ? {
-          product: input.product,
-          insurer: input.insurer || undefined,
-          policyNumber: input.policyNumber || undefined,
-          premiumValue: input.premiumValue || undefined,
-          expirationDate: input.expirationDate || undefined,
-        } : undefined,
-
-        // Negócio no Funil
-        pipeline: input.dealProduct ? {
-          product: input.dealProduct,
-          value: input.dealValue || undefined,
-          status: input.dealStatus || 'Cotação',
-        } : undefined,
-
-        notes: input.notes || undefined,
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
 

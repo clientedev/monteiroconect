@@ -121,6 +121,60 @@ export default function CrmContactModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
+  const populateFormFromCrmData = (data: any, currentContact: any) => {
+    if (!data) return;
+    const raw = data?.raw || {};
+    const crmC = data?.contact || {};
+    const firstPolicy = Array.isArray(data?.insurance?.policies) && data.insurance.policies.length > 0 ? data.insurance.policies[0] : {};
+    const firstDeal = Array.isArray(data?.pipeline?.deals) && data.pipeline.deals.length > 0 ? data.pipeline.deals[0] : {};
+
+    setFormName(crmC.name || raw.name || raw.nome || currentContact?.name || '');
+    setFormPhone(crmC.phone || raw.phone || raw.telefone || currentContact?.phone || '');
+    setFormSecondaryPhone(
+      crmC.secondaryPhone || crmC.telefoneSecundario || raw.secondaryPhone || raw.telefoneSecundario || raw.phone2 || ''
+    );
+    setFormType(crmC.type || crmC.tipo || raw.type || raw.tipo || 'PF');
+    setFormDocument(
+      crmC.document || crmC.cpf || crmC.cnpj || crmC.cpfCnpj || raw.document || raw.cpf || raw.cnpj || raw.cpfCnpj || ''
+    );
+    setFormEmail(crmC.email || raw.email || '');
+    setFormAnniversaryDate(
+      crmC.anniversaryDate || crmC.birthDate || crmC.dataNascimento || raw.anniversaryDate || raw.birthDate || raw.dataNascimento || ''
+    );
+    setFormStatus(crmC.status || raw.status || 'Ativo');
+    setFormAssignedToName(
+      crmC.assignedTo?.name || crmC.assignedToName || crmC.consultor || raw.assignedToName || raw.consultor || ''
+    );
+
+    // Endereço
+    const addr = raw.address && typeof raw.address === 'object' ? raw.address : {};
+    setFormZipCode(crmC.zipCode || crmC.cep || raw.zipCode || raw.cep || addr.zipCode || addr.cep || '');
+    setFormAddress(crmC.address || crmC.rua || crmC.logradouro || raw.address || raw.rua || raw.logradouro || addr.street || addr.logradouro || '');
+    setFormNumber(crmC.number || crmC.numero || raw.number || raw.numero || addr.number || addr.numero || '');
+    setFormComplement(crmC.complement || crmC.complemento || raw.complement || raw.complemento || addr.complement || addr.complemento || '');
+    setFormNeighborhood(crmC.neighborhood || crmC.bairro || raw.neighborhood || raw.bairro || addr.neighborhood || addr.bairro || '');
+    setFormCity(crmC.city || crmC.cidade || raw.city || raw.cidade || addr.city || addr.cidade || '');
+    setFormState(crmC.state || crmC.uf || crmC.estado || raw.state || raw.uf || addr.state || addr.uf || '');
+
+    // Apólice / Seguro
+    setFormProduct(
+      (data?.products && data.products.length > 0 ? data.products[0] : null) ||
+      firstPolicy.product || firstPolicy.produto || crmC.product || raw.product || ''
+    );
+    setFormInsurer(firstPolicy.insurer || firstPolicy.seguradora || raw.insurer || raw.seguradora || '');
+    setFormPolicyNumber(firstPolicy.policyNumber || firstPolicy.apolice || firstPolicy.numeroApolice || raw.policyNumber || raw.apolice || '');
+    setFormPremiumValue(firstPolicy.premiumValue || firstPolicy.premio || firstPolicy.valor || raw.premiumValue || raw.premio || '');
+    setFormExpirationDate(firstPolicy.expirationDate || firstPolicy.vencimento || raw.expirationDate || raw.vencimento || '');
+
+    // Funil
+    setFormDealProduct(firstDeal.product || firstDeal.produto || firstDeal.title || firstDeal.titulo || raw.dealProduct || '');
+    setFormDealValue(firstDeal.valueFormatted || (firstDeal.value ? String(firstDeal.value) : '') || raw.dealValue || raw.valorNegocio || '');
+    setFormDealStatus(firstDeal.status || firstDeal.etapa || raw.dealStatus || 'Cotação');
+
+    // Observações
+    setFormNotes(crmC.notes || crmC.observacoes || raw.notes || raw.observacoes || '');
+  };
+
   const fetchCrmData = (phone: string, id: string) => {
     setLoading(true);
     setError(null);
@@ -129,6 +183,7 @@ export default function CrmContactModal({
       .crmLookup(phone)
       .then((data) => {
         setCrmData(data);
+        populateFormFromCrmData(data, contact);
         if (data && data.found === true) {
           setActiveTab('details');
         } else {
@@ -140,6 +195,7 @@ export default function CrmContactModal({
           .crmLookupById(id)
           .then((data) => {
             setCrmData(data);
+            populateFormFromCrmData(data, contact);
             if (data && data.found === true) {
               setActiveTab('details');
             } else {
@@ -316,8 +372,8 @@ export default function CrmContactModal({
                 : 'border-transparent text-monte-sereno hover:text-monte-azul'
             }`}
           >
-            <UserPlus className="w-4 h-4" />
-            <span>➕ Cadastrar Completo no CRM</span>
+            <FileEdit className="w-4 h-4" />
+            <span>{found ? '✏️ Editar / Atualizar Cadastro no CRM' : '➕ Cadastrar Completo no CRM'}</span>
           </button>
         </div>
 
@@ -342,11 +398,20 @@ export default function CrmContactModal({
                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                     <span className="text-sm font-semibold">Cliente Cadastrado no CRM</span>
                   </div>
-                  {crmContact?.status && (
-                    <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-medium">
-                      {crmContact.status}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {crmContact?.status && (
+                      <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-medium">
+                        {crmContact.status}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('create')}
+                      className="px-3 py-1.5 rounded-xl bg-monte-verde text-white hover:bg-emerald-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <FileEdit className="w-3.5 h-3.5" /> Editar Cadastro
+                    </button>
+                  </div>
                 </div>
 
                 {/* 🏷️ Produtos no Cadastro (Etiquetas CRM) */}

@@ -84,7 +84,24 @@ router.post('/crm-create', async (req, res, next) => {
     }).parse(req.body);
 
     const result = await createContactInCrm(body);
-    if (!result.ok) {
+    if (result.ok) {
+      const cleanPhone = body.phone.replace(/\D/g, '');
+      if (cleanPhone) {
+        await prisma.contact.updateMany({
+          where: {
+            OR: [
+              { phone: body.phone },
+              { phone: cleanPhone },
+              { phone: { contains: cleanPhone } },
+            ],
+          },
+          data: {
+            name: body.name,
+            notes: body.notes || undefined,
+          },
+        }).catch(() => {});
+      }
+    } else {
       return res.status(400).json({ error: result.error || 'Falha ao cadastrar contato no CRM' });
     }
     res.json(result);
