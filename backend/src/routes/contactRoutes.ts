@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { listContacts, updateContact } from '../services/contactService.js';
-import { lookupContactInCrm } from '../services/crmService.js';
+import { lookupContactInCrm, batchLookupContactsInCrm } from '../services/crmService.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { sessionManager } from '../whatsapp/sessionManager.js';
 import { prisma } from '../database/client.js';
 import { z } from 'zod';
 
 const router = Router();
+
 
 // Foto de perfil do contato, sempre fresca direto do WhatsApp.
 // ROTA PÚBLICA: tags <img> não enviam header de autorização — exigir JWT
@@ -46,6 +47,19 @@ router.get('/', async (req, res, next) => {
       limit: parseInt(req.query.limit as string) || 50,
     });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/crm-batch-lookup', async (req, res, next) => {
+  try {
+    const phones = req.body?.phones as string[];
+    if (!Array.isArray(phones)) {
+      return res.status(400).json({ error: 'Parâmetro phones deve ser um array' });
+    }
+    const results = await batchLookupContactsInCrm(phones);
+    res.json({ results });
   } catch (err) {
     next(err);
   }

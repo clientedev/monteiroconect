@@ -7,8 +7,10 @@ import { useNotification } from '../context/NotificationContext';
 import {
   MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon,
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
-  X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon
+  X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck
 } from 'lucide-react';
+import CrmContactModal from '../components/CrmContactModal';
+
 
 interface ConvItem {
   id: string;
@@ -145,6 +147,8 @@ export default function ConversationsPage() {
   const [msgPage, setMsgPage] = useState(1);
   const [msgTotal, setMsgTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [selectedContactForCrm, setSelectedContactForCrm] = useState<any | null>(null);
+
 
   // Sincroniza estado de chat aberto no mobile para o Layout
   useEffect(() => {
@@ -1109,8 +1113,22 @@ export default function ConversationsPage() {
                 </div>
               </div>
 
-              {/* Botão de Opções do Contato (Drawer / Sheet) */}
-              <div className="flex items-center gap-1">
+              {/* Botão de Opções do Contato e CRM */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedContactForCrm({
+                    id: selectedConv.contactId,
+                    name: selectedConv.contactName,
+                    phone: selectedConv.contactPhone,
+                    conversationId: selectedConv.id,
+                  })}
+                  className="px-3 py-1.5 bg-monte-verde/10 hover:bg-monte-verde text-monte-verde hover:text-white rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs"
+                  title="Ver Cadastro e Produtos no CRM"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span className="hidden sm:inline">Ver Cadastro CRM</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowContactDetails(v => !v)}
@@ -1122,6 +1140,7 @@ export default function ConversationsPage() {
                 </button>
               </div>
             </div>
+
 
             {/* Linha secundária de opções rápidas no Desktop */}
             <div className="hidden lg:flex items-center justify-between px-4 py-2 bg-white/60 backdrop-blur-xs border-b border-monte-sereno/10 text-xs gap-3">
@@ -1413,7 +1432,35 @@ export default function ConversationsPage() {
               )}
             </div>
 
+            {/* Cadastro & Produtos no CRM */}
+            <div className="py-3 border-b border-monte-sereno/10">
+              <p className="text-xs font-bold text-monte-sereno uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-monte-verde" /> Cadastro & Produtos no CRM
+              </p>
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-monte-verde/10 via-monte-azul/5 to-monte-verde/10 border border-monte-verde/20 space-y-2">
+                <p className="text-xs text-monte-azul font-medium">
+                  Consulte os produtos, apólices de seguro ativas e negócios no funil do cliente no CRM da Monteiro Seguros.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowContactDetails(false);
+                    setSelectedContactForCrm({
+                      id: selectedConv.contactId,
+                      name: selectedConv.contactName,
+                      phone: selectedConv.contactPhone,
+                      conversationId: selectedConv.id,
+                    });
+                  }}
+                  className="w-full py-2 bg-gradient-to-r from-monte-verde to-monte-azul text-white text-xs font-bold rounded-xl shadow-xs hover:opacity-95 transition-opacity flex items-center justify-center gap-2"
+                >
+                  <ShieldCheck className="w-4 h-4" /> Ver Cadastro e Produtos Completo
+                </button>
+              </div>
+            </div>
+
             {/* Controle da IA */}
+
             <div className="py-3 border-b border-monte-sereno/10">
               <p className="text-xs font-bold text-monte-sereno uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Bot className="w-3.5 h-3.5" /> Inteligência Artificial
@@ -1523,6 +1570,14 @@ export default function ConversationsPage() {
           </div>
         </div>
       )}
+      {/* Modal de Detalhes do CRM Monteiro Seguros */}
+      {selectedContactForCrm && (
+        <CrmContactModal
+          contact={selectedContactForCrm}
+          onClose={() => setSelectedContactForCrm(null)}
+        />
+      )}
     </div>
   );
 }
+

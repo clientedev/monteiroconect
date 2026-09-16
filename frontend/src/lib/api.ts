@@ -180,7 +180,10 @@ export const contactApi = {
     api.get<any>(`/contacts/crm-lookup?phone=${encodeURIComponent(phone)}`),
   crmLookupById: (id: string) =>
     api.get<any>(`/contacts/${id}/crm`),
+  crmBatchLookup: (phones: string[]) =>
+    api.post<{ results: Record<string, any> }>('/contacts/crm-batch-lookup', { phones }),
 };
+
 
 
 // Tags

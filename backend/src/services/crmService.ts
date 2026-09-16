@@ -132,3 +132,25 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
     clearTimeout(timeout);
   }
 }
+
+/**
+ * Consulta a API do CRM para múltiplos telefones em lote.
+ */
+export async function batchLookupContactsInCrm(phones: string[]): Promise<Record<string, CrmLookupResponse>> {
+  const uniquePhones = Array.from(new Set(phones.filter(Boolean)));
+  const results: Record<string, CrmLookupResponse> = {};
+
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < uniquePhones.length; i += BATCH_SIZE) {
+    const chunk = uniquePhones.slice(i, i + BATCH_SIZE);
+    const chunkResults = await Promise.all(
+      chunk.map(phone => lookupContactInCrm(phone))
+    );
+    chunk.forEach((phone, idx) => {
+      results[phone] = chunkResults[idx];
+    });
+  }
+
+  return results;
+}
+
