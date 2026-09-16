@@ -15,6 +15,13 @@ export interface MobileNotificationPayload {
   accountId?: string;
 }
 
+export interface NotificationSchedule {
+  enabled: boolean;
+  startTime: string;   // e.g. "08:00"
+  endTime: string;     // e.g. "18:00"
+  daysOfWeek: number[]; // [1, 2, 3, 4, 5] (Seg a Sex por padrão)
+}
+
 interface NotificationSettings {
   muted: boolean;
   soundPreset: NotificationTonePreset;
@@ -22,6 +29,7 @@ interface NotificationSettings {
   iosDisplayMode: IosDisplayMode;
   vibration: boolean;
   browserPushEnabled: boolean;
+  schedule: NotificationSchedule;
 }
 
 interface NotificationContextType extends NotificationSettings {
@@ -31,6 +39,10 @@ interface NotificationContextType extends NotificationSettings {
   setIosDisplayMode: (mode: IosDisplayMode) => void;
   setVibration: (vibration: boolean) => void;
   setBrowserPushEnabled: (enabled: boolean) => void;
+  setScheduleEnabled: (enabled: boolean) => void;
+  setScheduleTimes: (startTime: string, endTime: string) => void;
+  setScheduleDays: (daysOfWeek: number[]) => void;
+  isCurrentlyWithinSchedule: boolean;
   requestBrowserPushPermission: () => Promise<boolean>;
   triggerNotification: (
     contactName: string,
@@ -45,11 +57,18 @@ interface NotificationContextType extends NotificationSettings {
   pushSupported: boolean;
   pushSubscribed: boolean;
   pushLoading: boolean;
-  subscribeToPush: () => Promise<boolean>;
+  subscribeToPush: (force?: boolean) => Promise<boolean>;
   sendTestPush: () => Promise<void>;
 }
 
 const STORAGE_KEY = 'mc_notification_settings_v1';
+
+export const defaultSchedule: NotificationSchedule = {
+  enabled: false,
+  startTime: '08:00',
+  endTime: '18:00',
+  daysOfWeek: [1, 2, 3, 4, 5],
+};
 
 const defaultSettings: NotificationSettings = {
   muted: false,
@@ -58,7 +77,28 @@ const defaultSettings: NotificationSettings = {
   iosDisplayMode: 'banner',
   vibration: true,
   browserPushEnabled: false,
+  schedule: defaultSchedule,
 };
+
+export function checkIsWithinSchedule(schedule?: NotificationSchedule): boolean {
+  if (!schedule || !schedule.enabled) return true;
+  const now = new Date();
+  const currentDay = now.getDay();
+  if (Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length > 0 && !schedule.daysOfWeek.includes(currentDay)) {
+    return false;
+  }
+  const [sH, sM] = (schedule.startTime || '08:00').split(':').map(Number);
+  const [eH, eM] = (schedule.endTime || '18:00').split(':').map(Number);
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const startMinutes = (sH || 0) * 60 + (sM || 0);
+  const endMinutes = (eH || 0) * 60 + (eM || 0);
+
+  if (startMinutes <= endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+  } else {
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  }
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -80,6 +120,10 @@ const NotificationContext = createContext<NotificationContextType>({
   setIosDisplayMode: () => {},
   setVibration: () => {},
   setBrowserPushEnabled: () => {},
+  setScheduleEnabled: () => {},
+  setScheduleTimes: () => {},
+  setScheduleDays: () => {},
+  isCurrentlyWithinSchedule: true,
   requestBrowserPushPermission: async () => false,
   triggerNotification: () => {},
   dismissBanner: () => {},
@@ -108,11 +152,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
 
-  // Persistir configurações no localStorage
+  // Persistir configurações no localStorage e sincronizar Service Worker
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch {}
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker?.controller) {
+      try {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'UPDATE_SCHEDULE',
+          schedule: settings.schedule,
+          muted: settings.muted,
+        });
+      } catch {}
+    }
   }, [settings]);
 
   // Checa suporte nativo a Web Push no navegador / iOS PWA
@@ -134,6 +187,29 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const setIosDisplayMode = (iosDisplayMode: IosDisplayMode) => updateSetting('iosDisplayMode', iosDisplayMode);
   const setVibration = (vibration: boolean) => updateSetting('vibration', vibration);
   const setBrowserPushEnabled = (browserPushEnabled: boolean) => updateSetting('browserPushEnabled', browserPushEnabled);
+
+  const setScheduleEnabled = (enabled: boolean) => {
+    setSettings(prev => ({
+      ...prev,
+      schedule: { ...(prev.schedule || defaultSchedule), enabled },
+    }));
+  };
+
+  const setScheduleTimes = (startTime: string, endTime: string) => {
+    setSettings(prev => ({
+      ...prev,
+      schedule: { ...(prev.schedule || defaultSchedule), startTime, endTime },
+    }));
+  };
+
+  const setScheduleDays = (daysOfWeek: number[]) => {
+    setSettings(prev => ({
+      ...prev,
+      schedule: { ...(prev.schedule || defaultSchedule), daysOfWeek },
+    }));
+  };
+
+  const isCurrentlyWithinSchedule = checkIsWithinSchedule(settings.schedule);
 
   // Inscreve no Web Push com as chaves VAPID do backend (funciona com app fechado)
   const subscribeToPush = useCallback(async (force = false): Promise<boolean> => {
@@ -278,7 +354,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       conversationId?: string,
       accountId?: string
     ) => {
-      if (settings.muted) return;
+      if (settings.muted || !checkIsWithinSchedule(settings.schedule)) return;
 
       // 1. Toca som suave
       playNotificationTone(settings.soundPreset, settings.volume);
@@ -320,7 +396,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setActiveMobileBanner(curr => (curr?.id === notifId ? null : curr));
       }, 5500);
     },
-    [settings.muted, settings.soundPreset, settings.volume, settings.vibration]
+    [settings.muted, settings.soundPreset, settings.volume, settings.vibration, settings.schedule]
   );
 
   const dismissBanner = useCallback(() => {
@@ -332,7 +408,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (!socket) return;
 
     const onNewMsg = (data: any) => {
-      if (!data || settings.muted) return;
+      if (!data || settings.muted || !checkIsWithinSchedule(settings.schedule)) return;
       const msg = data.message || data;
       const conv = data.conversation || {};
       const contact = data.contact || conv.contact || {};
@@ -351,7 +427,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       socket.off('message:new', onNewMsg);
     };
-  }, [socket, settings.muted, triggerNotification]);
+  }, [socket, settings.muted, settings.schedule, triggerNotification]);
 
   return (
     <NotificationContext.Provider
@@ -363,6 +439,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setIosDisplayMode,
         setVibration,
         setBrowserPushEnabled,
+        setScheduleEnabled,
+        setScheduleTimes,
+        setScheduleDays,
+        isCurrentlyWithinSchedule,
         requestBrowserPushPermission,
         triggerNotification,
         dismissBanner,

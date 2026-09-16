@@ -9,11 +9,42 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+let userSettings = {
+  muted: false,
+  schedule: { enabled: false, startTime: '08:00', endTime: '18:00', daysOfWeek: [1, 2, 3, 4, 5] },
+};
+
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+  if (event.data && event.data.type === 'UPDATE_SCHEDULE') {
+    userSettings = {
+      muted: !!event.data.muted,
+      schedule: event.data.schedule || userSettings.schedule,
+    };
+  }
 });
+
+function isTimeWithinSchedule(schedule) {
+  if (!schedule || !schedule.enabled) return true;
+  const now = new Date();
+  const day = now.getDay();
+  if (Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length > 0 && !schedule.daysOfWeek.includes(day)) {
+    return false;
+  }
+  const [sH, sM] = (schedule.startTime || '08:00').split(':').map(Number);
+  const [eH, eM] = (schedule.endTime || '18:00').split(':').map(Number);
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const start = (sH || 0) * 60 + (sM || 0);
+  const end = (eH || 0) * 60 + (eM || 0);
+
+  if (start <= end) {
+    return cur >= start && cur <= end;
+  } else {
+    return cur >= start || cur <= end;
+  }
+}
 
 // Intercepta requisições estáticas leves sem bloquear APIs/sockets
 self.addEventListener('fetch', (event) => {
@@ -32,6 +63,9 @@ self.addEventListener('fetch', (event) => {
 
 // Recebe notificações Web Push mesmo com app fechado ou dispositivo bloqueado
 self.addEventListener('push', (event) => {
+  if (userSettings.muted) return;
+  if (!isTimeWithinSchedule(userSettings.schedule)) return;
+
   let data = {};
   if (event.data) {
     try {

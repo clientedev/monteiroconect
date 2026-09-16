@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNotification, NotificationTonePreset, IosDisplayMode } from '../context/NotificationContext';
 import {
-  Bell, BellOff, Volume2, VolumeX, Smartphone, Play, Check, Vibrate, Sparkles, Layers, ListFilter
+  Bell, BellOff, Volume2, VolumeX, Smartphone, Play, Check, Vibrate, Sparkles, Layers, ListFilter, Clock, Calendar
 } from 'lucide-react';
 
 export default function MobileNotificationSettings() {
@@ -25,6 +25,11 @@ export default function MobileNotificationSettings() {
     pushLoading,
     subscribeToPush,
     sendTestPush,
+    schedule,
+    setScheduleEnabled,
+    setScheduleTimes,
+    setScheduleDays,
+    isCurrentlyWithinSchedule,
   } = useNotification();
 
   const [isPlayingTest, setIsPlayingTest] = useState(false);
@@ -238,6 +243,123 @@ export default function MobileNotificationSettings() {
                 className="w-5 h-5 rounded border-monte-sereno text-monte-verde focus:ring-monte-verde cursor-pointer"
               />
             </div>
+          </div>
+
+          {/* Section: Custom Notification Schedule */}
+          <div className="card-static p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-monte-sereno/15 pb-4">
+              <div>
+                <h4 className="text-base font-bold font-display text-monte-azul flex items-center gap-2">
+                  <Clock className="w-4.5 h-4.5 text-monte-verde" />
+                  Horário Programado de Notificações
+                </h4>
+                <p className="text-xs text-monte-sereno mt-0.5">
+                  Defina os horários e dias em que deseja receber alertas sonoros e push
+                </p>
+              </div>
+
+              {/* Schedule Switch */}
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={schedule?.enabled || false}
+                  onChange={(e) => setScheduleEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-14 h-8 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-7 after:w-7 after:transition-all peer-checked:bg-monte-verde" />
+              </label>
+            </div>
+
+            {schedule?.enabled && (
+              <div className="space-y-5 animate-fadeIn">
+                {/* Time inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-monte-azul mb-1.5 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-monte-sereno" /> Horário Inicial
+                    </label>
+                    <input
+                      type="time"
+                      value={schedule.startTime || '08:00'}
+                      onChange={(e) => setScheduleTimes(e.target.value, schedule.endTime || '18:00')}
+                      className="input-rect text-sm font-semibold py-2 px-3 w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-monte-azul mb-1.5 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-monte-sereno" /> Horário Final
+                    </label>
+                    <input
+                      type="time"
+                      value={schedule.endTime || '18:00'}
+                      onChange={(e) => setScheduleTimes(schedule.startTime || '08:00', e.target.value)}
+                      className="input-rect text-sm font-semibold py-2 px-3 w-full"
+                    />
+                  </div>
+                </div>
+
+                {/* Days of week selector */}
+                <div>
+                  <label className="block text-xs font-bold text-monte-azul mb-2 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-monte-sereno" /> Dias Ativos da Semana
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: 1, label: 'Seg' },
+                      { id: 2, label: 'Ter' },
+                      { id: 3, label: 'Qua' },
+                      { id: 4, label: 'Qui' },
+                      { id: 5, label: 'Sex' },
+                      { id: 6, label: 'Sáb' },
+                      { id: 0, label: 'Dom' },
+                    ].map((day) => {
+                      const isSelected = (schedule.daysOfWeek || []).includes(day.id);
+                      return (
+                        <button
+                          key={day.id}
+                          type="button"
+                          onClick={() => {
+                            const currentDays = schedule.daysOfWeek || [];
+                            const nextDays = isSelected
+                              ? currentDays.filter(d => d !== day.id)
+                              : [...currentDays, day.id];
+                            setScheduleDays(nextDays);
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                            isSelected
+                              ? 'bg-monte-verde text-white shadow-xs'
+                              : 'bg-monte-sereno/10 text-monte-sereno hover:bg-monte-sereno/20'
+                          }`}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Realtime Status Badge */}
+                <div className={`p-3.5 rounded-2xl border text-xs flex items-center gap-2.5 ${
+                  isCurrentlyWithinSchedule
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-amber-50 border-amber-200 text-amber-800'
+                }`}>
+                  <span className="text-base">{isCurrentlyWithinSchedule ? '🟢' : '🌙'}</span>
+                  <div>
+                    <p className="font-bold">
+                      {isCurrentlyWithinSchedule
+                        ? 'Notificações ATIVAS no momento'
+                        : 'Notificações PAUSADAS pelo horário programado'}
+                    </p>
+                    <p className="opacity-80 text-[11px] mt-0.5">
+                      {isCurrentlyWithinSchedule
+                        ? `Você está dentro do seu horário configurado (${schedule.startTime} às ${schedule.endTime}).`
+                        : `Alertas silenciados fora do seu horário estipulado (${schedule.startTime} às ${schedule.endTime}).`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Section 2: iPhone / Mobile Display Styles */}
