@@ -128,6 +128,31 @@ export default function CrmContactModal({
                 )}
               </div>
 
+              {/* 🏷️ Produtos no Cadastro (Etiquetas CRM) */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
+                  <Shield className="w-4 h-4 text-monte-verde" /> 🏷️ Produtos no Cadastro (CRM)
+                </h4>
+                {crmData?.products && crmData.products.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {crmData.products.map((prod: string, idx: number) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                        {prod}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-monte-sereno italic p-3 bg-monte-areiaSecao/30 rounded-xl">
+                    Nenhum produto cadastrado no CRM.
+                  </p>
+                )}
+              </div>
+
+
               {/* 👤 Dados Cadastrais */}
               <div className="space-y-3">
                 <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2 border-b border-monte-sereno/10 pb-2">

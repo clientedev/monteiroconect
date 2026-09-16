@@ -46,8 +46,52 @@ export interface CrmLookupResponse {
   contact?: CrmContactInfo;
   insurance?: CrmInsuranceInfo;
   pipeline?: CrmPipelineInfo;
+  products?: string[];
   raw?: any;
   error?: string;
+}
+
+/**
+ * Consolida todos os produtos do cliente (extraídos de apólices, funil ou cadastro).
+ */
+export function extractProductsFromCrm(data: any): string[] {
+  if (!data || typeof data !== 'object') return [];
+  const productsSet = new Set<string>();
+
+  const directList = Array.isArray(data.products)
+    ? data.products
+    : Array.isArray(data.contact?.products)
+    ? data.contact.products
+    : data.contact?.product
+    ? [data.contact.product]
+    : [];
+
+  for (const item of directList) {
+    if (typeof item === 'string' && item.trim()) {
+      productsSet.add(item.trim());
+    } else if (item && typeof item === 'object') {
+      const name = item.name || item.product || item.produto || item.title || item.nome;
+      if (name && typeof name === 'string' && name.trim()) productsSet.add(name.trim());
+    }
+  }
+
+  const policies = Array.isArray(data.insurance?.policies) ? data.insurance.policies : [];
+  for (const pol of policies) {
+    const pName = pol.product || pol.produto || pol.name || pol.insuranceType || pol.tipo;
+    if (pName && typeof pName === 'string' && pName.trim()) {
+      productsSet.add(pName.trim());
+    }
+  }
+
+  const deals = Array.isArray(data.pipeline?.deals) ? data.pipeline.deals : [];
+  for (const deal of deals) {
+    const pName = deal.product || deal.produto || deal.title || deal.name;
+    if (pName && typeof pName === 'string' && pName.trim()) {
+      productsSet.add(pName.trim());
+    }
+  }
+
+  return Array.from(productsSet);
 }
 
 /**
@@ -70,7 +114,7 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
   const cleanPhone = normalizePhoneForCrm(rawPhone);
 
   if (!cleanPhone) {
-    return { found: false, query: { phone: rawPhone || '' } };
+    return { found: false, query: { phone: rawPhone || '' }, products: [] };
   }
 
   const crmUrl = `${env.crmBaseUrl}/api/v1/external/contacts/lookup?phone=${encodeURIComponent(cleanPhone)}`;
@@ -96,6 +140,7 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
       return {
         found: false,
         query: { phone: cleanPhone },
+        products: [],
         error: `CRM respondeu status HTTP ${res.status}`,
       };
     }
@@ -103,6 +148,7 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
     const data = (await res.json()) as any;
 
     if (data && typeof data === 'object') {
+      const products = extractProductsFromCrm(data);
       return {
         found: Boolean(data.found),
         query: data.query || { phone: cleanPhone },
@@ -116,11 +162,13 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
           activeDealsCount: data.pipeline.activeDealsCount ?? data.pipeline.deals?.length ?? 0,
           deals: Array.isArray(data.pipeline.deals) ? data.pipeline.deals : [],
         } : undefined,
+        products,
         raw: data,
       };
     }
 
-    return { found: false, query: { phone: cleanPhone } };
+    return { found: false, query: { phone: cleanPhone }, products: [] };
+
   } catch (err: any) {
     if (err?.name === 'AbortError') {
       logger.error(`Timeout de 10s na consulta CRM (${cleanPhone})`);

@@ -55,9 +55,11 @@ export default function ContactsPage() {
         found: boolean;
         activePoliciesCount?: number;
         activeDealsCount?: number;
+        products?: string[];
       }
     >
   >({});
+
 
   const loadContacts = useCallback(async () => {
     if (!selectedAccountId) {
@@ -86,6 +88,7 @@ export default function ContactsPage() {
                   found: info.found === true,
                   activePoliciesCount: info.insurance?.activePoliciesCount || 0,
                   activeDealsCount: info.pipeline?.activeDealsCount || 0,
+                  products: info.products || [],
                 };
               });
             }
@@ -144,22 +147,29 @@ export default function ContactsPage() {
     });
   };
 
-  // Filtragem local dos contatos com base no filtro selecionado
+  // Filtragem local dos contatos com base no filtro selecionado e produtos
   const filteredContacts = useMemo(() => {
     return contacts.filter((c) => {
       const status = crmStatuses[c.phone];
       if (crmFilter === 'registered') {
-        return status?.found === true;
+        if (status?.found !== true) return false;
+      } else if (crmFilter === 'unregistered') {
+        if (status?.found !== false) return false;
+      } else if (crmFilter === 'with_deals') {
+        if ((status?.activeDealsCount || 0) <= 0) return false;
       }
-      if (crmFilter === 'unregistered') {
-        return status?.found === false;
+
+      if (search.trim()) {
+        const q = search.toLowerCase().trim();
+        const matchName = (c.name || '').toLowerCase().includes(q);
+        const matchPhone = (c.phone || '').toLowerCase().includes(q);
+        const matchProduct = (status?.products || []).some((p: string) => p.toLowerCase().includes(q));
+        return matchName || matchPhone || matchProduct;
       }
-      if (crmFilter === 'with_deals') {
-        return (status?.activeDealsCount || 0) > 0;
-      }
+
       return true;
     });
-  }, [contacts, crmStatuses, crmFilter]);
+  }, [contacts, crmStatuses, crmFilter, search]);
 
   // Estatísticas de contagem para as abas
   const counts = useMemo(() => {
@@ -214,7 +224,7 @@ export default function ContactsPage() {
           <input
             type="search"
             className="input-rect pl-10"
-            placeholder="Buscar pelo nome ou telefone..."
+            placeholder="Buscar pelo nome, telefone ou produto do CRM..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -336,6 +346,7 @@ export default function ContactsPage() {
               const isFound = status?.found === true;
               const isNotFound = status?.found === false;
               const dealsCount = status?.activeDealsCount || 0;
+              const products: string[] = status?.products || [];
 
               return (
                 <button
@@ -347,7 +358,7 @@ export default function ContactsPage() {
                   <ContactAvatar id={contact.id} name={contact.name} />
 
                   <span className="flex-1 min-w-0">
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-2 flex-wrap">
                       <span className="block text-sm font-semibold text-monte-azul truncate group-hover:text-monte-verde transition-colors">
                         {contact.name || 'Contato sem nome'}
                       </span>
@@ -372,6 +383,21 @@ export default function ContactsPage() {
                       )}
                     </span>
 
+                    {/* Etiquetas de Produtos do CRM */}
+                    {products.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {products.map((prod: string, pIdx: number) => (
+                          <span
+                            key={pIdx}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-300/80 shadow-2xs"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            {prod}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     <span className="flex items-center gap-2 text-xs text-monte-sereno mt-1">
                       <span>{contact.phone}</span>
                       <span>•</span>
@@ -393,6 +419,7 @@ export default function ContactsPage() {
           </div>
         )}
       </div>
+
 
       {/* Modal do CRM */}
       {selectedContactForCrm && (
