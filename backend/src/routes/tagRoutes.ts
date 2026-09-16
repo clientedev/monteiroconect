@@ -18,18 +18,6 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) => {
-  try {
-    const body = z.object({ name: z.string().optional(), color: z.string().optional() }).parse(req.body);
-    const tag = await updateTag(String(req.params.id), body);
-    res.json(tag);
-  } catch (err) { next(err); }
-});
-
-router.delete('/:id', requireRole('admin', 'supervisor', 'attendant'), async (req, res, next) => {
-  try { res.json(await deleteTag(String(req.params.id))); } catch (err) { next(err); }
-});
-
 router.post('/conversation', async (req, res, next) => {
   try {
     const { conversationId, tagId } = z.object({
@@ -45,6 +33,18 @@ router.delete('/conversation', async (req, res, next) => {
     const tagId = req.query.tagId ? String(req.query.tagId) : '';
     res.json(await removeTagFromConversation(conversationId, tagId));
   } catch (err) { next(err); }
+});
+
+router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const body = z.object({ name: z.string().optional(), color: z.string().optional() }).parse(req.body);
+    const tag = await updateTag(String(req.params.id), body);
+    res.json(tag);
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id', requireRole('admin', 'supervisor', 'attendant'), async (req, res, next) => {
+  try { res.json(await deleteTag(String(req.params.id))); } catch (err) { next(err); }
 });
 
 export default router;
