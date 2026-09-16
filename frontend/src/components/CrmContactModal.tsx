@@ -16,6 +16,12 @@ import {
   CheckCircle2,
   Phone,
   UserPlus,
+  MapPin,
+  Building,
+  Briefcase,
+  FileEdit,
+  Tag,
+  Layers,
 } from 'lucide-react';
 
 interface CrmContactModalProps {
@@ -29,6 +35,41 @@ interface CrmContactModalProps {
   onOpenConversation?: (contact: any) => void;
 }
 
+const INSURER_OPTIONS = [
+  'Porto Seguro',
+  'Bradesco Seguros',
+  'SulAmérica',
+  'Amil',
+  'Tokio Marine',
+  'Allianz',
+  'HDI Seguros',
+  'Mapfre',
+  'Liberty Seguros',
+  'Sompo Seguros',
+  'Zurich',
+  'Outra',
+];
+
+const PRODUCT_OPTIONS = [
+  'Auto',
+  'Saúde',
+  'Vida',
+  'Residencial',
+  'Empresarial',
+  'Odonto',
+  'Consórcio',
+  'Previdência',
+  'Fiança Locatícia',
+  'Responsabilidade Civil',
+  'Outro',
+];
+
+const UF_OPTIONS = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+  'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
+  'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+];
+
 export default function CrmContactModal({
   contact,
   onClose,
@@ -41,12 +82,39 @@ export default function CrmContactModal({
   // Aba ativa: 'details' (Visualizar) ou 'create' (Cadastrar)
   const [activeTab, setActiveTab] = useState<'details' | 'create'>('details');
 
-  // Estados do formulário de criação de contato no CRM
+  // 1. Dados Pessoais / Cadastrais
   const [formName, setFormName] = useState('');
   const [formPhone, setFormPhone] = useState('');
-  const [formEmail, setFormEmail] = useState('');
-  const [formDocument, setFormDocument] = useState('');
+  const [formSecondaryPhone, setFormSecondaryPhone] = useState('');
   const [formType, setFormType] = useState('PF');
+  const [formDocument, setFormDocument] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formAnniversaryDate, setFormAnniversaryDate] = useState('');
+  const [formStatus, setFormStatus] = useState('Ativo');
+  const [formAssignedToName, setFormAssignedToName] = useState('');
+
+  // 2. Endereço Completo
+  const [formZipCode, setFormZipCode] = useState('');
+  const [formAddress, setFormAddress] = useState('');
+  const [formNumber, setFormNumber] = useState('');
+  const [formComplement, setFormComplement] = useState('');
+  const [formNeighborhood, setFormNeighborhood] = useState('');
+  const [formCity, setFormCity] = useState('');
+  const [formState, setFormState] = useState('');
+
+  // 3. Apólice / Seguro Inicial
+  const [formProduct, setFormProduct] = useState('');
+  const [formInsurer, setFormInsurer] = useState('');
+  const [formPolicyNumber, setFormPolicyNumber] = useState('');
+  const [formPremiumValue, setFormPremiumValue] = useState('');
+  const [formExpirationDate, setFormExpirationDate] = useState('');
+
+  // 4. Negócio no Funil de Vendas
+  const [formDealProduct, setFormDealProduct] = useState('');
+  const [formDealValue, setFormDealValue] = useState('');
+  const [formDealStatus, setFormDealStatus] = useState('Cotação');
+  const [formNotes, setFormNotes] = useState('');
+
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
@@ -89,9 +157,33 @@ export default function CrmContactModal({
     setCrmData(null);
     setFormName(contact.name || '');
     setFormPhone(contact.phone || '');
-    setFormEmail('');
-    setFormDocument('');
+    setFormSecondaryPhone('');
     setFormType('PF');
+    setFormDocument('');
+    setFormEmail('');
+    setFormAnniversaryDate('');
+    setFormStatus('Ativo');
+    setFormAssignedToName('');
+
+    setFormZipCode('');
+    setFormAddress('');
+    setFormNumber('');
+    setFormComplement('');
+    setFormNeighborhood('');
+    setFormCity('');
+    setFormState('');
+
+    setFormProduct('');
+    setFormInsurer('');
+    setFormPolicyNumber('');
+    setFormPremiumValue('');
+    setFormExpirationDate('');
+
+    setFormDealProduct('');
+    setFormDealValue('');
+    setFormDealStatus('Cotação');
+    setFormNotes('');
+
     setFormError(null);
     setFormSuccess(null);
     setActiveTab('details');
@@ -114,13 +206,36 @@ export default function CrmContactModal({
       const res = await contactApi.crmCreate({
         name: formName.trim(),
         phone: formPhone.trim(),
-        email: formEmail.trim() || undefined,
-        document: formDocument.trim() || undefined,
+        secondaryPhone: formSecondaryPhone.trim() || undefined,
         type: formType,
+        document: formDocument.trim() || undefined,
+        email: formEmail.trim() || undefined,
+        anniversaryDate: formAnniversaryDate.trim() || undefined,
+        status: formStatus,
+        assignedToName: formAssignedToName.trim() || undefined,
+
+        zipCode: formZipCode.trim() || undefined,
+        address: formAddress.trim() || undefined,
+        number: formNumber.trim() || undefined,
+        complement: formComplement.trim() || undefined,
+        neighborhood: formNeighborhood.trim() || undefined,
+        city: formCity.trim() || undefined,
+        state: formState.trim() || undefined,
+
+        product: formProduct.trim() || undefined,
+        insurer: formInsurer.trim() || undefined,
+        policyNumber: formPolicyNumber.trim() || undefined,
+        premiumValue: formPremiumValue.trim() || undefined,
+        expirationDate: formExpirationDate.trim() || undefined,
+
+        dealProduct: formDealProduct.trim() || undefined,
+        dealValue: formDealValue.trim() || undefined,
+        dealStatus: formDealStatus,
+        notes: formNotes.trim() || undefined,
       });
 
       if (res.ok) {
-        setFormSuccess('Contato cadastrado com sucesso no CRM!');
+        setFormSuccess('Contato cadastrado com sucesso com todas as informações no CRM!');
         setTimeout(() => {
           if (contact) {
             fetchCrmData(contact.phone, contact.id);
@@ -145,7 +260,7 @@ export default function CrmContactModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-monte-sereno/20">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-monte-sereno/20">
         {/* Header */}
         <div className="px-6 py-4 bg-gradient-to-r from-monte-azul to-monte-verde text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -184,9 +299,9 @@ export default function CrmContactModal({
             <Shield className="w-4 h-4" />
             <span>Consulta & Produtos no CRM</span>
             {found ? (
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             ) : (
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
             )}
           </button>
 
@@ -200,7 +315,7 @@ export default function CrmContactModal({
             }`}
           >
             <UserPlus className="w-4 h-4" />
-            <span>➕ Cadastrar no CRM</span>
+            <span>➕ Cadastrar Completo no CRM</span>
           </button>
         </div>
 
@@ -235,7 +350,7 @@ export default function CrmContactModal({
                 {/* 🏷️ Produtos no Cadastro (Etiquetas CRM) */}
                 <div className="space-y-3">
                   <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
-                    <Shield className="w-4 h-4 text-monte-verde" /> 🏷️ Produtos no Cadastro (CRM)
+                    <Tag className="w-4 h-4 text-monte-verde" /> 🏷️ Produtos no Cadastro (CRM)
                   </h4>
                   {crmData?.products && crmData.products.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
@@ -261,7 +376,7 @@ export default function CrmContactModal({
                   <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
                     <User className="w-4 h-4 text-monte-verde" /> 👤 Dados Pessoais / Cadastrais
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
                     <div className="p-3 bg-monte-areiaSecao/40 rounded-xl">
                       <span className="text-xs text-monte-sereno block">Nome Completo</span>
                       <span className="font-semibold text-monte-azul">{crmContact?.name || '-'}</span>
@@ -311,7 +426,7 @@ export default function CrmContactModal({
                     <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2">
                       <Shield className="w-4 h-4 text-monte-verde" /> 🛡️ Apólices de Seguro Ativas
                     </h4>
-                    <div className="text-xs font-semibold px-2 py-0.5 bg-monte-verde/10 text-monte-verde rounded-full">
+                    <div className="text-xs font-semibold px-2.5 py-0.5 bg-monte-verde/10 text-monte-verde rounded-full">
                       {insurance?.activePoliciesCount || 0} ativas
                     </div>
                   </div>
@@ -363,7 +478,7 @@ export default function CrmContactModal({
                     <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2">
                       <DollarSign className="w-4 h-4 text-monte-verde" /> 💰 Negociações no Funil
                     </h4>
-                    <div className="text-xs font-semibold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                    <div className="text-xs font-semibold px-2.5 py-0.5 bg-blue-100 text-blue-700 rounded-full">
                       {pipeline?.activeDealsCount || 0} oportunidades
                     </div>
                   </div>
@@ -414,27 +529,27 @@ export default function CrmContactModal({
                     <UserPlus className="w-4 h-4 text-monte-verde" /> Deseja cadastrar este cliente agora?
                   </p>
                   <p className="text-xs text-monte-sereno">
-                    Cadastre o cliente para vincular suas apólices, produtos e acompanhamento no funil de vendas.
+                    Cadastre o cliente preenchendo todos os dados cadastrais, endereço, apólice inicial e oportunidade no funil de vendas.
                   </p>
                   <button
                     type="button"
                     onClick={() => setActiveTab('create')}
                     className="w-full py-2.5 px-4 bg-gradient-to-r from-monte-verde to-monte-azul text-white font-bold text-xs rounded-xl shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <UserPlus className="w-4 h-4" /> Preencher Formulário de Cadastro no CRM
+                    <UserPlus className="w-4 h-4" /> Preencher Formulário Completo de Cadastro no CRM
                   </button>
                 </div>
               </div>
             )
           ) : (
-            /* Tab: Formulário para Adicionar Contato no CRM */
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-monte-verde/10 border border-monte-verde/20 flex items-start gap-3">
+            /* Tab: Formulário Completo para Adicionar Contato no CRM */
+            <div className="space-y-6">
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-monte-verde/10 via-monte-azul/5 to-transparent border border-monte-verde/20 flex items-start gap-3">
                 <UserPlus className="w-6 h-6 text-monte-verde flex-shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="text-sm font-bold text-monte-azul">Cadastrar Contato no CRM Monteiro Seguros</h4>
+                  <h4 className="text-sm font-bold text-monte-azul">Formulário Completo de Cadastro CRM</h4>
                   <p className="text-xs text-monte-sereno mt-0.5">
-                    Preencha os dados abaixo para cadastrar <strong className="text-monte-azul">{contact.phone}</strong> diretamente na base do CRM.
+                    Preencha os campos organizados por categorias para cadastrar <strong className="text-monte-azul">{contact.phone}</strong> no CRM com todas as suas informações.
                   </p>
                 </div>
               </div>
@@ -453,84 +568,391 @@ export default function CrmContactModal({
                 </div>
               )}
 
-              <form onSubmit={handleCreateCrmContact} className="space-y-4 text-xs">
-                <div>
-                  <label className="block text-monte-sereno font-semibold mb-1">
-                    Nome Completo <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    className="input-rect text-xs w-full"
-                    placeholder="Ex: João da Silva"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                  />
+              <form onSubmit={handleCreateCrmContact} className="space-y-6 text-xs">
+                {/* 👤 SEÇÃO 1: DADOS CADASTRAIS & PESSOAIS */}
+                <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-monte-sereno/15 space-y-4">
+                  <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
+                    <User className="w-4 h-4 text-monte-verde" /> 👤 1. Dados Cadastrais & Pessoais
+                  </h5>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2 lg:col-span-1">
+                      <label className="block text-monte-sereno font-semibold mb-1">
+                        Nome Completo <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        className="input-rect text-xs w-full"
+                        placeholder="Ex: João da Silva"
+                        value={formName}
+                        onChange={(e) => setFormName(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Telefone Principal (WhatsApp)</label>
+                      <input
+                        type="text"
+                        disabled
+                        className="input-rect text-xs w-full bg-monte-sereno/10 cursor-not-allowed text-monte-sereno"
+                        value={formPhone}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Telefone Secundário / Recado</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="(11) 98888-7777"
+                        value={formSecondaryPhone}
+                        onChange={(e) => setFormSecondaryPhone(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Tipo de Pessoa</label>
+                      <select
+                        className="input-rect text-xs w-full"
+                        value={formType}
+                        onChange={(e) => setFormType(e.target.value)}
+                      >
+                        <option value="PF">Pessoa Física (PF)</option>
+                        <option value="PJ">Pessoa Jurídica (PJ)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">CPF / CNPJ</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder={formType === 'PJ' ? '00.000.000/0001-00' : '000.000.000-00'}
+                        value={formDocument}
+                        onChange={(e) => setFormDocument(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">E-mail</label>
+                      <input
+                        type="email"
+                        className="input-rect text-xs w-full"
+                        placeholder="cliente@email.com"
+                        value={formEmail}
+                        onChange={(e) => setFormEmail(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Data de Aniversário / Nascimento</label>
+                      <input
+                        type="date"
+                        className="input-rect text-xs w-full"
+                        value={formAnniversaryDate}
+                        onChange={(e) => setFormAnniversaryDate(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Status no CRM</label>
+                      <select
+                        className="input-rect text-xs w-full"
+                        value={formStatus}
+                        onChange={(e) => setFormStatus(e.target.value)}
+                      >
+                        <option value="Ativo">Ativo</option>
+                        <option value="Prospect">Prospect / Lead</option>
+                        <option value="Inativo">Inativo</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Consultor Responsável</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="Ex: Carlos Monteiro"
+                        value={formAssignedToName}
+                        onChange={(e) => setFormAssignedToName(e.target.value)}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-monte-sereno font-semibold mb-1">Telefone / WhatsApp</label>
-                    <input
-                      type="text"
-                      disabled
-                      className="input-rect text-xs w-full bg-monte-sereno/10 cursor-not-allowed"
-                      value={formPhone}
-                    />
-                  </div>
+                {/* 📍 SEÇÃO 2: ENDEREÇO COMPLETO */}
+                <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-monte-sereno/15 space-y-4">
+                  <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
+                    <MapPin className="w-4 h-4 text-monte-verde" /> 📍 2. Endereço Completo
+                  </h5>
 
-                  <div>
-                    <label className="block text-monte-sereno font-semibold mb-1">Tipo de Pessoa</label>
-                    <select
-                      className="input-rect text-xs w-full"
-                      value={formType}
-                      onChange={(e) => setFormType(e.target.value)}
-                    >
-                      <option value="PF">Pessoa Física (PF)</option>
-                      <option value="PJ">Pessoa Jurídica (PJ)</option>
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">CEP</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="00000-000"
+                        value={formZipCode}
+                        onChange={(e) => setFormZipCode(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 lg:col-span-2">
+                      <label className="block text-monte-sereno font-semibold mb-1">Logradouro / Rua</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="Av. Paulista"
+                        value={formAddress}
+                        onChange={(e) => setFormAddress(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Número</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="1000"
+                        value={formNumber}
+                        onChange={(e) => setFormNumber(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Complemento</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="Apto 42 / Bloco B"
+                        value={formComplement}
+                        onChange={(e) => setFormComplement(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Bairro</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="Bela Vista"
+                        value={formNeighborhood}
+                        onChange={(e) => setFormNeighborhood(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Cidade</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="São Paulo"
+                        value={formCity}
+                        onChange={(e) => setFormCity(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Estado (UF)</label>
+                      <select
+                        className="input-rect text-xs w-full"
+                        value={formState}
+                        onChange={(e) => setFormState(e.target.value)}
+                      >
+                        <option value="">Selecione o Estado...</option>
+                        {UF_OPTIONS.map((uf) => (
+                          <option key={uf} value={uf}>
+                            {uf}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-monte-sereno font-semibold mb-1">E-mail (opcional)</label>
-                    <input
-                      type="email"
-                      className="input-rect text-xs w-full"
-                      placeholder="cliente@email.com"
-                      value={formEmail}
-                      onChange={(e) => setFormEmail(e.target.value)}
-                    />
-                  </div>
+                {/* 🛡️ SEÇÃO 3: APÓLICE / SEGURO INICIAL */}
+                <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-monte-sereno/15 space-y-4">
+                  <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
+                    <Shield className="w-4 h-4 text-monte-verde" /> 🛡️ 3. Apólice & Produto de Seguro Inicial
+                  </h5>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Produto / Ramo</label>
+                      <select
+                        className="input-rect text-xs w-full mb-1.5"
+                        value={PRODUCT_OPTIONS.includes(formProduct) ? formProduct : formProduct ? 'Outro' : ''}
+                        onChange={(e) => {
+                          if (e.target.value !== 'Outro') {
+                            setFormProduct(e.target.value);
+                          } else {
+                            setFormProduct('');
+                          }
+                        }}
+                      >
+                        <option value="">Selecione o Produto...</option>
+                        {PRODUCT_OPTIONS.map((prod) => (
+                          <option key={prod} value={prod}>
+                            {prod}
+                          </option>
+                        ))}
+                      </select>
+                      {(!PRODUCT_OPTIONS.includes(formProduct) || formProduct === 'Outro') && (
+                        <input
+                          type="text"
+                          className="input-rect text-xs w-full"
+                          placeholder="Ou digite o nome do produto..."
+                          value={formProduct}
+                          onChange={(e) => setFormProduct(e.target.value)}
+                        />
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Seguradora</label>
+                      <select
+                        className="input-rect text-xs w-full mb-1.5"
+                        value={INSURER_OPTIONS.includes(formInsurer) ? formInsurer : formInsurer ? 'Outra' : ''}
+                        onChange={(e) => {
+                          if (e.target.value !== 'Outra') {
+                            setFormInsurer(e.target.value);
+                          } else {
+                            setFormInsurer('');
+                          }
+                        }}
+                      >
+                        <option value="">Selecione a Seguradora...</option>
+                        {INSURER_OPTIONS.map((ins) => (
+                          <option key={ins} value={ins}>
+                            {ins}
+                          </option>
+                        ))}
+                      </select>
+                      {(!INSURER_OPTIONS.includes(formInsurer) || formInsurer === 'Outra') && (
+                        <input
+                          type="text"
+                          className="input-rect text-xs w-full"
+                          placeholder="Ou digite a seguradora..."
+                          value={formInsurer}
+                          onChange={(e) => setFormInsurer(e.target.value)}
+                        />
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Número da Apólice</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full font-mono"
+                        placeholder="Ex: 01.031.123456"
+                        value={formPolicyNumber}
+                        onChange={(e) => setFormPolicyNumber(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Valor do Prêmio (R$)</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="Ex: 2.450,00"
+                        value={formPremiumValue}
+                        onChange={(e) => setFormPremiumValue(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Data de Vencimento / Renovação</label>
+                      <input
+                        type="date"
+                        className="input-rect text-xs w-full"
+                        value={formExpirationDate}
+                        onChange={(e) => setFormExpirationDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 💰 SEÇÃO 4: NEGÓCIO NO FUNIL DE VENDAS */}
+                <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-monte-sereno/15 space-y-4">
+                  <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
+                    <DollarSign className="w-4 h-4 text-monte-verde" /> 💰 4. Negócio no Funil de Vendas (CRM)
+                  </h5>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Produto da Cotação / Oportunidade</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="Ex: Cotação Seguro Auto"
+                        value={formDealProduct}
+                        onChange={(e) => setFormDealProduct(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Valor Estimado do Negócio (R$)</label>
+                      <input
+                        type="text"
+                        className="input-rect text-xs w-full"
+                        placeholder="Ex: 3.500,00"
+                        value={formDealValue}
+                        onChange={(e) => setFormDealValue(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-monte-sereno font-semibold mb-1">Etapa no Funil</label>
+                      <select
+                        className="input-rect text-xs w-full"
+                        value={formDealStatus}
+                        onChange={(e) => setFormDealStatus(e.target.value)}
+                      >
+                        <option value="Cotação">Cotação</option>
+                        <option value="Proposta Enviada">Proposta Enviada</option>
+                        <option value="Em Negociação">Em Negociação</option>
+                        <option value="Fechado / Ganho">Fechado / Ganho</option>
+                        <option value="Perdido">Perdido</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 📝 SEÇÃO 5: OBSERVAÇÕES E NOTAS */}
+                <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-monte-sereno/15 space-y-3">
+                  <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
+                    <FileEdit className="w-4 h-4 text-monte-verde" /> 📝 Observações / Histórico Interno
+                  </h5>
                   <div>
-                    <label className="block text-monte-sereno font-semibold mb-1">CPF / CNPJ (opcional)</label>
-                    <input
-                      type="text"
-                      className="input-rect text-xs w-full"
-                      placeholder="000.000.000-00"
-                      value={formDocument}
-                      onChange={(e) => setFormDocument(e.target.value)}
+                    <textarea
+                      rows={3}
+                      className="input-rect text-xs w-full resize-none"
+                      placeholder="Insira detalhes adicionais sobre o cliente, perfil de segurado, preferências ou notas de atendimento..."
+                      value={formNotes}
+                      onChange={(e) => setFormNotes(e.target.value)}
                     />
                   </div>
                 </div>
 
+                {/* Botão de Envio */}
                 <div className="pt-2">
                   <button
                     type="submit"
                     disabled={submitting || !formName.trim()}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-monte-verde to-monte-azul text-white font-bold rounded-xl shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer text-sm"
+                    className="w-full py-3.5 px-6 bg-gradient-to-r from-monte-verde via-emerald-600 to-monte-azul text-white font-bold rounded-2xl shadow-lg hover:opacity-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer text-sm"
                   >
                     {submitting ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Cadastrando no CRM...</span>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>Cadastrando Informações no CRM...</span>
                       </>
                     ) : (
                       <>
-                        <UserPlus className="w-4 h-4" />
-                        <span>Salvar Cadastro no CRM Monteiro Seguros</span>
+                        <UserPlus className="w-5 h-5" />
+                        <span>Salvar Cadastro Completo no CRM Monteiro Seguros</span>
                       </>
                     )}
                   </button>
@@ -555,7 +977,7 @@ export default function CrmContactModal({
                 onClick={() => setActiveTab('create')}
                 className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-monte-verde/10 text-monte-verde hover:bg-monte-verde hover:text-white transition-all text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <UserPlus className="w-4 h-4" /> Cadastrar no CRM
+                <UserPlus className="w-4 h-4" /> Cadastrar Completo no CRM
               </button>
             )}
           </div>

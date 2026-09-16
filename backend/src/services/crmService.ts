@@ -184,9 +184,35 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
 export interface CreateCrmContactInput {
   name: string;
   phone: string;
+  type?: string;
   email?: string;
   document?: string;
-  type?: string;
+  status?: string;
+  anniversaryDate?: string;
+  secondaryPhone?: string;
+  assignedToName?: string;
+
+  // Endereço
+  zipCode?: string;
+  address?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+
+  // Apólice Inicial / Produto
+  product?: string;
+  insurer?: string;
+  policyNumber?: string;
+  premiumValue?: string | number;
+  expirationDate?: string;
+
+  // Funil / Negócio
+  dealProduct?: string;
+  dealValue?: string | number;
+  dealStatus?: string;
+  notes?: string;
 }
 
 /**
@@ -218,9 +244,40 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
       body: JSON.stringify({
         name: input.name,
         phone: cleanPhone,
+        type: input.type || 'PF',
         email: input.email || undefined,
         document: input.document || undefined,
-        type: input.type || 'PF',
+        status: input.status || 'Ativo',
+        anniversaryDate: input.anniversaryDate || undefined,
+        secondaryPhone: input.secondaryPhone ? normalizePhoneForCrm(input.secondaryPhone) : undefined,
+        assignedToName: input.assignedToName || undefined,
+
+        // Endereço
+        zipCode: input.zipCode || undefined,
+        address: input.address || undefined,
+        number: input.number || undefined,
+        complement: input.complement || undefined,
+        neighborhood: input.neighborhood || undefined,
+        city: input.city || undefined,
+        state: input.state || undefined,
+
+        // Apólice / Seguro inicial
+        insurance: input.product ? {
+          product: input.product,
+          insurer: input.insurer || undefined,
+          policyNumber: input.policyNumber || undefined,
+          premiumValue: input.premiumValue || undefined,
+          expirationDate: input.expirationDate || undefined,
+        } : undefined,
+
+        // Negócio no Funil
+        pipeline: input.dealProduct ? {
+          product: input.dealProduct,
+          value: input.dealValue || undefined,
+          status: input.dealStatus || 'Cotação',
+        } : undefined,
+
+        notes: input.notes || undefined,
       }),
       signal: controller.signal,
     });
@@ -233,6 +290,7 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
 
     const data = (await res.json()) as any;
     return { ok: true, data };
+
   } catch (err: any) {
     if (err?.name === 'AbortError') {
       return { ok: false, error: 'Timeout de 10s ao cadastrar no CRM' };
