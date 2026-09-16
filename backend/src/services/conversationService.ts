@@ -116,6 +116,13 @@ export async function setConversationMuted(
   return updated;
 }
 
+export async function cleanupDuplicateConversations(whatsappId: string, requester: SessionUser) {
+  await assertAccountAccess(requester, whatsappId);
+  const { sessionManager } = await import('../whatsapp/sessionManager.js');
+  const count = await sessionManager.unifyAllDuplicateContacts(whatsappId);
+  return { success: true, count };
+}
+
 export async function assignConversation(
   conversationId: string,
   userId: string | null,

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listConversations, getConversation, getConversationMessages, markConversationRead, assignConversation, setConversationAiEnabled, setConversationMuted } from '../services/conversationService.js';
+import { listConversations, getConversation, getConversationMessages, markConversationRead, assignConversation, setConversationAiEnabled, setConversationMuted, cleanupDuplicateConversations } from '../services/conversationService.js';
 import { sendWhatsAppMessage, broadcastWhatsAppMessages } from '../services/whatsappService.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { AppError } from '../utils/errors.js';
@@ -110,6 +110,16 @@ router.put('/:id/mute', async (req: AuthRequest, res, next) => {
   try {
     const { muted } = z.object({ muted: z.boolean() }).parse(req.body);
     const result = await setConversationMuted(String(req.params.id), muted, req.user!);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/cleanup-duplicates', async (req: AuthRequest, res, next) => {
+  try {
+    const { whatsappId } = z.object({ whatsappId: z.string().min(1) }).parse(req.body);
+    const result = await cleanupDuplicateConversations(whatsappId, req.user!);
     res.json(result);
   } catch (err) {
     next(err);

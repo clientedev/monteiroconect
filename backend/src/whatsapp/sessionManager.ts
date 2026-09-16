@@ -709,6 +709,223 @@ class WhatsAppSessionManager extends EventEmitter {
     return aliases?.get(jid) || aliases?.get(normalized) || normalized;
   }
 
+  /**
+   * Gera todas as variações possíveis de um número (ex: formato de 12 e 13 dígitos
+   * do Brasil com o 9º dígito móvel) para buscas resilientes no banco.
+   */
+  private getCanonicalPhoneVariants(phone: string): string[] {
+    const raw = phone.trim();
+    if (raw.endsWith('@g.us') || raw.endsWith('@lid')) return [raw];
+    const cleanDigits = raw.replace(/\D/g, '');
+    if (!cleanDigits) return [raw];
+
+    const variants = new Set<string>([raw, cleanDigits]);
+
+    if (cleanDigits.startsWith('55') && cleanDigits.length === 12) {
+      const ddd = cleanDigits.slice(2, 4);
+      const number = cleanDigits.slice(4);
+      variants.add(`55${ddd}9${number}`);
+    } else if (cleanDigits.startsWith('55') && cleanDigits.length === 13 && cleanDigits[4] === '9') {
+      const ddd = cleanDigits.slice(2, 4);
+      const number = cleanDigits.slice(5);
+      variants.add(`55${ddd}${number}`);
+    }
+    return Array.from(variants);
+  }
+
+  private getCanonicalPhoneKey(phone: string): string {
+    const raw = phone.trim();
+    if (raw.endsWith('@g.us')) return raw;
+    const clean = raw.replace(/\D/g, '');
+    if (!clean) return raw;
+
+    if (clean.startsWith('55') && clean.length === 12) {
+      const ddd = clean.slice(2, 4);
+      const number = clean.slice(4);
+      return `55${ddd}9${number}`;
+    }
+    return clean;
+  }
+
+  /**
+   * Encontra ou cria o contato e a conversa associada para uma conta de WhatsApp,
+   * unificando automaticamente variações de 9º dígito e contatos duplicados.
+   */
+  private async findOrCreateContactAndConversation(
+    accountId: string,
+    jid: string,
+    rawName?: string | null,
+  ): Promise<{ contact: any; conversation: any }> {
+    const isGroup = jid.endsWith('@g.us');
+    const fromPhone = this.jidToContactPhone(jid);
+    const variants = this.getCanonicalPhoneVariants(fromPhone);
+
+    let groupSubject: string | null = null;
+    if (isGroup) {
+      groupSubject = await this.getGroupName(accountId, jid);
+    }
+    const usableName = this.usableContactName(groupSubject || rawName || '', fromPhone);
+
+    let existingContacts = await prisma.contact.findMany({
+      where: {
+        whatsappId: accountId,
+        phone: { in: variants },
+      },
+      include: {
+        conversations: { where: { whatsappId: accountId } },
+      },
+    });
+
+    let primaryContact: any = null;
+    let primaryConversation: any = null;
+
+    if (existingContacts.length > 0) {
+      existingContacts.sort((a, b) => {
+        const aHasName = a.name && a.name !== a.phone ? 1 : 0;
+        const bHasName = b.name && b.name !== b.phone ? 1 : 0;
+        if (aHasName !== bHasName) return bHasName - aHasName;
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
+
+      primaryContact = existingContacts[0];
+
+      // Se houver contatos duplicados sob o mesmo número (ex: 12 dígitos vs 13 dígitos), unifica!
+      if (existingContacts.length > 1) {
+        for (let i = 1; i < existingContacts.length; i++) {
+          const dup = existingContacts[i];
+          const dupConv = dup.conversations[0];
+          const mainConv = primaryContact.conversations[0];
+          if (dupConv && mainConv && dupConv.id !== mainConv.id) {
+            await prisma.message.updateMany({
+              where: { conversationId: dupConv.id },
+              data: { conversationId: mainConv.id },
+            });
+            await prisma.conversation.delete({ where: { id: dupConv.id } }).catch(() => {});
+          } else if (dupConv && !mainConv) {
+            await prisma.conversation.update({
+              where: { id: dupConv.id },
+              data: { contactId: primaryContact.id },
+            });
+          }
+          await prisma.contact.delete({ where: { id: dup.id } }).catch(() => {});
+        }
+      }
+
+      if (usableName && (!primaryContact.name || primaryContact.name === primaryContact.phone)) {
+        primaryContact = await prisma.contact.update({
+          where: { id: primaryContact.id },
+          data: { name: usableName },
+        });
+      }
+    } else {
+      const primaryPhone = variants[0] || fromPhone;
+      primaryContact = await prisma.contact.create({
+        data: {
+          phone: primaryPhone,
+          name: usableName,
+          whatsappId: accountId,
+        },
+      });
+    }
+
+    primaryConversation = await prisma.conversation.findUnique({
+      where: { contactId_whatsappId: { contactId: primaryContact.id, whatsappId: accountId } },
+    });
+
+    if (!primaryConversation) {
+      primaryConversation = await prisma.conversation.create({
+        data: {
+          contactId: primaryContact.id,
+          whatsappId: accountId,
+          isMuted: isGroup,
+        },
+      });
+    }
+
+    return { contact: primaryContact, conversation: primaryConversation };
+  }
+
+  /**
+   * Limpeza e unificação atômica de todas as conversas/contatos duplicados no banco de dados.
+   */
+  async unifyAllDuplicateContacts(accountId: string): Promise<number> {
+    try {
+      const contacts = await prisma.contact.findMany({
+        where: { whatsappId: accountId },
+        include: { conversations: { where: { whatsappId: accountId } } },
+      });
+
+      const groups = new Map<string, any[]>();
+      for (const contact of contacts) {
+        const key = this.getCanonicalPhoneKey(contact.phone);
+        const list = groups.get(key) || [];
+        list.push(contact);
+        groups.set(key, list);
+      }
+
+      let mergedCount = 0;
+      for (const [key, list] of groups) {
+        if (list.length <= 1) continue;
+
+        list.sort((a, b) => {
+          const aHasName = a.name && a.name !== a.phone ? 1 : 0;
+          const bHasName = b.name && b.name !== b.phone ? 1 : 0;
+          if (aHasName !== bHasName) return bHasName - aHasName;
+          return a.createdAt.getTime() - b.createdAt.getTime();
+        });
+
+        const main = list[0];
+        let mainConv = main.conversations[0];
+        if (!mainConv) {
+          mainConv = await prisma.conversation.create({
+            data: { contactId: main.id, whatsappId: accountId, isMuted: main.phone.endsWith('@g.us') },
+          });
+        }
+
+        for (let i = 1; i < list.length; i++) {
+          const dup = list[i];
+          for (const dupConv of dup.conversations) {
+            if (dupConv.id !== mainConv.id) {
+              await prisma.message.updateMany({
+                where: { conversationId: dupConv.id },
+                data: { conversationId: mainConv.id },
+              });
+              await prisma.conversation.delete({ where: { id: dupConv.id } }).catch(() => {});
+            }
+          }
+          await prisma.contact.delete({ where: { id: dup.id } }).catch(() => {});
+          mergedCount++;
+        }
+
+        const latestMsg = await prisma.message.findFirst({
+          where: { conversationId: mainConv.id },
+          orderBy: [
+            { timestamp: { sort: 'desc', nulls: 'last' } },
+            { createdAt: 'desc' },
+          ],
+        });
+        if (latestMsg) {
+          await prisma.conversation.update({
+            where: { id: mainConv.id },
+            data: {
+              lastMessage: latestMsg.content || `[${latestMsg.mediaType || latestMsg.type}]`,
+              lastMessageAt: latestMsg.timestamp || latestMsg.createdAt,
+            },
+          });
+        }
+      }
+
+      if (mergedCount > 0) {
+        logger.info(`[${accountId}] Deduplicação concluída: ${mergedCount} contato(s) unificados.`);
+        this.emit('contacts-updated', { accountId });
+      }
+      return mergedCount;
+    } catch (err) {
+      logger.warn(`Erro ao unificar contatos duplicados (${accountId}):`, err);
+      return 0;
+    }
+  }
+
   private cachedContactName(accountId: string, jid: string): string | null {
     const names = this.contactNames.get(accountId);
     return names?.get(jid) || names?.get(this.canonicalJid(accountId, jid)) || null;
@@ -989,25 +1206,7 @@ class WhatsAppSessionManager extends EventEmitter {
 
       const waMsgId = msg.key.id || null;
 
-      const contactPhone = this.jidToContactPhone(remoteJid);
-      const isGroup = remoteJid.endsWith('@g.us') || contactPhone.endsWith('@g.us');
-      let contact = await prisma.contact.findUnique({
-        where: { phone_whatsappId: { phone: contactPhone, whatsappId: accountId } },
-      });
-      if (!contact) {
-        contact = await prisma.contact.create({
-          data: { phone: contactPhone, whatsappId: accountId },
-        });
-      }
-
-      let conversation = await prisma.conversation.findUnique({
-        where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
-      });
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: { contactId: contact.id, whatsappId: accountId, isMuted: isGroup },
-        });
-      }
+      const { contact, conversation } = await this.findOrCreateContactAndConversation(accountId, remoteJid, null);
 
       const { content, mediaType, messageType, quotedMessageId, quotedContent } = this.extractContent(msg);
       const ts = this.msgTimestamp(msg);
@@ -1037,7 +1236,7 @@ class WhatsAppSessionManager extends EventEmitter {
             messageId: waMsgId,
             timestamp: ts,
             fromPhone: '',
-            toPhone: contactPhone,
+            toPhone: contact.phone,
           },
         });
       } catch (dbErr: any) {
@@ -1557,45 +1756,7 @@ class WhatsAppSessionManager extends EventEmitter {
       const senderJid = isGroup ? this.messageParticipantJid(msg) : null;
       const senderName = isGroup ? (msg.pushName || (senderJid ? this.jidToContactPhone(senderJid) : null)) : null;
 
-      let contactName = pushName;
-      if (isGroup) {
-        const groupName = await this.getGroupName(accountId, remoteJid);
-        contactName = this.usableContactName(groupName || '', fromPhone);
-      }
-
-      let contact = await prisma.contact.findUnique({
-        where: { phone_whatsappId: { phone: fromPhone, whatsappId: accountId } },
-      });
-
-      if (!contact) {
-        contact = await prisma.contact.create({
-          data: {
-            phone: fromPhone,
-            name: contactName,
-            whatsappId: accountId,
-          },
-        });
-      } else {
-        const shouldRename = !!contactName && (!contact.name || contact.name === contact.phone);
-        contact = await prisma.contact.update({
-          where: { id: contact.id },
-          data: { name: shouldRename ? contactName : contact.name },
-        });
-      }
-
-      let conversation = await prisma.conversation.findUnique({
-        where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
-      });
-
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: {
-            contactId: contact.id,
-            whatsappId: accountId,
-            isMuted: isGroup,
-          },
-        });
-      }
+      const { contact, conversation } = await this.findOrCreateContactAndConversation(accountId, remoteJid, pushName);
 
       const { content, mediaType, messageType, quotedMessageId, quotedContent } = this.extractContent(msg);
       const receivedAt = this.msgTimestamp(msg);
@@ -1706,6 +1867,7 @@ class WhatsAppSessionManager extends EventEmitter {
           lastMessage: content || `[${mediaType || messageType}]`,
           lastMessageAt: receivedAt,
           unreadCount: (conversation.unreadCount || 0) + 1,
+          isMuted: !!conversation.isMuted,
         },
       });
 
@@ -1856,25 +2018,7 @@ class WhatsAppSessionManager extends EventEmitter {
       const waMsgId = result?.key?.id || null;
       const now = new Date();
 
-      let contact = await prisma.contact.findUnique({
-        where: { phone_whatsappId: { phone: toPhone, whatsappId: accountId } },
-      });
-
-      if (!contact) {
-        contact = await prisma.contact.create({
-          data: { phone: toPhone, whatsappId: accountId },
-        });
-      }
-
-      let conversation = await prisma.conversation.findUnique({
-        where: { contactId_whatsappId: { contactId: contact.id, whatsappId: accountId } },
-      });
-
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: { contactId: contact.id, whatsappId: accountId },
-        });
-      }
+      const { contact, conversation } = await this.findOrCreateContactAndConversation(accountId, jid, senderName);
 
       let savedMessage: any;
       try {
@@ -2090,8 +2234,9 @@ class WhatsAppSessionManager extends EventEmitter {
 
     // Corrige resumos que ficaram inconsistentes em importações interrompidas
     // ou em versões antigas que ordenavam apenas por createdAt.
-    manualProgress(85, 'summaries', 'Recalculando resumos das conversas...');
+    manualProgress(85, 'summaries', 'Recalculando resumos e unificando contatos...');
     await this.repairConversationSummaries(accountId);
+    await this.unifyAllDuplicateContacts(accountId);
 
     this.emit('contacts-updated', { accountId });
     this.emit('history-imported', { accountId, count: contacts.length });

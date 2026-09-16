@@ -292,7 +292,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (!socket) return;
 
     const onNewMsg = (data: any) => {
-      if (!data) return;
+      if (!data || settings.muted) return;
       const msg = data.message || data;
       const conv = data.conversation || {};
       const contact = data.contact || conv.contact || {};
@@ -311,7 +311,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       socket.off('message:new', onNewMsg);
     };
-  }, [socket, triggerNotification]);
+  }, [socket, settings.muted, triggerNotification]);
 
   return (
     <NotificationContext.Provider
