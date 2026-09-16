@@ -985,38 +985,44 @@ export default function ConversationsPage() {
     <div className="space-y-3">
       {syncProgress && !hideSyncProgress && (
         <div
-          className={`rounded-2xl border px-4 py-3 shadow-sm relative ${
+          className={`rounded-2xl border p-3.5 sm:p-4 shadow-sm relative pr-12 ${
             syncProgress.status === 'error'
               ? 'bg-red-50 border-red-200'
               : syncProgress.status === 'completed'
                 ? 'bg-emerald-50 border-emerald-200'
-                : 'bg-white/85 border-monte-sereno/15'
+                : 'bg-white/90 backdrop-blur-md border-monte-sereno/20'
           }`}
           role="status"
           aria-live="polite"
         >
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <div className="min-w-0 pr-6">
-              <p className="text-sm font-semibold text-monte-azul truncate">
+          {/* Botão flutuante de fechar/ocultar (otimizado para toque no celular) */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleHideSyncProgress(true);
+            }}
+            className="absolute top-2.5 right-2.5 p-2 text-monte-sereno hover:text-monte-terracota active:scale-95 bg-black/5 hover:bg-black/10 rounded-full transition-all flex items-center justify-center z-20 touch-manipulation cursor-pointer shadow-2xs"
+            title="Ocultar barra de sincronização"
+            aria-label="Ocultar barra de sincronização"
+          >
+            <X className="w-5 h-5 stroke-[2.5]" />
+          </button>
+
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="min-w-0 pr-2">
+              <p className="text-sm font-bold text-monte-azul truncate">
                 {syncProgress.status === 'completed' ? 'Sincronização concluída' : syncProgress.status === 'error' ? 'Sincronização interrompida' : 'Sincronizando tudo...'}
               </p>
               <p className="text-xs text-monte-sereno truncate">{syncProgress.message}</p>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <div className="text-right">
-                <p className="text-lg font-bold text-monte-verde">{Math.round(syncProgress.percent)}%</p>
-                <p className="text-[10px] text-monte-sereno">{Math.round(syncProgress.remainingPercent)}% restante</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => toggleHideSyncProgress(true)}
-                className="p-1 text-monte-sereno hover:text-monte-terracota rounded-full transition-colors flex-shrink-0 ml-1"
-                title="Ocultar barra de sincronização"
-              >
-                <X className="w-4 h-4" />
-              </button>
+            <div className="text-right flex-shrink-0 mr-2">
+              <p className="text-base sm:text-lg font-bold text-monte-verde">{Math.round(syncProgress.percent)}%</p>
+              <p className="text-[10px] text-monte-sereno">{Math.round(syncProgress.remainingPercent)}% restante</p>
             </div>
           </div>
+
           <div
             className="h-2.5 w-full overflow-hidden rounded-full bg-monte-sereno/15"
             role="progressbar"
@@ -1032,11 +1038,22 @@ export default function ConversationsPage() {
               style={{ width: `${Math.max(0, Math.min(100, syncProgress.percent))}%` }}
             />
           </div>
-          {syncProgress.totalMessages > 0 && (
-            <p className="text-[11px] text-monte-sereno mt-1.5">
-              {syncProgress.processedMessages.toLocaleString('pt-BR')} de {syncProgress.totalMessages.toLocaleString('pt-BR')} mensagens processadas
-            </p>
-          )}
+
+          <div className="flex items-center justify-between mt-2 pt-1">
+            {syncProgress.totalMessages > 0 ? (
+              <p className="text-[11px] text-monte-sereno truncate">
+                {syncProgress.processedMessages.toLocaleString('pt-BR')} de {syncProgress.totalMessages.toLocaleString('pt-BR')} mensagens
+              </p>
+            ) : <span />}
+            <button
+              type="button"
+              onClick={() => toggleHideSyncProgress(true)}
+              className="text-xs font-bold text-monte-terracota hover:bg-monte-terracota/10 px-2.5 py-1 rounded-full transition-colors inline-flex items-center gap-1 sm:hidden cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Ocultar</span>
+            </button>
+          </div>
         </div>
       )}
       <div className="flex flex-1 h-full lg:h-[calc(100vh-8rem)] -m-0 lg:-m-6 rounded-none lg:rounded-3xl overflow-hidden lg:shadow-lg lg:border border-monte-sereno/15 relative">

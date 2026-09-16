@@ -129,27 +129,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const setMuted = (muted: boolean) => {
-    updateSetting('muted', muted);
-    if (muted) {
-      if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
-        navigator.serviceWorker.ready.then(reg => {
-          reg.pushManager.getSubscription().then(sub => {
-            if (sub) {
-              const endpoint = sub.endpoint;
-              sub.unsubscribe().catch(() => {});
-              pushApi.unsubscribe(endpoint).catch(() => {});
-              setPushSubscribed(false);
-            }
-          });
-        }).catch(() => {});
-      }
-    } else {
-      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        subscribeToPush();
-      }
-    }
-  };
   const setSoundPreset = (soundPreset: NotificationTonePreset) => updateSetting('soundPreset', soundPreset);
   const setVolume = (volume: number) => updateSetting('volume', volume);
   const setIosDisplayMode = (iosDisplayMode: IosDisplayMode) => updateSetting('iosDisplayMode', iosDisplayMode);
@@ -157,8 +136,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const setBrowserPushEnabled = (browserPushEnabled: boolean) => updateSetting('browserPushEnabled', browserPushEnabled);
 
   // Inscreve no Web Push com as chaves VAPID do backend (funciona com app fechado)
-  const subscribeToPush = useCallback(async (): Promise<boolean> => {
-    if (settings.muted) return false;
+  const subscribeToPush = useCallback(async (force = false): Promise<boolean> => {
+    if (settings.muted && !force) return false;
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       return false;
     }
@@ -210,6 +189,30 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setPushLoading(false);
     }
   }, [settings.muted]);
+
+  const setMuted = useCallback((muted: boolean) => {
+    updateSetting('muted', muted);
+    if (muted) {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.pushManager.getSubscription().then(sub => {
+            if (sub) {
+              const endpoint = sub.endpoint;
+              sub.unsubscribe().catch(() => {});
+              pushApi.unsubscribe(endpoint).catch(() => {});
+              setPushSubscribed(false);
+            }
+          });
+        }).catch(() => {});
+      }
+    } else {
+      initAudioContext();
+      setBrowserPushEnabled(true);
+      setTimeout(() => {
+        subscribeToPush(true);
+      }, 50);
+    }
+  }, [subscribeToPush]);
 
   // Inicializa contexto de áudio e solicita permissão de push na primeira interação se for default
   useEffect(() => {
@@ -296,12 +299,28 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         accountId,
       });
 
+      // 4. Notificação nativa no navegador se a aba estiver em segundo plano
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState === 'hidden' &&
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted'
+      ) {
+        try {
+          new Notification(contactName || 'Novo Contato', {
+            body: messagePreview || 'Nova mensagem',
+            icon: '/icon-192.png',
+            tag: conversationId || 'wa-msg',
+          });
+        } catch {}
+      }
+
       // Auto-dismiss banner após 5.5 segundos
       setTimeout(() => {
         setActiveMobileBanner(curr => (curr?.id === notifId ? null : curr));
       }, 5500);
     },
-    [settings]
+    [settings.muted, settings.soundPreset, settings.volume, settings.vibration]
   );
 
   const dismissBanner = useCallback(() => {
