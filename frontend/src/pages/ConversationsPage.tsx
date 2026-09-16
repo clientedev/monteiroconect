@@ -167,6 +167,20 @@ export default function ConversationsPage() {
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [hideSyncProgress, setHideSyncProgress] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mc_hide_sync_progress') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleHideSyncProgress = (hide: boolean) => {
+    setHideSyncProgress(hide);
+    try {
+      localStorage.setItem('mc_hide_sync_progress', hide ? 'true' : 'false');
+    } catch {}
+  };
   const [msgPage, setMsgPage] = useState(1);
   const [msgTotal, setMsgTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -646,6 +660,7 @@ export default function ConversationsPage() {
 
   const handleSync = async () => {
     if (!selectedAccountId || selectedAccountId === ALL_ACCOUNTS || syncing) return;
+    toggleHideSyncProgress(false);
     setSyncing(true);
     setSyncProgress({
       status: 'syncing',
@@ -926,9 +941,9 @@ export default function ConversationsPage() {
 
   return (
     <div className="space-y-3">
-      {syncProgress && (
+      {syncProgress && !hideSyncProgress && (
         <div
-          className={`rounded-2xl border px-4 py-3 shadow-sm ${
+          className={`rounded-2xl border px-4 py-3 shadow-sm relative ${
             syncProgress.status === 'error'
               ? 'bg-red-50 border-red-200'
               : syncProgress.status === 'completed'
@@ -939,15 +954,25 @@ export default function ConversationsPage() {
           aria-live="polite"
         >
           <div className="flex items-center justify-between gap-3 mb-2">
-            <div className="min-w-0">
+            <div className="min-w-0 pr-6">
               <p className="text-sm font-semibold text-monte-azul truncate">
                 {syncProgress.status === 'completed' ? 'Sincronização concluída' : syncProgress.status === 'error' ? 'Sincronização interrompida' : 'Sincronizando tudo...'}
               </p>
               <p className="text-xs text-monte-sereno truncate">{syncProgress.message}</p>
             </div>
-            <div className="text-right flex-shrink-0">
-              <p className="text-lg font-bold text-monte-verde">{Math.round(syncProgress.percent)}%</p>
-              <p className="text-[10px] text-monte-sereno">{Math.round(syncProgress.remainingPercent)}% restante</p>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="text-right">
+                <p className="text-lg font-bold text-monte-verde">{Math.round(syncProgress.percent)}%</p>
+                <p className="text-[10px] text-monte-sereno">{Math.round(syncProgress.remainingPercent)}% restante</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleHideSyncProgress(true)}
+                className="p-1 text-monte-sereno hover:text-monte-terracota rounded-full transition-colors flex-shrink-0 ml-1"
+                title="Ocultar barra de sincronização"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
           <div
@@ -1049,6 +1074,17 @@ export default function ConversationsPage() {
                  {includeGroups ? 'Grupos' : 'Sem grupos'}
                </span>
            </button>
+           {syncProgress && hideSyncProgress && (
+             <button
+               type="button"
+               onClick={() => toggleHideSyncProgress(false)}
+               title="Exibir barra de progresso da sincronização"
+               className="px-2.5 py-1 rounded-full text-monte-verde bg-monte-verde/10 hover:bg-monte-verde/20 transition-colors flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold shadow-2xs"
+             >
+               <RefreshCw className="w-3 h-3 animate-spin" />
+               <span>{Math.round(syncProgress.percent)}%</span>
+             </button>
+           )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
