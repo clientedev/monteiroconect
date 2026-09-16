@@ -8,7 +8,7 @@ import {
   MessageSquare, Send, Paperclip, ChevronLeft, Search, Image as ImageIcon,
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
-  Maximize2, Minimize2, ExternalLink, Reply, Bell, BellOff, ArrowLeft,
+  Maximize2, Minimize2, ExternalLink, Reply, Forward, Bell, BellOff, ArrowLeft,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -186,6 +186,10 @@ export default function ConversationsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedContactForCrm, setSelectedContactForCrm] = useState<any | null>(null);
   const [replyingTo, setReplyingTo] = useState<ReplyingToState | null>(null);
+  const [forwardingMsg, setForwardingMsg] = useState<Msg | null>(null);
+  const [forwardSearch, setForwardSearch] = useState('');
+  const [selectedForwardConvIds, setSelectedForwardConvIds] = useState<string[]>([]);
+  const [forwardingBusy, setForwardingBusy] = useState(false);
 
 
   // Sincroniza estado de chat aberto no mobile para o Layout
@@ -924,6 +928,44 @@ export default function ConversationsPage() {
     }
   };
 
+  const handleSendForward = async () => {
+    if (!forwardingMsg || selectedForwardConvIds.length === 0 || forwardingBusy) return;
+    setForwardingBusy(true);
+
+    try {
+      const targetConvs = conversations.filter(c => selectedForwardConvIds.includes(c.id));
+      const content = forwardingMsg.content || '';
+      const type = forwardingMsg.mediaType || 'text';
+      const mediaUrl = forwardingMsg.mediaUrl || undefined;
+
+      for (const target of targetConvs) {
+        if (!target.accountId || !target.contactPhone) continue;
+        await conversationApi.send(
+          target.accountId,
+          target.contactPhone,
+          content,
+          type,
+          mediaUrl,
+          undefined,
+          undefined,
+          selectedAttendantName || undefined,
+        );
+      }
+
+      if (selectedConv && selectedForwardConvIds.includes(selectedConv.id)) {
+        await loadMessages(selectedConv.id, 1);
+      }
+
+      setForwardingMsg(null);
+      setSelectedForwardConvIds([]);
+      setForwardSearch('');
+    } catch (err: any) {
+      alert('Erro ao encaminhar mensagem: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setForwardingBusy(false);
+    }
+  };
+
   const renderContent = (text: string | null) => {
     if (!text) return null;
     const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -1382,18 +1424,32 @@ export default function ConversationsPage() {
               {msgs.map((msg) => (
                 <div key={msg.id} className={`group relative flex items-center gap-1.5 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
                   {!msg.isFromMe && (
-                    <button
-                      type="button"
-                      onClick={() => setReplyingTo({
-                        id: msg.id,
-                        content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
-                        senderName: msg.senderName || selectedConv.contactName || selectedConv.contactPhone || 'Contato',
-                      })}
-                      className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
-                      title="Responder esta mensagem"
-                    >
-                      <Reply className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setReplyingTo({
+                          id: msg.id,
+                          content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
+                          senderName: msg.senderName || selectedConv.contactName || selectedConv.contactPhone || 'Contato',
+                        })}
+                        className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
+                        title="Responder esta mensagem"
+                      >
+                        <Reply className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForwardingMsg(msg);
+                          setSelectedForwardConvIds([]);
+                          setForwardSearch('');
+                        }}
+                        className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
+                        title="Encaminhar esta mensagem"
+                      >
+                        <Forward className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
 
                   <div className={`max-w-[75%] rounded-3xl px-4 py-2.5 shadow-sm relative ${
@@ -1503,18 +1559,32 @@ export default function ConversationsPage() {
                   </div>
 
                   {msg.isFromMe && (
-                    <button
-                      type="button"
-                      onClick={() => setReplyingTo({
-                        id: msg.id,
-                        content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
-                        senderName: msg.senderName || (msg.isFromMe ? 'Sem identificação' : (selectedConv.contactName || selectedConv.contactPhone || 'Contato')),
-                      })}
-                      className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
-                      title="Responder esta mensagem"
-                    >
-                      <Reply className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForwardingMsg(msg);
+                          setSelectedForwardConvIds([]);
+                          setForwardSearch('');
+                        }}
+                        className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
+                        title="Encaminhar esta mensagem"
+                      >
+                        <Forward className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReplyingTo({
+                          id: msg.id,
+                          content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
+                          senderName: msg.senderName || (msg.isFromMe ? 'Sem identificação' : (selectedConv.contactName || selectedConv.contactPhone || 'Contato')),
+                        })}
+                        className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
+                        title="Responder esta mensagem"
+                      >
+                        <Reply className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -1840,6 +1910,137 @@ export default function ConversationsPage() {
           contact={selectedContactForCrm}
           onClose={() => setSelectedContactForCrm(null)}
         />
+      )}
+
+      {/* Modal de Encaminhamento de Mensagem */}
+      {forwardingMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh] border border-monte-sereno/20">
+            {/* Header do Modal */}
+            <div className="px-5 py-4 bg-monte-areiaSecao border-b border-monte-sereno/15 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Forward className="w-5 h-5 text-monte-verde" />
+                <h3 className="font-bold font-display text-monte-azul text-base">Encaminhar mensagem</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setForwardingMsg(null);
+                  setSelectedForwardConvIds([]);
+                  setForwardSearch('');
+                }}
+                className="p-1.5 text-monte-sereno hover:text-monte-terracota rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Preview da Mensagem a ser Encaminhada */}
+            <div className="p-3.5 bg-monte-verde/5 border-b border-monte-sereno/10 text-xs">
+              <p className="font-semibold text-monte-azul mb-1 text-[11px] opacity-70">Conteúdo a encaminhar:</p>
+              <div className="bg-white p-2.5 rounded-xl border border-monte-sereno/15 text-monte-azul line-clamp-3 break-words font-medium">
+                {forwardingMsg.mediaType && forwardingMsg.mediaType !== 'text' && (
+                  <span className="font-bold text-monte-verde mr-1">[{forwardingMsg.mediaType.toUpperCase()}]</span>
+                )}
+                {forwardingMsg.content || 'Mídia da mensagem'}
+              </div>
+            </div>
+
+            {/* Campo de Busca de Conversas */}
+            <div className="p-3 border-b border-monte-sereno/10 bg-white">
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-monte-sereno" />
+                <input
+                  type="text"
+                  className="input-rect pl-9 py-2 text-xs w-full"
+                  placeholder="Buscar contato ou grupo..."
+                  value={forwardSearch}
+                  onChange={e => setForwardSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Lista de Conversas para Seleção */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 divide-y divide-monte-sereno/5">
+              {conversations
+                .filter(c => {
+                  if (!forwardSearch.trim()) return true;
+                  const term = forwardSearch.toLowerCase();
+                  return (
+                    (c.contactName && c.contactName.toLowerCase().includes(term)) ||
+                    (c.contactPhone && c.contactPhone.toLowerCase().includes(term))
+                  );
+                })
+                .map(conv => {
+                  const isSelected = selectedForwardConvIds.includes(conv.id);
+                  return (
+                    <div
+                      key={conv.id}
+                      onClick={() => {
+                        setSelectedForwardConvIds(prev =>
+                          isSelected ? prev.filter(id => id !== conv.id) : [...prev, conv.id]
+                        );
+                      }}
+                      className={`flex items-center justify-between p-2.5 rounded-2xl cursor-pointer transition-colors ${
+                        isSelected ? 'bg-monte-verde/10 border border-monte-verde/30' : 'hover:bg-monte-areia'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar contactId={conv.contactId} name={conv.contactName} phone={conv.contactPhone} size="w-9 h-9" />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-xs text-monte-azul truncate">
+                            {conv.contactName || formatContactPhone(conv.contactPhone)}
+                          </p>
+                          <p className="text-[10px] text-monte-sereno truncate">
+                            {conv.accountName || 'WhatsApp'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+                        isSelected ? 'bg-monte-verde border-monte-verde text-white' : 'border-monte-sereno/30 bg-white'
+                      }`}>
+                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Rodapé do Modal */}
+            <div className="p-3.5 bg-white border-t border-monte-sereno/15 flex items-center justify-between gap-2">
+              <span className="text-xs text-monte-sereno font-medium">
+                {selectedForwardConvIds.length} selecionado(s)
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForwardingMsg(null);
+                    setSelectedForwardConvIds([]);
+                    setForwardSearch('');
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-monte-sereno hover:bg-black/5 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendForward}
+                  disabled={selectedForwardConvIds.length === 0 || forwardingBusy}
+                  className="btn-primary text-xs py-2 px-4 shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {forwardingBusy ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Forward className="w-3.5 h-3.5" />
+                  )}
+                  <span>Encaminhar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
