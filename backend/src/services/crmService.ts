@@ -52,42 +52,87 @@ export interface CrmLookupResponse {
 }
 
 /**
- * Consolida todos os produtos do cliente (extraídos de apólices, funil ou cadastro).
+ * Consolida os produtos do cliente cadastrado no CRM.
+ * Damos prioridade MÁXIMA aos produtos da tela base de cadastro do contato no CRM
+ * (como "Vida", "Saúde", "Auto", "Residencial", etc.).
  */
 export function extractProductsFromCrm(data: any): string[] {
   if (!data || typeof data !== 'object') return [];
   const productsSet = new Set<string>();
 
-  const directList = Array.isArray(data.products)
-    ? data.products
-    : Array.isArray(data.contact?.products)
-    ? data.contact.products
-    : data.contact?.product
-    ? [data.contact.product]
-    : [];
+  const c = data.contact || data;
 
-  for (const item of directList) {
-    if (typeof item === 'string' && item.trim()) {
-      productsSet.add(item.trim());
-    } else if (item && typeof item === 'object') {
-      const name = item.name || item.product || item.produto || item.title || item.nome;
-      if (name && typeof name === 'string' && name.trim()) productsSet.add(name.trim());
+  // Helper interno para adicionar strings, arrays ou objetos sem duplicidade
+  const addValue = (val: any) => {
+    if (!val) return;
+    if (typeof val === 'string' && val.trim()) {
+      const clean = val.trim();
+      if (clean.toUpperCase() !== 'PF' && clean.toUpperCase() !== 'PJ') {
+        productsSet.add(clean);
+      }
+    } else if (Array.isArray(val)) {
+      val.forEach(addValue);
+    } else if (typeof val === 'object') {
+      const name = val.name || val.product || val.produto || val.ramo || val.title || val.nome || val.label || val.tag;
+      if (name && typeof name === 'string' && name.trim()) {
+        const clean = name.trim();
+        if (clean.toUpperCase() !== 'PF' && clean.toUpperCase() !== 'PJ') {
+          productsSet.add(clean);
+        }
+      }
+    }
+  };
+
+  // 1. Prioridade Total: Produtos da tela base de cadastro do Contato no CRM (Vida, Saúde, Auto, Ramo...)
+  if (c) {
+    addValue(c.product);
+    addValue(c.products);
+    addValue(c.produto);
+    addValue(c.produtos);
+    addValue(c.ramo);
+    addValue(c.ramos);
+    addValue(c.ramoSeguro);
+    addValue(c.insuranceType);
+    addValue(c.tipoSeguro);
+    addValue(c.category);
+    addValue(c.categoria);
+    addValue(c.tags);
+    addValue(c.etiquetas);
+  }
+
+  // Raiz do objeto CRM
+  addValue(data.product);
+  addValue(data.products);
+  addValue(data.produto);
+  addValue(data.produtos);
+  addValue(data.ramo);
+  addValue(data.ramos);
+
+  // 2. Se a tela base de contato não continha produtos, busca produtos das apólices ativas
+  if (productsSet.size === 0) {
+    const policies = Array.isArray(data.insurance?.policies) ? data.insurance.policies : [];
+    for (const pol of policies) {
+      const pName = pol.product || pol.produto || pol.ramo || pol.name || pol.insuranceType || pol.tipo;
+      if (pName && typeof pName === 'string' && pName.trim()) {
+        const clean = pName.trim();
+        if (clean.toUpperCase() !== 'PF' && clean.toUpperCase() !== 'PJ') {
+          productsSet.add(clean);
+        }
+      }
     }
   }
 
-  const policies = Array.isArray(data.insurance?.policies) ? data.insurance.policies : [];
-  for (const pol of policies) {
-    const pName = pol.product || pol.produto || pol.name || pol.insuranceType || pol.tipo;
-    if (pName && typeof pName === 'string' && pName.trim()) {
-      productsSet.add(pName.trim());
-    }
-  }
-
-  const deals = Array.isArray(data.pipeline?.deals) ? data.pipeline.deals : [];
-  for (const deal of deals) {
-    const pName = deal.product || deal.produto || deal.title || deal.name;
-    if (pName && typeof pName === 'string' && pName.trim()) {
-      productsSet.add(pName.trim());
+  // 3. Se ainda não encontrou produtos, busca no funil de vendas
+  if (productsSet.size === 0) {
+    const deals = Array.isArray(data.pipeline?.deals) ? data.pipeline.deals : [];
+    for (const deal of deals) {
+      const pName = deal.product || deal.produto || deal.ramo || deal.title || deal.name;
+      if (pName && typeof pName === 'string' && pName.trim()) {
+        const clean = pName.trim();
+        if (clean.toUpperCase() !== 'PF' && clean.toUpperCase() !== 'PJ') {
+          productsSet.add(clean);
+        }
+      }
     }
   }
 
@@ -251,6 +296,12 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
         anniversaryDate: input.anniversaryDate || undefined,
         secondaryPhone: input.secondaryPhone ? normalizePhoneForCrm(input.secondaryPhone) : undefined,
         assignedToName: input.assignedToName || undefined,
+
+        // Produto / Ramo no cadastro base do contato
+        product: input.product || undefined,
+        products: input.product ? [input.product] : undefined,
+        produto: input.product || undefined,
+        ramo: input.product || undefined,
 
         // Endereço
         zipCode: input.zipCode || undefined,
