@@ -68,7 +68,7 @@ const BOT_TEMPLATES = [
     greeting: 'Olá! Seja bem-vindo à Monteiro Corretora de Seguros.\n\nPor favor, digite o número da opção desejada:\n1️⃣ Planos de Saúde\n2️⃣ Seguro Auto e Residencial\n3️⃣ Falar com um Atendente',
     fallback: 'Não consegui identificar essa opção. Por favor, digite 1, 2 ou 3 para escolher o atendimento desejado.',
     rules: [
-      { triggerType: 'exact', trigger: '1', reply: 'Excelente! Trabalhamos com as melhores operadoras: Unimed, Bradesco, Amil, SulAmérica e Notredame. Um de nossos corretores vai te enviar uma simulação personalizada em instantes.' },
+      { triggerType: 'exact', trigger: '1', reply: 'Excelente! Trabalhamos com as melhores operadoras e seguradoras: Unimed, Bradesco, Amil, SulAmérica, Omint, Azos, Porto Seguro e Notredame. Um de nossos corretores vai te enviar uma simulação personalizada em instantes.' },
       { triggerType: 'exact', trigger: '2', reply: 'Perfeito! Oferecemos as melhores condições para proteger seu veículo e sua casa. Aguarde um instante que um corretor vai preparar sua cotação.' },
       { triggerType: 'exact', trigger: '3', reply: 'Com certeza! Nossa equipe já foi notificada e um corretor entrará em contato com você aqui mesmo no WhatsApp.' },
     ],

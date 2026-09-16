@@ -40,6 +40,8 @@ const INSURER_OPTIONS = [
   'Bradesco Seguros',
   'SulAmérica',
   'Amil',
+  'Omint',
+  'Azos',
   'Tokio Marine',
   'Allianz',
   'HDI Seguros',
