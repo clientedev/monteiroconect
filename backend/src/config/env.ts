@@ -33,4 +33,6 @@ export const env = {
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || 'BKhGM8aNEpooHE7c8eUlX2pPrykG9zKj2Qg4TOP-XX20wR-4Q7tgXmHGo3BTvHmu6mYxKhmhlTCivJvsmktrbt0',
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '2g3Zwby0xPQRsH3LMjXAy0dCbLuep0jMAW_cZGHE6p8',
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:contato@monteiroconecta.com.br',
+  crmBaseUrl: (process.env.CRM_BASE_URL || 'https://seu-dominio.com').replace(/\/+$/, ''),
+  crmApiKey: process.env.CRM_API_KEY || 'ms_live_8a7c289eda9bd623177b50c7e489df3b',
 } as const;

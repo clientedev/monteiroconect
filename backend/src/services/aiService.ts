@@ -1,40 +1,40 @@
 import { env } from '../config/env.js';
 import { prisma } from '../database/client.js';
 import { logger } from '../utils/logger.js';
+import { lookupContactInCrm } from './crmService.js';
 
 /**
  * Assistente de IA (Google Gemini) treinado para atender exclusivamente como
- * consultor da Monteiro Corretora: seguros e planos de saúde.
+ * consultor da Monteiro Corretora de Seguros e Benefícios integrado ao CRM da corretora.
  */
-const SYSTEM_PROMPT = `Você é o assistente virtual de atendimento da Monteiro Corretora, uma corretora de seguros e planos de saúde brasileira.
+const BASE_SYSTEM_PROMPT = `Você é o assistente virtual de atendimento da Monteiro Seguros e Benefícios, integrado ao CRM da corretora.
 
 REGRAS DE IDENTIDADE:
-- Você atende em nome da Monteiro Corretora. Nunca revele que é uma IA baseada em Gemini, Google ou qualquer tecnologia específica. Se perguntarem, diga que é o assistente virtual da Monteiro Corretora.
+- Você atende em nome da Monteiro Seguros e Benefícios. Nunca revele que é uma IA baseada em Gemini, Google ou qualquer outra tecnologia.
 - Fale sempre em português do Brasil, com tom cordial, profissional e humano.
+- Formate os dados de forma bem organizada com emojis (🛡️ para Seguros, 💰 para Valores, 👤 para Dados Pessoais).
 
-SOBRE O QUE VOCÊ PODE FALAR (ÚNICOS ASSUNTOS PERMITIDOS):
-1. SEGUROS: seguro auto (carro), residencial, vida, empresarial, de viagem, scooter/moto, RC (responsabilidade civil), fiança locatícia. Pode explicar coberturas, franquias, documentação necessária, diferenciais de contratação e processo de cotação.
-2. PLANOS DE SAÚDE: individual/familiar, empresarial (PME a partir de 3 vidas, com isenção de carência quando vem de plano anterior), dental, seguro saúde/vida. Pode explicar rede credenciada, carências, coparticipação, abrangência nacional/regional e como funciona a portabilidade.
-3. MONTEIRO CORRETORA: quem somos, como funcionamos como corretora (representamos as melhores seguradoras e operadoras do mercado para encontrar a melhor condição), como falar com um corretor humano, nosso atendimento.
+OBJETIVO E REGRAS DO CRM:
+- Sempre que você for consultar sobre um cliente ou ele iniciar contato, utilize as informações do CRM fornecidas no contexto.
+- Se "found" for true no CRM:
+  • O cliente JÁ É CADASTRADO.
+  • Cumprimente-o pelo nome ({{contact.name}}) e faça referência às suas informações cadastradas se pertinente.
+  • Você possui acesso ao cadastro (Tipo PF/PJ, E-mail, CPF/CNPJ, Status, Aniversário, Consultor Responsável), Apólices Ativas (Total, Prêmios Acumulados e Apólices com Seguradora/Produto/Apólice Nº/Vencimento) e Negociações no Funil (Oportunidades Ativas e Negócios com Produto/Valor R$/Status).
+- Se "found" for false no CRM:
+  • O contato NÃO ESTÁ CADASTRADO no CRM.
+  • Informe educadamente que o número ainda não consta na base do CRM da Monteiro Seguros e pergunte se o cliente gostaria de fazer uma cotação.
+
+SOBRE O QUE VOCÊ PODE FALAR (ASSUNTOS PERMITIDOS):
+1. SEGUROS: auto (carro), residencial, vida, empresarial, viagem, scooter/moto, RC (responsabilidade civil), fiança locatícia. Pode explicar coberturas, franquias, documentação necessária e processo de cotação.
+2. PLANOS DE SAÚDE E BENEFÍCIOS: individual/familiar, empresarial (PME), dental, seguro saúde/vida, carências, coparticipação e rede credenciada.
+3. MONTEIRO SEGUROS E BENEFÍCIOS: quem somos, como funcionamos, encaminhar para um consultor humano.
 
 COMO RESPONDER:
-- Respostas CURTAS e diretas, estilo WhatsApp: no máximo 3 a 5 frases ou uma lista breve.
-- Uma pergunta por vez para conduzir o atendimento.
-- Se a pergunta for sobre preços, valores ou condições específicas de uma seguradora/operadora: NUNCA invente valores. Diga que depende do perfil e que um corretor da Monteiro enviará a cotação exata. Sempre que houver interesse real (cotar, contratar, dúvida complexa), informe que um corretor humano dará continuidade pelo mesmo WhatsApp.
-- Nunca prometa prazos de aprovação de análise, cobertura ou reembolso que dependem da seguradora — deixe claro que o corretor confirmará os detalhes.
+- Respostas CURTAS e diretas no estilo WhatsApp (3 a 5 frases ou listas organizadas com emojis 🛡️ 💰 👤).
+- Uma pergunta por vez para conduzir a conversa.
+- Se a pergunta for sobre preços exatos ou novos produtos não cotados: explique que um consultor enviará a cotação exata.
+`;
 
-ASSUNTOS PROIBIDOS:
-- Qualquer assunto fora de seguros, planos de saúde e a Monteiro Corretora (política, futebol, programação, curiosidades gerais etc.). Recuse com elegância e traga de volta ao assunto: "Sou o assistente da Monteiro Corretora e posso te ajudar com seguros e planos de saúde. Posso te auxiliar com alguma dessas coisas?"
-- Não dê conselhos jurídicos, médicos ou financeiros além de informações gerais de seguros e planos de saúde.
-- Não discuta termos de uso de WhatsApp ou estratégias de vendas internas.
-
-EXEMPLO DE TOM:
-"Olá! Que ótimo ter você por aqui 😊 A Monteiro Corretora trabalha com as principais seguradoras do país. Para eu te ajudar melhor: é para veículo, residência, vida ou plano de saúde?"`;
-
-/**
- * Modelos de fallback — se o modelo configurado não estiver disponível no Gemini
- * (404/400), tenta o próximo. O primeiro que responder é usado.
- */
 const FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite'];
 
 type GeminiContent = {
@@ -45,6 +45,7 @@ type GeminiContent = {
 async function callGemini(
   model: string,
   contents: GeminiContent[],
+  systemInstructionText: string = BASE_SYSTEM_PROMPT,
 ): Promise<{ ok: true; reply: string } | { ok: false; status: number; body: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
@@ -53,22 +54,22 @@ async function callGemini(
     const res = await fetch(
       `${env.geminiBaseUrl}/models/${encodeURIComponent(model)}:generateContent`,
       {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': env.geminiApiKey,
-      },
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: SYSTEM_PROMPT }],
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': env.geminiApiKey,
         },
-        contents,
-        generationConfig: {
-          temperature: 0.4,
-          maxOutputTokens: 400,
-        },
-      }),
-      signal: controller.signal,
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [{ text: systemInstructionText }],
+          },
+          contents,
+          generationConfig: {
+            temperature: 0.4,
+            maxOutputTokens: 500,
+          },
+        }),
+        signal: controller.signal,
       },
     );
 
@@ -77,7 +78,7 @@ async function callGemini(
       return { ok: false, status: res.status, body: body.slice(0, 500) };
     }
 
-    const data = await res.json() as any;
+    const data = (await res.json()) as any;
     const reply: string | undefined = data.candidates?.[0]?.content?.parts
       ?.map((part: { text?: string }) => part.text || '')
       .join('')
@@ -99,6 +100,39 @@ export async function generateAiReply(conversationId: string, incomingText: stri
   }
 
   try {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { contact: true },
+    });
+
+    let crmContext = '';
+    if (conversation?.contact?.phone) {
+      const crmData = await lookupContactInCrm(conversation.contact.phone);
+      if (crmData.found && crmData.contact) {
+        crmContext = `\n[ DADOS ATUAIS DO CLIENTE ENCONTRADOS NO CRM DO SISTEMA ]
+- Encontrado no CRM: true (found: true)
+- 👤 Nome: ${crmData.contact.name || 'Não informado'}
+- Tipo: ${crmData.contact.type || 'PF'}
+- E-mail: ${crmData.contact.email || 'Não informado'}
+- Documento (CPF/CNPJ): ${crmData.contact.document || 'Não informado'}
+- Status no CRM: ${crmData.contact.status || 'Ativo'}
+- Aniversário: ${crmData.contact.anniversaryDate || 'Não informado'}
+- Consultor Responsável: ${crmData.contact.assignedTo?.name || 'Não atribuído'}
+- 🛡️ Apólices Ativas (${crmData.insurance?.activePoliciesCount || 0}): ${JSON.stringify(crmData.insurance?.policies || [])}
+- Prêmios Acumulados: ${crmData.insurance?.totalAnnualPremiumFormatted || 'R$ 0,00'}
+- 💰 Negociações no Funil (${crmData.pipeline?.activeDealsCount || 0}): ${JSON.stringify(crmData.pipeline?.deals || [])}
+`;
+      } else {
+        crmContext = `\n[ CONSULTA AO CRM DA CORRETORA ]
+- Encontrado no CRM: false (found: false)
+- Telefone pesquisado: ${crmData.query?.phone || conversation.contact.phone}
+- Instrução: O número ainda não consta na base do CRM da Monteiro Seguros. Seja cortês e pergunte se ele gostaria de realizar uma cotação.
+`;
+      }
+    }
+
+    const fullSystemInstruction = BASE_SYSTEM_PROMPT + crmContext;
+
     const history = await prisma.message.findMany({
       where: {
         conversationId,
@@ -139,10 +173,12 @@ export async function generateAiReply(conversationId: string, incomingText: stri
 
     const models = [env.geminiModel, ...FALLBACK_MODELS.filter(m => m !== env.geminiModel)];
     for (const model of models) {
-      const r = await callGemini(model, contents);
+      const r = await callGemini(model, contents, fullSystemInstruction);
       if (r.ok) return r.reply;
       if (r.status === 404 || r.status === 400) {
-        logger.error(`Gemini modelo "${model}" indisponível (HTTP ${r.status}): ${r.body.slice(0, 200)} — tentando próximo modelo`);
+        logger.error(
+          `Gemini modelo "${model}" indisponível (HTTP ${r.status}): ${r.body.slice(0, 200)} — tentando próximo modelo`,
+        );
         continue;
       }
       logger.error(`Gemini API erro ${r.status}: ${r.body.slice(0, 200)}`);

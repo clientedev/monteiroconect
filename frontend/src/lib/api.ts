@@ -176,7 +176,12 @@ export const contactApi = {
     notes?: string;
   }) =>
     api.put(`/contacts/${id}`, data),
+  crmLookup: (phone: string) =>
+    api.get<any>(`/contacts/crm-lookup?phone=${encodeURIComponent(phone)}`),
+  crmLookupById: (id: string) =>
+    api.get<any>(`/contacts/${id}/crm`),
 };
+
 
 // Tags
 export const tagApi = {

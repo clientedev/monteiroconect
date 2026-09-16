@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { whatsappApi, contactApi } from '../lib/api';
 import { getSocket } from '../lib/socket';
-import { Search, Users, ChevronRight, Smartphone } from 'lucide-react';
+import { Search, Users, ChevronRight, Smartphone, ShieldCheck } from 'lucide-react';
+import CrmContactModal from '../components/CrmContactModal';
 
 function ContactAvatar({ id, name }: { id: string; name: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -30,6 +31,7 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedContactForCrm, setSelectedContactForCrm] = useState<any | null>(null);
 
   const loadContacts = useCallback(async () => {
     if (!selectedAccountId) {
@@ -49,14 +51,19 @@ export default function ContactsPage() {
   }, [selectedAccountId, search]);
 
   useEffect(() => {
-    whatsappApi.list().then(data => {
-      setAccounts(data);
-      if (data.length > 0) setSelectedAccountId(data[0].id);
-      else setLoading(false);
-    }).catch(() => setLoading(false));
+    whatsappApi
+      .list()
+      .then((data) => {
+        setAccounts(data);
+        if (data.length > 0) setSelectedAccountId(data[0].id);
+        else setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => { loadContacts(); }, [loadContacts]);
+  useEffect(() => {
+    loadContacts();
+  }, [loadContacts]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -72,7 +79,11 @@ export default function ContactsPage() {
     };
   }, [selectedAccountId, loadContacts]);
 
-  const openContact = (contact: any) => {
+  const handleContactClick = (contact: any) => {
+    setSelectedContactForCrm(contact);
+  };
+
+  const openConversation = (contact: any) => {
     if (!contact.conversationId) return;
     navigate('/conversations', {
       state: { conversationId: contact.conversationId, accountId: selectedAccountId },
@@ -84,16 +95,20 @@ export default function ContactsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="section-title">Agenda de contatos</h2>
-          <p className="text-sm text-monte-sereno mt-1">Clique em um contato para abrir a conversa</p>
+          <p className="text-sm text-monte-sereno mt-1">
+            Clique no nome de um contato para consultar seus dados completos no CRM Monteiro Seguros
+          </p>
         </div>
         {accounts.length > 0 && (
           <select
             className="input-rect w-full sm:w-auto"
             value={selectedAccountId}
-            onChange={e => setSelectedAccountId(e.target.value)}
+            onChange={(e) => setSelectedAccountId(e.target.value)}
           >
             {accounts.map((account: any) => (
-              <option key={account.id} value={account.id}>{account.name}</option>
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
             ))}
           </select>
         )}
@@ -104,9 +119,9 @@ export default function ContactsPage() {
         <input
           type="search"
           className="input-rect pl-10"
-          placeholder="Buscar pelo nome..."
+          placeholder="Buscar pelo nome ou telefone..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
@@ -132,29 +147,46 @@ export default function ContactsPage() {
           </div>
         ) : (
           <div className="divide-y divide-monte-sereno/10">
-            {contacts.map(contact => (
+            {contacts.map((contact) => (
               <button
                 key={contact.id}
                 type="button"
-                onClick={() => openContact(contact)}
-                disabled={!contact.conversationId}
-                className="w-full flex items-center gap-4 p-4 text-left hover:bg-monte-areiaSecao/60 transition-colors disabled:cursor-default disabled:hover:bg-transparent"
+                onClick={() => handleContactClick(contact)}
+                className="w-full flex items-center gap-4 p-4 text-left hover:bg-monte-areiaSecao/60 transition-colors group cursor-pointer"
               >
                 <ContactAvatar id={contact.id} name={contact.name} />
                 <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-semibold text-monte-azul truncate">
+                  <span className="block text-sm font-semibold text-monte-azul truncate group-hover:text-monte-verde transition-colors">
                     {contact.name || 'Contato sem nome'}
                   </span>
-                  <span className="block text-xs text-monte-sereno mt-1">
-                    {contact.conversationCount || 0} {contact.conversationCount === 1 ? 'conversa' : 'conversas'}
+                  <span className="flex items-center gap-2 text-xs text-monte-sereno mt-1">
+                    <span>{contact.phone}</span>
+                    <span>•</span>
+                    <span>
+                      {contact.conversationCount || 0}{' '}
+                      {contact.conversationCount === 1 ? 'conversa' : 'conversas'}
+                    </span>
                   </span>
                 </span>
-                {contact.conversationId && <ChevronRight className="w-5 h-5 text-monte-sereno/60 flex-shrink-0" />}
+                <div className="flex items-center gap-2 text-xs text-monte-verde font-semibold bg-monte-verde/10 px-3 py-1.5 rounded-xl group-hover:bg-monte-verde group-hover:text-white transition-all flex-shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Consultar CRM</span>
+                  <ChevronRight className="w-4 h-4" />
+                </div>
               </button>
             ))}
           </div>
         )}
       </div>
+
+      {/* Modal do CRM */}
+      {selectedContactForCrm && (
+        <CrmContactModal
+          contact={selectedContactForCrm}
+          onClose={() => setSelectedContactForCrm(null)}
+          onOpenConversation={openConversation}
+        />
+      )}
     </div>
   );
 }

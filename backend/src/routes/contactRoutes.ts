@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { listContacts, updateContact } from '../services/contactService.js';
+import { lookupContactInCrm } from '../services/crmService.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { sessionManager } from '../whatsapp/sessionManager.js';
 import { prisma } from '../database/client.js';
@@ -50,6 +51,33 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+router.get('/crm-lookup', async (req, res, next) => {
+  try {
+    const phone = req.query.phone as string;
+    if (!phone) {
+      return res.status(400).json({ error: 'Parâmetro phone é obrigatório' });
+    }
+    const crmData = await lookupContactInCrm(phone);
+    res.json(crmData);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/crm', async (req, res, next) => {
+  try {
+    const contact = await prisma.contact.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, phone: true },
+    });
+    if (!contact) return res.status(404).json({ error: 'Contato não encontrado' });
+    const crmData = await lookupContactInCrm(contact.phone);
+    res.json(crmData);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.put('/:id', async (req, res, next) => {
   try {
     const body = z.object({
@@ -64,3 +92,4 @@ router.put('/:id', async (req, res, next) => {
 });
 
 export default router;
+
