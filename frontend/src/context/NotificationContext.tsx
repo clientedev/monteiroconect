@@ -129,7 +129,27 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const setMuted = (muted: boolean) => updateSetting('muted', muted);
+  const setMuted = (muted: boolean) => {
+    updateSetting('muted', muted);
+    if (muted) {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.pushManager.getSubscription().then(sub => {
+            if (sub) {
+              const endpoint = sub.endpoint;
+              sub.unsubscribe().catch(() => {});
+              pushApi.unsubscribe(endpoint).catch(() => {});
+              setPushSubscribed(false);
+            }
+          });
+        }).catch(() => {});
+      }
+    } else {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        subscribeToPush();
+      }
+    }
+  };
   const setSoundPreset = (soundPreset: NotificationTonePreset) => updateSetting('soundPreset', soundPreset);
   const setVolume = (volume: number) => updateSetting('volume', volume);
   const setIosDisplayMode = (iosDisplayMode: IosDisplayMode) => updateSetting('iosDisplayMode', iosDisplayMode);
@@ -138,6 +158,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Inscreve no Web Push com as chaves VAPID do backend (funciona com app fechado)
   const subscribeToPush = useCallback(async (): Promise<boolean> => {
+    if (settings.muted) return false;
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       return false;
     }
@@ -188,7 +209,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     } finally {
       setPushLoading(false);
     }
-  }, []);
+  }, [settings.muted]);
 
   // Inicializa contexto de áudio e solicita permissão de push na primeira interação se for default
   useEffect(() => {

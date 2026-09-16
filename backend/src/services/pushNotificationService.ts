@@ -145,20 +145,28 @@ export async function sendPushForNewMessage(data: {
     const { message, contact, conversation, accountId } = data;
     if (message?.isFromMe) return;
 
-    const contactName = contact?.name || contact?.phone || 'Contato WhatsApp';
-    const bodyPreview = message?.content || (message?.mediaType ? `[${message.mediaType}]` : 'Nova mensagem recebida');
-    const conversationId = conversation?.id || message?.conversationId;
+    // REGRA OBRIGATÓRIA: Notificações de GRUPOS (@g.us) são 100% silenciadas por padrão
+    const contactPhone = String(contact?.phone || conversation?.contact?.phone || '').trim();
+    const isGroup = contactPhone.endsWith('@g.us') || Boolean(conversation?.contact?.phone?.endsWith('@g.us'));
+    if (isGroup) {
+      logger.info(`Notificação Push suprimida para GRUPO: ${contactPhone}`);
+      return;
+    }
 
+    const conversationId = conversation?.id || message?.conversationId;
     if (conversationId) {
       const convDb = await prisma.conversation.findUnique({
         where: { id: conversationId },
-        select: { isMuted: true },
+        select: { isMuted: true, contact: { select: { phone: true } } },
       });
-      if (convDb?.isMuted || conversation?.isMuted) {
+      if (convDb?.isMuted || conversation?.isMuted || convDb?.contact?.phone?.endsWith('@g.us')) {
         logger.info(`Notificação Push suprimida para conversa silenciada: ${conversationId}`);
         return;
       }
     }
+
+    const contactName = contact?.name || contact?.phone || 'Contato WhatsApp';
+    const bodyPreview = message?.content || (message?.mediaType ? `[${message.mediaType}]` : 'Nova mensagem recebida');
 
     const payload: PushPayload = {
       title: `${contactName}`,

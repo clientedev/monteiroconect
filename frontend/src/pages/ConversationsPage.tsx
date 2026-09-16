@@ -1213,8 +1213,8 @@ export default function ConversationsPage() {
             </div>
 
 
-            {/* Linha secundária de opções rápidas no Desktop */}
-            <div className="hidden lg:flex items-center justify-between px-4 py-2 bg-white/60 backdrop-blur-xs border-b border-monte-sereno/10 text-xs gap-3">
+            {/* Linha secundária de opções rápidas (disponível no mobile e desktop) */}
+            <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-white/70 backdrop-blur-xs border-b border-monte-sereno/10 text-xs gap-2">
               <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                 {(selectedConv.tags || []).map((tag: ConversationTag) => (
                   <span

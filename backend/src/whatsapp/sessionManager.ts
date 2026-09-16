@@ -153,6 +153,9 @@ class WhatsAppSessionManager extends EventEmitter {
     } catch (err) {
       logger.warn('Falha na limpeza de contatos/conversas newsletter:', err);
     }
+
+    // Auto-silencia todos os grupos no banco de dados por padrão
+    await this.muteAllGroups();
   }
 
   /**
@@ -837,12 +840,40 @@ class WhatsAppSessionManager extends EventEmitter {
         data: {
           contactId: primaryContact.id,
           whatsappId: accountId,
-          isMuted: isGroup,
+          isMuted: isGroup || primaryContact.phone.endsWith('@g.us'),
         },
+      });
+    } else if ((isGroup || primaryContact.phone.endsWith('@g.us')) && !primaryConversation.isMuted) {
+      primaryConversation = await prisma.conversation.update({
+        where: { id: primaryConversation.id },
+        data: { isMuted: true },
       });
     }
 
     return { contact: primaryContact, conversation: primaryConversation };
+  }
+
+  /**
+   * Garante que TODOS os grupos no banco de dados fiquem estritamente silenciados por padrão.
+   */
+  async muteAllGroups(accountId?: string): Promise<number> {
+    try {
+      const result = await prisma.conversation.updateMany({
+        where: {
+          ...(accountId ? { whatsappId: accountId } : {}),
+          contact: { phone: { endsWith: '@g.us' } },
+          isMuted: false,
+        },
+        data: { isMuted: true },
+      });
+      if (result.count > 0) {
+        logger.info(`[${accountId || 'global'}] Auto-silenciamento de grupos: ${result.count} grupo(s) silenciados.`);
+      }
+      return result.count;
+    } catch (err) {
+      logger.warn('Erro ao silenciar grupos no banco:', err);
+      return 0;
+    }
   }
 
   /**
