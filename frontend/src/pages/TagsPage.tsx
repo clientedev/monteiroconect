@@ -37,7 +37,12 @@ export default function TagsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Remover esta etiqueta?')) return;
-    try { await tagApi.delete(id); load(); } catch {}
+    try {
+      await tagApi.delete(id);
+      load();
+    } catch (err: any) {
+      alert('Erro ao excluir etiqueta: ' + (err.message || 'Falha ao remover'));
+    }
   };
 
   return (

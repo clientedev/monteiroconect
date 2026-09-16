@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation, useOutletContext, useNavigate } from 'react-router-dom';
-import { api, authApi, tagApi, whatsappApi, conversationApi } from '../lib/api';
+import { api, authApi, tagApi, whatsappApi, conversationApi, contactApi } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -148,6 +148,7 @@ export default function ConversationsPage() {
   const [msgTotal, setMsgTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedContactForCrm, setSelectedContactForCrm] = useState<any | null>(null);
+  const [crmStatuses, setCrmStatuses] = useState<Record<string, { found: boolean; products: string[] }>>({});
 
 
   // Sincroniza estado de chat aberto no mobile para o Layout
@@ -263,6 +264,26 @@ export default function ConversationsPage() {
           return timeDifference || b.id.localeCompare(a.id);
         });
       setConversations(merged);
+
+      // Consulta em lote o CRM para buscar produtos dos contatos das conversas
+      const phones = Array.from(new Set(merged.map((c: any) => c.contactPhone).filter(Boolean)));
+      if (phones.length > 0) {
+        contactApi
+          .crmBatchLookup(phones)
+          .then((res) => {
+            const map: Record<string, { found: boolean; products: string[] }> = {};
+            if (res?.results) {
+              Object.entries(res.results).forEach(([phone, info]: [string, any]) => {
+                map[phone] = {
+                  found: info.found === true,
+                  products: info.products || [],
+                };
+              });
+            }
+            setCrmStatuses(map);
+          })
+          .catch(() => {});
+      }
     } catch (err) {
       console.error('Erro ao carregar conversas:', err);
     }
@@ -1015,23 +1036,43 @@ export default function ConversationsPage() {
                           {conv.accountName}{conv.accountPhone ? ` · ${conv.accountPhone}` : ''}
                         </p>
                       )}
-                      {!!conv.tags?.length && (
-                        <div className="flex items-center gap-1 mt-1 overflow-hidden">
-                          {conv.tags.slice(0, 3).map((tag: ConversationTag) => (
-                            <span
-                              key={tag.id}
-                              className="inline-flex items-center gap-1 max-w-[92px] rounded-full border px-1.5 py-0.5 text-[9px] font-semibold truncate"
-                              style={{ color: tag.color, borderColor: tag.color, backgroundColor: `${tag.color}12` }}
-                            >
-                              <TagIcon className="w-2.5 h-2.5 flex-shrink-0" />
-                              <span className="truncate">{tag.name}</span>
-                            </span>
-                          ))}
-                          {conv.tags.length > 3 && (
-                            <span className="text-[9px] text-monte-sereno flex-shrink-0">+{conv.tags.length - 3}</span>
-                          )}
-                        </div>
-                      )}
+                      {(() => {
+                        const crmProds = crmStatuses[conv.contactPhone]?.products || [];
+                        const hasTags = !!conv.tags?.length;
+                        const hasCrmProds = crmProds.length > 0;
+                        if (!hasTags && !hasCrmProds) return null;
+
+                        return (
+                          <div className="flex flex-wrap items-center gap-1 mt-1 overflow-hidden">
+                            {/* Etiquetas do CRM Monteiro (Produtos) */}
+                            {crmProds.map((prod: string, pIdx: number) => (
+                              <span
+                                key={`crm-${pIdx}`}
+                                className="inline-flex items-center gap-1 max-w-[110px] rounded-full border border-emerald-400 bg-emerald-100 text-emerald-900 px-1.5 py-0.5 text-[9px] font-bold shadow-2xs truncate"
+                                title={`Produto CRM: ${prod}`}
+                              >
+                                <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 flex-shrink-0" />
+                                <span className="truncate">{prod}</span>
+                              </span>
+                            ))}
+
+                            {/* Etiquetas do WhatsApp */}
+                            {(conv.tags || []).slice(0, 3).map((tag: ConversationTag) => (
+                              <span
+                                key={tag.id}
+                                className="inline-flex items-center gap-1 max-w-[92px] rounded-full border px-1.5 py-0.5 text-[9px] font-semibold truncate"
+                                style={{ color: tag.color, borderColor: tag.color, backgroundColor: `${tag.color}12` }}
+                              >
+                                <TagIcon className="w-2.5 h-2.5 flex-shrink-0" />
+                                <span className="truncate">{tag.name}</span>
+                              </span>
+                            ))}
+                            {(conv.tags?.length || 0) > 3 && (
+                              <span className="text-[9px] text-monte-sereno flex-shrink-0">+{(conv.tags?.length || 0) - 3}</span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {conv.assignedUser && (
                         <p className="flex items-center gap-1 text-[10px] text-monte-azul/70 truncate mt-1">
                           <UserCheck className="w-2.5 h-2.5 flex-shrink-0" />
@@ -1145,6 +1186,18 @@ export default function ConversationsPage() {
             {/* Linha secundária de opções rápidas no Desktop */}
             <div className="hidden lg:flex items-center justify-between px-4 py-2 bg-white/60 backdrop-blur-xs border-b border-monte-sereno/10 text-xs gap-3">
               <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                {/* Etiquetas de Produtos do CRM Monteiro */}
+                {(crmStatuses[selectedConv.contactPhone]?.products || []).map((prod: string, pIdx: number) => (
+                  <span
+                    key={`hdr-crm-${pIdx}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-400 bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[10px] font-bold shadow-2xs"
+                    title={`Produto cadastrado no CRM: ${prod}`}
+                  >
+                    <ShieldCheck className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                    <span>{prod}</span>
+                  </span>
+                ))}
+
                 {(selectedConv.tags || []).map((tag: ConversationTag) => (
                   <span
                     key={tag.id}
@@ -1516,9 +1569,21 @@ export default function ConversationsPage() {
             {/* Etiquetas */}
             <div className="py-3">
               <p className="text-xs font-bold text-monte-sereno uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <TagIcon className="w-3.5 h-3.5" /> Etiquetas do Contato
+                <TagIcon className="w-3.5 h-3.5" /> Etiquetas do Contato (CRM & Sistema)
               </p>
               <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                {/* Etiquetas de Produtos do CRM Monteiro */}
+                {(crmStatuses[selectedConv.contactPhone]?.products || []).map((prod: string, pIdx: number) => (
+                  <span
+                    key={`side-crm-${pIdx}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-400 bg-emerald-100 text-emerald-900 px-2.5 py-1 text-xs font-bold shadow-2xs"
+                    title={`Produto no CRM: ${prod}`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                    <span>{prod}</span>
+                  </span>
+                ))}
+
                 {(selectedConv.tags || []).map((tag: ConversationTag) => (
                   <span
                     key={tag.id}

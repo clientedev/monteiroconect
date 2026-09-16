@@ -26,7 +26,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
   } catch (err) { next(err); }
 });
 
-router.delete('/:id', requireRole('admin'), async (req, res, next) => {
+router.delete('/:id', requireRole('admin', 'supervisor', 'attendant'), async (req, res, next) => {
   try { res.json(await deleteTag(String(req.params.id))); } catch (err) { next(err); }
 });
 

@@ -16,6 +16,7 @@ export async function updateTag(id: string, data: { name?: string; color?: strin
 }
 
 export async function deleteTag(id: string) {
+  await prisma.conversationTag.deleteMany({ where: { tagId: id } });
   return prisma.tag.delete({ where: { id } });
 }
 
