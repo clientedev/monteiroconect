@@ -125,6 +125,249 @@ const formatTime = (date?: string | null) => {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
 
+function ChatMessageItem({
+  msg,
+  selectedConvName,
+  onReply,
+  onForward,
+  renderContent,
+}: {
+  msg: Msg;
+  selectedConvName: string;
+  onReply: (msg: Msg) => void;
+  onForward: (msg: Msg) => void;
+  renderContent: (content: string) => React.ReactNode;
+}) {
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [showActions, setShowActions] = useState(false);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const isSwiping = useRef(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    isSwiping.current = false;
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const diffX = e.touches[0].clientX - touchStartX.current;
+    const diffY = e.touches[0].clientY - touchStartY.current;
+
+    if (!isSwiping.current) {
+      if (Math.abs(diffX) > 8 && Math.abs(diffX) > Math.abs(diffY)) {
+        isSwiping.current = true;
+      }
+    }
+
+    if (isSwiping.current) {
+      let offset = diffX;
+      if (!msg.isFromMe) {
+        offset = Math.min(Math.max(diffX, -15), 75);
+      } else {
+        offset = Math.min(Math.max(diffX, -75), 15);
+      }
+      setSwipeOffset(offset);
+      if (Math.abs(offset) > 15) {
+        setShowActions(true);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    if (Math.abs(swipeOffset) > 40) {
+      onReply(msg);
+    }
+    setSwipeOffset(0);
+    setTimeout(() => {
+      setShowActions(false);
+    }, 2000);
+  };
+
+  return (
+    <div className={`group relative flex items-center w-full my-1 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          transform: `translateX(${swipeOffset}px)`,
+          transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        }}
+        className={`relative max-w-[75%] rounded-3xl px-4 py-2.5 shadow-sm touch-pan-y ${
+          msg.isFromMe
+            ? 'bg-monte-verde text-white rounded-br-lg'
+            : 'bg-white/80 backdrop-blur-sm border border-monte-sereno/15 text-monte-azul rounded-bl-lg'
+        }`}
+      >
+        {msg.senderName && (
+          <p className={`text-xs font-bold mb-1 truncate ${msg.isFromMe ? 'text-white/80' : 'text-monte-terracota'}`}>
+            {msg.senderName}
+          </p>
+        )}
+        {msg.quotedContent && (
+          <div className={`mb-1.5 pl-2.5 border-l-[3px] rounded-lg py-1 pr-2 text-xs ${
+            msg.isFromMe
+              ? 'border-white/80 bg-white/20 text-white'
+              : 'border-monte-verde bg-monte-verde/10 text-monte-azul'
+          }`}>
+            <p className="line-clamp-3 break-words whitespace-pre-wrap text-[11px] opacity-90">
+              {msg.quotedContent}
+            </p>
+          </div>
+        )}
+        {msg.mediaType === 'image' && msg.mediaUrl && (
+          <div className="mb-2 -mx-1 -mt-1 rounded-t-3xl overflow-hidden">
+            <img
+              src={msg.mediaUrl}
+              alt="Imagem"
+              className="w-full max-h-96 object-cover cursor-pointer"
+              loading="lazy"
+              onClick={() => window.open(msg.mediaUrl!, '_blank')}
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+        {msg.mediaType === 'sticker' && (
+          <div className="mb-2 p-1">
+            {msg.mediaUrl ? (
+              <img
+                src={msg.mediaUrl}
+                alt="Figurinha"
+                className="w-32 h-32 object-contain cursor-pointer"
+                onClick={() => window.open(msg.mediaUrl!, '_blank')}
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <p className="text-xs opacity-70">🎭 Figurinha</p>
+            )}
+          </div>
+        )}
+        {msg.mediaType === 'video' && msg.mediaUrl && (
+          <div className="mb-2">
+            <video src={msg.mediaUrl} controls className="rounded-2xl max-w-full max-h-80" />
+          </div>
+        )}
+        {msg.mediaType === 'audio' && msg.mediaUrl && (
+          <div className="mb-2 space-y-1">
+            <audio
+              src={msg.mediaUrl}
+              controls
+              preload="metadata"
+              className="max-w-full rounded-lg"
+            />
+            <div className="text-[10px] opacity-70 text-right">
+              <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                Baixar áudio
+              </a>
+            </div>
+          </div>
+        )}
+        {msg.mediaType === 'audio' && !msg.mediaUrl && (
+          <p className="text-xs opacity-70 mb-1">Áudio sem arquivo disponível</p>
+        )}
+        {msg.content && (
+          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderContent(msg.content)}</p>
+        )}
+        {msg.mediaType === 'document' && msg.mediaUrl && (
+          <div className="flex items-center gap-2">
+            <Paperclip className="w-4 h-4 opacity-70" />
+            <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline break-all">{msg.content || 'Documento'}</a>
+          </div>
+        )}
+        {(msg.mediaType === 'location' || msg.mediaType === 'contact') && (
+          <p className="text-xs opacity-70 mb-1">
+            {msg.mediaType === 'location' ? '📍 Localização' : '👤 Contato'}
+          </p>
+        )}
+
+        <div className={`flex items-center gap-1 mt-1 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
+          <span className={`text-[10px] ${msg.isFromMe ? 'text-white/70' : 'text-monte-sereno'}`}>
+            {formatTime(msg.timestamp || msg.createdAt)}
+          </span>
+          {msg.isFromMe && (
+            <span title={msg.isRead ? 'Mensagem lida' : 'Mensagem enviada'}>
+              {msg.isRead
+                ? <CheckCheck className="w-4 h-4 text-sky-300 drop-shadow-sm stroke-[2.5]" />
+                : <CheckCheck className="w-4 h-4 text-white/90 stroke-[2]" />}
+            </span>
+          )}
+        </div>
+
+        {/* Floating action buttons (pílula flutuante sem descolar a mensagem da extremidade) */}
+        <div
+          className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-20 bg-white/95 backdrop-blur-md border border-monte-sereno/20 shadow-md rounded-full px-1 py-0.5 transition-all duration-200 ${
+            msg.isFromMe ? 'right-full mr-2' : 'left-full ml-2'
+          } ${
+            showActions
+              ? 'opacity-100 scale-100 pointer-events-auto'
+              : 'opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto'
+          }`}
+        >
+          {msg.isFromMe ? (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onForward(msg);
+                }}
+                className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
+                title="Encaminhar esta mensagem"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReply(msg);
+                }}
+                className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
+                title="Responder esta mensagem"
+              >
+                <Reply className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReply(msg);
+                }}
+                className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
+                title="Responder esta mensagem"
+              >
+                <Reply className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onForward(msg);
+                }}
+                className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
+                title="Encaminhar esta mensagem"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ALL_ACCOUNTS = '__all__';
 
 export default function ConversationsPage() {
@@ -1439,171 +1682,22 @@ export default function ConversationsPage() {
               )}
 
               {msgs.map((msg) => (
-                <div key={msg.id} className={`group relative flex items-center gap-1.5 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
-                  {!msg.isFromMe && (
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setReplyingTo({
-                          id: msg.id,
-                          content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
-                          senderName: msg.senderName || selectedConv.contactName || selectedConv.contactPhone || 'Contato',
-                        })}
-                        className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
-                        title="Responder esta mensagem"
-                      >
-                        <Reply className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForwardingMsg(msg);
-                          setSelectedForwardConvIds([]);
-                          setForwardSearch('');
-                        }}
-                        className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
-                        title="Encaminhar esta mensagem"
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-
-                  <div className={`max-w-[75%] rounded-3xl px-4 py-2.5 shadow-sm relative ${
-                    msg.isFromMe
-                      ? 'bg-monte-verde text-white rounded-br-lg'
-                      : 'bg-white/80 backdrop-blur-sm border border-monte-sereno/15 text-monte-azul rounded-bl-lg'
-                  }`}>
-                    {/* Remetente: atendente logado nas mensagens do painel ou contato em grupos */}
-                    {msg.senderName && (
-                      <p className={`text-xs font-bold mb-1 truncate ${msg.isFromMe ? 'text-white/80' : 'text-monte-terracota'}`}>
-                        {msg.senderName}
-                      </p>
-                    )}
-                    {/* Mensagem respondida (reply) */}
-                    {msg.quotedContent && (
-                      <div className={`mb-1.5 pl-2.5 border-l-[3px] rounded-lg py-1 pr-2 text-xs ${
-                        msg.isFromMe
-                          ? 'border-white/80 bg-white/20 text-white'
-                          : 'border-monte-verde bg-monte-verde/10 text-monte-azul'
-                      }`}>
-                        <p className="line-clamp-3 break-words whitespace-pre-wrap text-[11px] opacity-90">
-                          {msg.quotedContent}
-                        </p>
-                      </div>
-                    )}
-                    {msg.mediaType === 'image' && msg.mediaUrl && (
-                      <div className="mb-2 -mx-1 -mt-1 rounded-t-3xl overflow-hidden">
-                        <img
-                          src={msg.mediaUrl}
-                          alt="Imagem"
-                          className="w-full max-h-96 object-cover cursor-pointer"
-                          loading="lazy"
-                          onClick={() => window.open(msg.mediaUrl!, '_blank')}
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      </div>
-                    )}
-                    {msg.mediaType === 'sticker' && (
-                      <div className="mb-2 p-1">
-                        {msg.mediaUrl ? (
-                          <img
-                            src={msg.mediaUrl}
-                            alt="Figurinha"
-                            className="w-32 h-32 object-contain cursor-pointer"
-                            onClick={() => window.open(msg.mediaUrl!, '_blank')}
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <p className="text-xs opacity-70">🎭 Figurinha</p>
-                        )}
-                      </div>
-                    )}
-                    {msg.mediaType === 'video' && msg.mediaUrl && (
-                      <div className="mb-2">
-                        <video src={msg.mediaUrl} controls className="rounded-2xl max-w-full max-h-80" />
-                      </div>
-                    )}
-                    {msg.mediaType === 'audio' && msg.mediaUrl && (
-                      <div className="mb-2 space-y-1">
-                        <audio
-                          src={msg.mediaUrl}
-                          controls
-                          preload="metadata"
-                          className="max-w-full rounded-lg"
-                        />
-                        <div className="text-[10px] opacity-70 text-right">
-                          <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline">
-                            Baixar áudio
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    {msg.mediaType === 'audio' && !msg.mediaUrl && (
-                      <p className="text-xs opacity-70 mb-1">Áudio sem arquivo disponível</p>
-                    )}
-                    {msg.content && (
-                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderContent(msg.content)}</p>
-                    )}
-                    {msg.mediaType === 'document' && msg.mediaUrl && (
-                      <div className="flex items-center gap-2">
-                        <Paperclip className="w-4 h-4 opacity-70" />
-                        <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline break-all">{msg.content || 'Documento'}</a>
-                      </div>
-                    )}
-                    {(msg.mediaType === 'location' || msg.mediaType === 'contact') && (
-                      <p className="text-xs opacity-70 mb-1">
-                        {msg.mediaType === 'location' ? '📍 Localização' : '👤 Contato'}
-                      </p>
-                    )}
-
-                    <div className={`flex items-center gap-1 mt-1 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
-                      <span className={`text-[10px] ${msg.isFromMe ? 'text-white/70' : 'text-monte-sereno'}`}>
-                        {formatTime(msg.timestamp || msg.createdAt)}
-                      </span>
-                      {msg.isFromMe && (
-                        <span title={msg.isRead ? 'Mensagem lida' : 'Mensagem enviada'}>
-                          {msg.isRead
-                            ? <CheckCheck className="w-4 h-4 text-sky-300 drop-shadow-sm stroke-[2.5]" />
-                            : <CheckCheck className="w-4 h-4 text-white/90 stroke-[2]" />}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {msg.isFromMe && (
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForwardingMsg(msg);
-                          setSelectedForwardConvIds([]);
-                          setForwardSearch('');
-                        }}
-                        className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
-                        title="Encaminhar esta mensagem"
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setReplyingTo({
-                          id: msg.id,
-                          content: msg.content || (msg.mediaType ? `[${msg.mediaType}]` : 'Mensagem'),
-                          senderName: msg.senderName || (msg.isFromMe ? 'Sem identificação' : (selectedConv.contactName || selectedConv.contactPhone || 'Contato')),
-                        })}
-                        className="p-1.5 rounded-full text-monte-sereno hover:text-monte-verde hover:bg-black/5 transition-all"
-                        title="Responder esta mensagem"
-                      >
-                        <Reply className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <ChatMessageItem
+                  key={msg.id}
+                  msg={msg}
+                  selectedConvName={selectedConv.contactName || selectedConv.contactPhone || 'Contato'}
+                  onReply={(m) => setReplyingTo({
+                    id: m.id,
+                    content: m.content || (m.mediaType ? `[${m.mediaType}]` : 'Mensagem'),
+                    senderName: m.senderName || (m.isFromMe ? 'Sem identificação' : (selectedConv.contactName || selectedConv.contactPhone || 'Contato')),
+                  })}
+                  onForward={(m) => {
+                    setForwardingMsg(m);
+                    setSelectedForwardConvIds([]);
+                    setForwardSearch('');
+                  }}
+                  renderContent={renderContent}
+                />
               ))}
               {msgs.length === 0 && (
                 <div className="flex items-center justify-center h-full text-monte-sereno">
