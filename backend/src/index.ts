@@ -77,6 +77,24 @@ async function ensureMessageColumns(): Promise<void> {
     await prisma.$executeRawUnsafe(
       'CREATE INDEX IF NOT EXISTS "QuickMessage_title_idx" ON "QuickMessage" ("title")',
     );
+
+    // Sanitização retroativa de mensagens antigas gravadas com tags cruas
+    try {
+      await prisma.$executeRawUnsafe(`
+        UPDATE "Message" SET content = '🎭 Figurinha' WHERE ("mediaType" = 'sticker' OR type = 'sticker') AND (content = '' OR content IS NULL OR content = '[messageContextInfo]' OR content = '[unknown]');
+        UPDATE "Message" SET content = '🔒 [Mensagem protegida por criptografia]' WHERE content = '[secretEncryptedMessage]';
+        UPDATE "Message" SET content = '📋 [Mensagem interativa]' WHERE content = '[templateMessage]';
+        UPDATE "Message" SET content = 'Mensagem de sistema' WHERE content = '[messageContextInfo]' OR content = '[unknown]';
+        UPDATE "Conversation" SET "lastMessage" = '🎭 Figurinha' WHERE "lastMessage" IN ('[sticker]', '[messageContextInfo]', '[unknown]');
+        UPDATE "Conversation" SET "lastMessage" = '📷 Imagem' WHERE "lastMessage" = '[image]';
+        UPDATE "Conversation" SET "lastMessage" = '🎵 Áudio' WHERE "lastMessage" = '[audio]';
+        UPDATE "Conversation" SET "lastMessage" = '🎥 Vídeo' WHERE "lastMessage" = '[video]';
+        UPDATE "Conversation" SET "lastMessage" = '📄 Documento' WHERE "lastMessage" = '[document]';
+        UPDATE "Conversation" SET "lastMessage" = '📍 Localização' WHERE "lastMessage" = '[location]';
+        UPDATE "Conversation" SET "lastMessage" = '👤 Contato' WHERE "lastMessage" = '[contact]';
+      `);
+    } catch {}
+
     logger.info('Schema de mensagens e mensagens rápidas verificado (deduplicação, índice waMsgId e QuickMessage ativos).');
   } catch (err: any) {
     // Em uma base vazia a tabela ainda não existe; o db push abaixo a criará.

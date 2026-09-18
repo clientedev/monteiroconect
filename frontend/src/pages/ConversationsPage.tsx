@@ -126,6 +126,22 @@ const formatTime = (date?: string | null) => {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
 
+function formatLastMessagePreview(text: string | null | undefined): string {
+  if (!text) return 'Sem mensagens';
+  const trimmed = text.trim();
+  if (trimmed === '[sticker]') return '🎭 Figurinha';
+  if (trimmed === '[image]') return '📷 Imagem';
+  if (trimmed === '[video]') return '🎥 Vídeo';
+  if (trimmed === '[audio]') return '🎵 Áudio';
+  if (trimmed === '[document]') return '📄 Documento';
+  if (trimmed === '[location]') return '📍 Localização';
+  if (trimmed === '[contact]') return '👤 Contato';
+  if (trimmed === '[templateMessage]') return '📋 Mensagem interativa';
+  if (trimmed === '[secretEncryptedMessage]') return '🔒 Mensagem protegida';
+  if (trimmed === '[messageContextInfo]' || trimmed === '[unknown]') return 'Mensagem';
+  return trimmed;
+}
+
 function ChatMessageItem({
   msg,
   selectedConvName,
@@ -234,21 +250,26 @@ function ChatMessageItem({
             />
           </div>
         )}
-        {msg.mediaType === 'sticker' && (
-          <div className="mb-2 p-1">
+        {(msg.mediaType === 'sticker' || msg.type === 'sticker') && (
+          <div className="mb-2 p-1 flex flex-col items-center">
             {msg.mediaUrl ? (
               <img
                 src={msg.mediaUrl}
                 alt="Figurinha"
-                className="w-32 h-32 object-contain cursor-pointer"
+                className="w-32 h-32 md:w-36 md:h-36 object-contain cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                loading="lazy"
                 onClick={() => window.open(msg.mediaUrl!, '_blank')}
                 onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
+                  const target = e.target as HTMLElement;
+                  target.style.display = 'none';
+                  const fallback = target.parentElement?.querySelector('.sticker-fallback');
+                  if (fallback) (fallback as HTMLElement).classList.remove('hidden');
                 }}
               />
-            ) : (
-              <p className="text-xs opacity-70">🎭 Figurinha</p>
-            )}
+            ) : null}
+            <div className={`sticker-fallback ${msg.mediaUrl ? 'hidden' : ''}`}>
+              <p className="text-xs opacity-70 flex items-center gap-1">🎭 Figurinha</p>
+            </div>
           </div>
         )}
         {msg.mediaType === 'video' && msg.mediaUrl && (
@@ -274,7 +295,7 @@ function ChatMessageItem({
         {msg.mediaType === 'audio' && !msg.mediaUrl && (
           <p className="text-xs opacity-70 mb-1">Áudio sem arquivo disponível</p>
         )}
-        {msg.content && (
+        {msg.content && msg.mediaType !== 'sticker' && msg.type !== 'sticker' && (
           <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderContent(msg.content)}</p>
         )}
         {msg.mediaType === 'document' && msg.mediaUrl && (
@@ -1305,8 +1326,13 @@ export default function ConversationsPage() {
 
   const renderContent = (text: string | null) => {
     if (!text) return null;
+    let safeText = text;
+    if (safeText === '[secretEncryptedMessage]') safeText = '🔒 [Mensagem protegida por criptografia]';
+    else if (safeText === '[templateMessage]') safeText = '📋 [Mensagem interativa]';
+    else if (safeText === '[messageContextInfo]' || safeText === '[unknown]') safeText = 'ℹ️ [Mensagem do sistema]';
+
     const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const parts = text.split(urlRegex);
+    const parts = safeText.split(urlRegex);
     return parts.map((part, i) => {
       if (/^https?:\/\//.test(part)) {
         return <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline opacity-80 hover:opacity-100 break-all">{part}</a>;
@@ -1505,7 +1531,7 @@ export default function ConversationsPage() {
                   </div>
                   <div className="flex items-center justify-between mt-0.5">
                     <div className="min-w-0">
-                      <p className="text-xs text-monte-sereno truncate">{conv.lastMessage || 'Sem mensagens'}</p>
+                      <p className="text-xs text-monte-sereno truncate">{formatLastMessagePreview(conv.lastMessage)}</p>
                       {selectedAccountId === ALL_ACCOUNTS && conv.accountName && (
                         <p className="text-[10px] text-monte-verde/80 font-medium truncate mt-0.5">
                           {conv.accountName}{conv.accountPhone ? ` · ${conv.accountPhone}` : ''}
@@ -1782,7 +1808,7 @@ export default function ConversationsPage() {
                   selectedConvName={selectedConv.contactName || selectedConv.contactPhone || 'Contato'}
                   onReply={(m) => setReplyingTo({
                     id: m.id,
-                    content: m.content || (m.mediaType ? `[${m.mediaType}]` : 'Mensagem'),
+                    content: formatLastMessagePreview(m.content || (m.mediaType ? `[${m.mediaType}]` : 'Mensagem')),
                     senderName: m.senderName || (m.isFromMe ? 'Sem identificação' : (selectedConv.contactName || selectedConv.contactPhone || 'Contato')),
                   })}
                   onForward={(m) => {

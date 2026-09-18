@@ -166,7 +166,21 @@ export async function sendPushForNewMessage(data: {
     }
 
     const contactName = contact?.name || contact?.phone || 'Contato WhatsApp';
-    const bodyPreview = message?.content || (message?.mediaType ? `[${message.mediaType}]` : 'Nova mensagem recebida');
+    const typeMap: Record<string, string> = {
+      sticker: '🎭 Figurinha',
+      image: '📷 Imagem',
+      video: '🎥 Vídeo',
+      audio: '🎵 Áudio',
+      document: '📄 Documento',
+      location: '📍 Localização',
+      contact: '👤 Contato',
+      poll: '📊 Enquete',
+      reaction: 'Reação',
+    };
+    let bodyPreview = (message?.content || '').trim();
+    if (!bodyPreview || bodyPreview.startsWith('[messageContextInfo]') || bodyPreview.startsWith('[unknown]') || bodyPreview === '[sticker]') {
+      bodyPreview = typeMap[message?.mediaType || message?.type || ''] || 'Nova mensagem recebida';
+    }
 
     const payload: PushPayload = {
       title: `${contactName}`,

@@ -1011,7 +1011,7 @@ class WhatsAppSessionManager extends EventEmitter {
           await prisma.conversation.update({
             where: { id: mainConv.id },
             data: {
-              lastMessage: latestMsg.content || `[${latestMsg.mediaType || latestMsg.type}]`,
+              lastMessage: this.formatMessageSummary(latestMsg.content, latestMsg.mediaType, latestMsg.type),
               lastMessageAt: latestMsg.timestamp || latestMsg.createdAt,
             },
           });
@@ -1167,8 +1167,69 @@ class WhatsAppSessionManager extends EventEmitter {
   /**
    * Extrai texto/tipo de uma mensagem Baileys (compartilhado entre
    * mensagens em tempo real e sincronização de histórico).
-   * Desembrulha tipos wrapper (efêmeras, visualizar 1x, editadas) e
-   * captura o contexto de resposta (reply) quando existir.
+  /**
+   * Desembrulha camadas de wrapper do WhatsApp (mensagens efêmeras, visualizar 1x,
+   * mensagens enviadas por outros dispositivos vinculados, bot, etc.) e ignora
+   * chaves de metadados de protocolo (messageContextInfo, senderKeyDistributionMessage).
+   */
+  private unwrapMessage(msgOrProto: any): { inner: any; type: string } {
+    let m: any = msgOrProto?.message || msgOrProto || {};
+    if (typeof m !== 'object' || m === null) {
+      return { inner: {}, type: 'unknown' };
+    }
+
+    const IGNORED_KEYS = new Set([
+      'messageContextInfo',
+      'senderKeyDistributionMessage',
+      'fastRatchetKeySenderKeyDistributionMessage',
+      'statusJidList',
+      'keepInChatMessage',
+      'pinInChatMessage',
+      'bcallMessage',
+    ]);
+
+    const WRAPPERS = [
+      'ephemeralMessage',
+      'viewOnceMessage',
+      'viewOnceMessageV2',
+      'viewOnceMessageV2Extension',
+      'documentWithCaptionMessage',
+      'editedMessage',
+      'deviceSentMessage',
+      'associatedChildMessage',
+      'botInvokeMessage',
+      'groupStatusMessage',
+      'groupStatusMessageV2',
+    ];
+
+    for (let depth = 0; depth < 6; depth++) {
+      let found = false;
+      for (const w of WRAPPERS) {
+        if (m[w]?.message) {
+          m = m[w].message;
+          found = true;
+          break;
+        }
+      }
+      if (!found) break;
+    }
+
+    const keys = Object.keys(m);
+    let type = keys.find((k) => !IGNORED_KEYS.has(k)) || keys[0] || 'unknown';
+
+    for (let depth = 0; depth < 3 && WRAPPERS.includes(type) && m[type]?.message; depth++) {
+      m = m[type].message;
+      const innerKeys = Object.keys(m);
+      type = innerKeys.find((k) => !IGNORED_KEYS.has(k)) || innerKeys[0] || 'unknown';
+    }
+
+    return { inner: m, type };
+  }
+
+  /**
+   * Desembrulha e interpreta completamente qualquer mensagem do WhatsApp:
+   * texto, mídia, figurinhas (stickers), modelos interativos (templateMessage, interactiveMessage),
+   * enquetes, respostas a botões e notificações de sistema, evitando tags cruas como [templateMessage].
    */
   private extractContent(msg: WAMessage): {
     content: string;
@@ -1177,56 +1238,203 @@ class WhatsAppSessionManager extends EventEmitter {
     quotedMessageId: string | null;
     quotedContent: string | null;
   } {
-    let m: any = msg.message || {};
-    let messageType = Object.keys(m)[0] || 'unknown';
-
-    // Desembrulha wrappers que o WhatsApp usa em respostas/mensagens efêmeras/dispositivos vinculados
-    const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage', 'editedMessage', 'deviceSentMessage'];
-    for (let i = 0; i < 3 && WRAPPERS.includes(messageType); i++) {
-      const inner = m[messageType]?.message;
-      if (!inner) break;
-      m = inner;
-      messageType = Object.keys(m)[0] || 'unknown';
-    }
-
+    const { inner: m, type: messageType } = this.unwrapMessage(msg);
     const msgObj = m[messageType];
+
     let content = '';
     let mediaType: string | null = null;
 
     // Contexto de resposta (mensagem citada)
     let quotedMessageId: string | null = null;
     let quotedContent: string | null = null;
-    const contextInfo = msgObj?.contextInfo;
+    const contextInfo =
+      msgObj?.contextInfo ||
+      m?.messageContextInfo ||
+      (msg.message as any)?.messageContextInfo;
     if (contextInfo?.stanzaId) {
       quotedMessageId = String(contextInfo.stanzaId);
       quotedContent = this.protoToText(contextInfo.quotedMessage);
     }
 
     if (messageType === 'conversation') {
-      content = msgObj;
+      content = typeof msgObj === 'string' ? msgObj : String(msgObj || '');
     } else if (messageType === 'extendedTextMessage') {
       content = msgObj?.text || '';
     } else if (messageType === 'imageMessage') {
       content = msgObj?.caption || '';
       mediaType = 'image';
     } else if (messageType === 'audioMessage') {
+      content = msgObj?.ptt ? '🎤 Mensagem de voz' : '🎵 Áudio';
       mediaType = 'audio';
-    } else if (messageType === 'videoMessage') {
+    } else if (messageType === 'videoMessage' || messageType === 'ptvMessage') {
       content = msgObj?.caption || '';
       mediaType = 'video';
     } else if (messageType === 'documentMessage') {
-      content = msgObj?.fileName || '';
+      content = msgObj?.fileName || msgObj?.caption || 'Documento';
       mediaType = 'document';
-    } else if (messageType === 'locationMessage') {
-      content = `📍 ${msgObj?.degreesLatitude}, ${msgObj?.degreesLongitude}`;
+    } else if (messageType === 'stickerMessage' || messageType === 'lottieStickerMessage') {
+      content = '🎭 Figurinha';
+      mediaType = 'sticker';
+    } else if (messageType === 'locationMessage' || messageType === 'liveLocationMessage') {
+      content = msgObj?.name
+        ? `📍 ${msgObj.name}`
+        : msgObj?.degreesLatitude
+          ? `📍 ${msgObj.degreesLatitude}, ${msgObj.degreesLongitude}`
+          : '📍 Localização';
       mediaType = 'location';
     } else if (messageType === 'contactMessage') {
-      content = `👤 ${msgObj?.displayName}`;
+      content = msgObj?.displayName ? `👤 ${msgObj.displayName}` : '👤 Contato';
       mediaType = 'contact';
-    } else if (messageType === 'stickerMessage') {
-      mediaType = 'sticker';
+    } else if (messageType === 'contactsArrayMessage') {
+      content = `👥 ${msgObj?.contacts?.length || 0} contatos`;
+      mediaType = 'contact';
+    } else if (messageType === 'templateMessage') {
+      // Desembrulha templates (Mensagens Rápidas ou HSM via WhatsApp)
+      const tpl =
+        msgObj?.hydratedTemplate ||
+        msgObj?.hydratedFourRowTemplate ||
+        msgObj?.fourRowTemplate;
+      const title = tpl?.hydratedTitleText || tpl?.titleText || '';
+      const body = tpl?.hydratedContentText || tpl?.contentText || '';
+      const footer = tpl?.hydratedFooterText || tpl?.footerText || '';
+
+      if (tpl?.imageMessage) mediaType = 'image';
+      else if (tpl?.documentMessage) mediaType = 'document';
+      else if (tpl?.videoMessage) mediaType = 'video';
+      else if (tpl?.locationMessage) mediaType = 'location';
+
+      const buttons = (tpl?.hydratedButtons || tpl?.buttons || [])
+        .map(
+          (b: any) =>
+            b?.quickReplyButton?.displayText ||
+            b?.urlButton?.displayText ||
+            b?.callButton?.displayText ||
+            '',
+        )
+        .filter(Boolean)
+        .map((t: string) => `[${t}]`)
+        .join(' ');
+
+      const parts = [title, body, footer, buttons].filter(
+        (p: string) => typeof p === 'string' && p.trim().length > 0,
+      );
+      content = parts.join('\n\n') || 'Mensagem interativa';
+    } else if (messageType === 'interactiveMessage') {
+      // Mensagens interativas (botões de fluxo nativo, listas modernas, catálogos)
+      const im = msgObj;
+      const title = im?.header?.title || '';
+      const body = im?.body?.text || '';
+      const footer = im?.footer?.text || '';
+
+      if (im?.header?.imageMessage) mediaType = 'image';
+      else if (im?.header?.documentMessage) mediaType = 'document';
+      else if (im?.header?.videoMessage) mediaType = 'video';
+      else if (im?.header?.locationMessage) mediaType = 'location';
+
+      const buttons: string[] = [];
+      try {
+        const rawBtns = im?.nativeFlowMessage?.buttons || [];
+        for (const btn of rawBtns) {
+          const parsed = btn?.buttonParamsJson ? JSON.parse(btn.buttonParamsJson) : null;
+          const label = parsed?.display_text || btn?.name;
+          if (label) buttons.push(`[${label}]`);
+        }
+      } catch {}
+
+      const parts = [title, body, footer, buttons.join(' ')].filter(
+        (p: string) => typeof p === 'string' && p.trim().length > 0,
+      );
+      content = parts.join('\n\n') || 'Mensagem interativa';
+    } else if (messageType === 'buttonsMessage') {
+      const bm = msgObj;
+      const title = bm?.headerText || '';
+      const body = bm?.contentText || '';
+      const footer = bm?.footerText || '';
+      if (bm?.imageMessage) mediaType = 'image';
+      else if (bm?.documentMessage) mediaType = 'document';
+      else if (bm?.videoMessage) mediaType = 'video';
+
+      const btns = (bm?.buttons || [])
+        .map((b: any) => (b?.buttonText?.displayText ? `[${b.buttonText.displayText}]` : ''))
+        .filter(Boolean)
+        .join(' ');
+      const parts = [title, body, footer, btns].filter(
+        (p: string) => typeof p === 'string' && p.trim().length > 0,
+      );
+      content = parts.join('\n\n') || 'Mensagem com botões';
+    } else if (messageType === 'listMessage') {
+      const lm = msgObj;
+      const title = lm?.title || '';
+      const body = lm?.description || '';
+      const footer = lm?.footerText || '';
+      const btn = lm?.buttonText ? `[${lm.buttonText}]` : '';
+      const parts = [title, body, footer, btn].filter(
+        (p: string) => typeof p === 'string' && p.trim().length > 0,
+      );
+      content = parts.join('\n\n') || 'Lista de opções';
+    } else if (
+      messageType === 'buttonsResponseMessage' ||
+      messageType === 'templateButtonReplyMessage' ||
+      messageType === 'listResponseMessage' ||
+      messageType === 'interactiveResponseMessage'
+    ) {
+      content =
+        msgObj?.selectedDisplayText ||
+        msgObj?.selectedButtonId ||
+        msgObj?.selectedId ||
+        msgObj?.title ||
+        msgObj?.singleSelectReply?.selectedRowId ||
+        msgObj?.body?.text ||
+        'Opção selecionada';
+    } else if (
+      messageType.startsWith('pollCreationMessage') ||
+      messageType === 'pollResultSnapshotMessage' ||
+      messageType === 'pollResultSnapshotMessageV3'
+    ) {
+      const poll = msgObj;
+      const question = poll?.name || 'Enquete';
+      const options = (poll?.options || [])
+        .map((o: any) => `▫️ ${o.optionName || ''}`)
+        .join('\n');
+      content = `📊 Enquete: ${question}${options ? '\n' + options : ''}`;
+      mediaType = 'poll';
+    } else if (messageType === 'pollUpdateMessage') {
+      content = '📊 Voto em enquete';
+    } else if (messageType === 'reactionMessage' || messageType === 'encReactionMessage') {
+      content = msgObj?.text ? `Reagiu com ${msgObj.text}` : 'Reação';
+      mediaType = 'reaction';
+    } else if (messageType === 'secretEncryptedMessage') {
+      content = '🔒 [Mensagem protegida por criptografia]';
+    } else if (messageType === 'protocolMessage') {
+      if (msgObj?.type === 0 || msgObj?.type === 'REVOKE') {
+        content = '🚫 Esta mensagem foi apagada';
+      } else {
+        content = 'Mensagem de serviço do WhatsApp';
+      }
     } else {
-      content = `[${messageType}]`;
+      // Fallback para notificações de sistema / chamadas / stubs quando não há mensagem de texto
+      const stub = msg.messageStubType as any;
+      if (stub) {
+        if (stub === 1 || String(stub).includes('REVOKE')) {
+          content = '🚫 Esta mensagem foi apagada';
+        } else if (
+          stub === 37 ||
+          stub === 38 ||
+          stub === 39 ||
+          stub === 40 ||
+          String(stub).includes('CALL_MISSED')
+        ) {
+          content = '📞 Chamada de voz ou vídeo perdida';
+        } else if (String(stub).includes('GROUP_PARTICIPANT')) {
+          content = '👥 Notificação de grupo';
+        } else if (stub === 68 || String(stub).includes('CIPHERTEXT')) {
+          content = '⏳ Aguardando mensagem (sincronizando com WhatsApp)...';
+        } else {
+          content = 'ℹ️ Notificação do WhatsApp';
+        }
+      } else {
+        content = 'Mensagem indisponível';
+      }
     }
 
     return { content, mediaType, messageType, quotedMessageId, quotedContent };
@@ -1235,26 +1443,53 @@ class WhatsAppSessionManager extends EventEmitter {
   /** Converte uma mensagem citada (proto) em texto curto para preview */
   private protoToText(quoted: any): string | null {
     if (!quoted) return null;
-    let q = quoted;
-    let t = Object.keys(q)[0];
-    const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage', 'editedMessage'];
-    for (let i = 0; i < 3 && WRAPPERS.includes(t); i++) {
-      q = q[t]?.message;
-      if (!q) return null;
-      t = Object.keys(q)[0];
-    }
+    const { inner: q, type: t } = this.unwrapMessage(quoted);
     const o = q?.[t];
-    if (!o) return null;
+    if (!o && t === 'unknown') return 'Mensagem';
     if (t === 'conversation') return String(o).slice(0, 300);
     if (t === 'extendedTextMessage') return String(o?.text || '').slice(0, 300) || 'Mensagem';
     if (t === 'imageMessage') return o?.caption ? String(o.caption).slice(0, 300) : '📷 Imagem';
-    if (t === 'videoMessage') return o?.caption ? String(o.caption).slice(0, 300) : '🎥 Vídeo';
-    if (t === 'audioMessage') return '🎵 Áudio';
-    if (t === 'stickerMessage') return '🎭 Figurinha';
+    if (t === 'videoMessage' || t === 'ptvMessage') return o?.caption ? String(o.caption).slice(0, 300) : '🎥 Vídeo';
+    if (t === 'audioMessage') return o?.ptt ? '🎤 Mensagem de voz' : '🎵 Áudio';
+    if (t === 'stickerMessage' || t === 'lottieStickerMessage') return '🎭 Figurinha';
     if (t === 'documentMessage') return o?.fileName ? String(o.fileName) : '📄 Documento';
-    if (t === 'locationMessage') return '📍 Localização';
-    if (t === 'contactMessage') return o?.displayName ? `👤 ${o.displayName}` : '👤 Contato';
+    if (t === 'locationMessage' || t === 'liveLocationMessage') return '📍 Localização';
+    if (t === 'contactMessage' || t === 'contactsArrayMessage') return o?.displayName ? `👤 ${o.displayName}` : '👤 Contato';
+    if (t === 'templateMessage' || t === 'interactiveMessage' || t === 'buttonsMessage') {
+      const txt = o?.hydratedTemplate?.hydratedContentText || o?.body?.text || o?.contentText || '';
+      return txt ? txt.slice(0, 300) : '📋 Mensagem interativa';
+    }
+    if (t?.startsWith('pollCreationMessage')) return '📊 Enquete';
     return 'Mensagem';
+  }
+
+  /** Formata uma mensagem para exibição resumida na lista de conversas e notificações */
+  private formatMessageSummary(content?: string | null, mediaType?: string | null, messageType?: string | null): string {
+    const trimmed = (content || '').trim();
+    if (
+      trimmed &&
+      !trimmed.startsWith('[messageContextInfo]') &&
+      !trimmed.startsWith('[unknown]') &&
+      !trimmed.startsWith('[templateMessage]') &&
+      !trimmed.startsWith('[secretEncryptedMessage]')
+    ) {
+      return trimmed.slice(0, 300);
+    }
+    switch (mediaType) {
+      case 'sticker': return '🎭 Figurinha';
+      case 'image': return '📷 Imagem';
+      case 'video': return '🎥 Vídeo';
+      case 'audio': return '🎵 Áudio';
+      case 'document': return '📄 Documento';
+      case 'location': return '📍 Localização';
+      case 'contact': return '👤 Contato';
+      case 'poll': return '📊 Enquete';
+      case 'reaction': return 'Reação';
+      default:
+        if (messageType === 'templateMessage' || messageType === 'interactiveMessage') return '📋 Mensagem interativa';
+        if (messageType === 'secretEncryptedMessage') return '🔒 Mensagem protegida';
+        return trimmed || 'Mensagem';
+    }
   }
 
   /** Converte timestamps do WhatsApp (segundos, podendo vir como Long) em Date. */
@@ -1369,7 +1604,7 @@ class WhatsAppSessionManager extends EventEmitter {
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
-            lastMessage: content || `[${mediaType || messageType}]`,
+            lastMessage: this.formatMessageSummary(content, mediaType, messageType),
             lastMessageAt: ts,
           },
         });
@@ -1763,7 +1998,7 @@ class WhatsAppSessionManager extends EventEmitter {
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
-            lastMessage: lastContent || `[${lastMediaType || 'mídia'}]`,
+            lastMessage: this.formatMessageSummary(lastContent, lastMediaType),
             lastMessageAt: lastTs,
           },
         });
@@ -1787,30 +2022,51 @@ class WhatsAppSessionManager extends EventEmitter {
   }
 
   /**
-   * FIX 4 + FIX 5: Tenta baixar mídia de uma mensagem do Baileys.
-   *
-   * Restringe o download apenas para mídias válidas (imagem, vídeo, áudio, doc, sticker).
-   * Evita chamar downloadMediaMessage para localização/contato/texto, o que travava o processo.
+  /**
+   * Obtém o MIME type de uma mídia do WhatsApp, garantindo que figurinhas sejam identificadas
+   * como image/webp e desembrulhando wrappers.
    */
   private mediaMimeType(msg: WAMessage): string | null {
-    let m: any = msg.message || {};
-    let messageType = Object.keys(m)[0] || '';
-    const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage', 'editedMessage'];
-    for (let i = 0; i < 3 && wrappers.includes(messageType); i++) {
-      const inner = m[messageType]?.message;
-      if (!inner) return null;
-      m = inner;
-      messageType = Object.keys(m)[0] || '';
+    const { inner, type } = this.unwrapMessage(msg);
+    if (type === 'stickerMessage' || type === 'lottieStickerMessage') {
+      return 'image/webp';
     }
-    const value = m[messageType]?.mimetype;
+    const value = inner[type]?.mimetype;
     return typeof value === 'string' && value.trim() ? value.trim().split(';')[0] : null;
   }
 
+  /**
+   * Baixa mídia do WhatsApp com tratamento de wrappers e mensagens enviadas por outros dispositivos.
+   * Desembrulha deviceSentMessage e templates antes de passar ao Baileys para evitar exceções do tipo
+   * 'deviceSentMessage is not a media message', e garante a extensão .webp para figurinhas.
+   */
   private async tryDownloadMedia(msg: WAMessage, msgId: string, mediaType: string, accountId?: string): Promise<string | null> {
     const DOWNLOADABLE = ['image', 'video', 'audio', 'document', 'sticker'];
     if (!mediaType || !DOWNLOADABLE.includes(mediaType)) return null;
 
     try {
+      const { inner, type } = this.unwrapMessage(msg);
+
+      // Desembrulha mídias incorporadas em templates ou cabeçalhos interativos
+      let mediaMessagePayload: any = inner;
+      if (inner.templateMessage?.hydratedTemplate) {
+        const ht = inner.templateMessage.hydratedTemplate;
+        if (ht.imageMessage) mediaMessagePayload = { imageMessage: ht.imageMessage };
+        else if (ht.documentMessage) mediaMessagePayload = { documentMessage: ht.documentMessage };
+        else if (ht.videoMessage) mediaMessagePayload = { videoMessage: ht.videoMessage };
+      } else if (inner.interactiveMessage?.header) {
+        const hdr = inner.interactiveMessage.header;
+        if (hdr.imageMessage) mediaMessagePayload = { imageMessage: hdr.imageMessage };
+        else if (hdr.documentMessage) mediaMessagePayload = { documentMessage: hdr.documentMessage };
+        else if (hdr.videoMessage) mediaMessagePayload = { videoMessage: hdr.videoMessage };
+      }
+
+      // Constrói objeto limpo para o downloadMediaMessage do Baileys
+      const cleanMsg: WAMessage = {
+        ...msg,
+        message: mediaMessagePayload,
+      };
+
       const session = accountId ? this.sessions.get(accountId) : null;
       const reupload = session?.socket?.updateMediaMessage;
       const ctxOptions: any = {
@@ -1818,7 +2074,7 @@ class WhatsAppSessionManager extends EventEmitter {
         reuploadRequest: reupload || (async (m: any) => m),
       };
       const buffer = await downloadMediaMessage(
-        msg,
+        cleanMsg,
         'buffer',
         {},
         ctxOptions,
@@ -1845,7 +2101,7 @@ class WhatsAppSessionManager extends EventEmitter {
         'audio/mp4': 'm4a',
         'application/pdf': 'pdf',
       };
-      const ext = mimeExtMap[this.mediaMimeType(msg) || ''] || extMap[mediaType] || 'bin';
+      const ext = (mediaType === 'sticker') ? 'webp' : (mimeExtMap[this.mediaMimeType(cleanMsg) || ''] || extMap[mediaType] || 'bin');
       const safeId = msgId.replace(/[^a-zA-Z0-9_-]/g, '_');
       const fileName = `${Date.now()}-${safeId}.${ext}`;
       const filePath = path.join(env.uploadPath, fileName);
@@ -1947,7 +2203,7 @@ class WhatsAppSessionManager extends EventEmitter {
         where: { id: conversation.id },
         data: {
           ...(isNewerThanSummary ? {
-            lastMessage: content || `[${mediaType || messageType}]`,
+            lastMessage: this.formatMessageSummary(content, mediaType, messageType),
             lastMessageAt: receivedAt,
           } : {}),
           unreadCount: { increment: 1 },
@@ -1978,7 +2234,7 @@ class WhatsAppSessionManager extends EventEmitter {
         },
         conversation: {
           id: conversation.id,
-          lastMessage: content || `[${mediaType || messageType}]`,
+          lastMessage: this.formatMessageSummary(content, mediaType, messageType),
           lastMessageAt: receivedAt,
           unreadCount: (conversation.unreadCount || 0) + 1,
           isMuted: !!conversation.isMuted,
@@ -2211,7 +2467,7 @@ class WhatsAppSessionManager extends EventEmitter {
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
-          lastMessage: content || (type !== 'text' ? `[${type}]` : ''),
+          lastMessage: this.formatMessageSummary(content, type === 'text' ? null : type, type),
           lastMessageAt: now,
         },
       });
@@ -2385,7 +2641,7 @@ class WhatsAppSessionManager extends EventEmitter {
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
-          lastMessage: latest.content || `[${latest.mediaType || latest.type}]`,
+          lastMessage: this.formatMessageSummary(latest.content, latest.mediaType, latest.type),
           lastMessageAt,
         },
       });
