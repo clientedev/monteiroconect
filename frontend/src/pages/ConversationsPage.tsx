@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useLocation, useOutletContext, useNavigate } from 'react-router-dom';
-import { api, authApi, tagApi, whatsappApi, conversationApi, contactApi } from '../lib/api';
+import { api, authApi, tagApi, whatsappApi, conversationApi, contactApi, quickMessageApi, type QuickMessage } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -9,6 +9,7 @@ import {
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
   Maximize2, Minimize2, ExternalLink, Reply, Share2, Bell, BellOff, ArrowLeft,
+  Zap, MessageSquareQuote,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -434,6 +435,100 @@ export default function ConversationsPage() {
   const [selectedForwardConvIds, setSelectedForwardConvIds] = useState<string[]>([]);
   const [forwardingBusy, setForwardingBusy] = useState(false);
 
+  // Mensagens Rápidas (Quick Messages)
+  const [quickMessages, setQuickMessages] = useState<QuickMessage[]>([]);
+  const [showQuickMenu, setShowQuickMenu] = useState(false);
+  const [quickSearch, setQuickSearch] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [dismissedSlash, setDismissedSlash] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const quickMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const loadQuickMessages = useCallback(async () => {
+    try {
+      const data = await quickMessageApi.list();
+      setQuickMessages(data);
+    } catch (err) {
+      console.warn('Falha ao carregar mensagens rápidas:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadQuickMessages();
+  }, [loadQuickMessages]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (quickMenuRef.current && !quickMenuRef.current.contains(event.target as Node)) {
+        setShowQuickMenu(false);
+      }
+    };
+    if (showQuickMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showQuickMenu]);
+
+  // Detecta se o usuário está digitando um atalho iniciado com '/'
+  const slashQuery = useMemo(() => {
+    if (dismissedSlash) return null;
+    const match = /(?:^|\s)\/([a-zA-Z0-9_\u00C0-\u00FF-]*)$/.exec(newMessage);
+    if (match === null) return null;
+    return match[1].toLowerCase();
+  }, [newMessage, dismissedSlash]);
+
+  // Mensagens rápidas correspondentes ao atalho digitado
+  const matchingQuickMessages = useMemo(() => {
+    if (slashQuery === null) return [];
+    if (!slashQuery) return quickMessages.slice(0, 7);
+    return quickMessages.filter(m =>
+      m.shortcut.toLowerCase().includes(slashQuery) ||
+      m.title.toLowerCase().includes(slashQuery)
+    ).slice(0, 7);
+  }, [slashQuery, quickMessages]);
+
+  // Mensagens rápidas filtradas dentro do catálogo (botão ⚡)
+  const filteredQuickMenuMessages = useMemo(() => {
+    if (!quickSearch.trim()) return quickMessages;
+    const q = quickSearch.toLowerCase().trim().replace(/^\/+/, '');
+    return quickMessages.filter(m =>
+      m.shortcut.toLowerCase().includes(q) ||
+      m.title.toLowerCase().includes(q) ||
+      m.content.toLowerCase().includes(q)
+    );
+  }, [quickMessages, quickSearch]);
+
+  const handleSelectQuickMessage = useCallback((qm: QuickMessage) => {
+    if (slashQuery !== null) {
+      const regex = new RegExp(`(?:^|\\s)\\/[a-zA-Z0-9_\\u00C0-\\u00FF-]*$`);
+      const match = regex.exec(newMessage);
+      if (match) {
+        const prefix = newMessage.substring(0, match.index + (match[0].startsWith(' ') ? 1 : 0));
+        setNewMessage(prefix + qm.content);
+      } else {
+        setNewMessage(qm.content);
+      }
+    } else {
+      if (!newMessage.trim()) {
+        setNewMessage(qm.content);
+      } else {
+        setNewMessage(prev => prev + '\n' + qm.content);
+      }
+    }
+    setShowQuickMenu(false);
+    setSlashIndex(0);
+    setDismissedSlash(false);
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const len = textareaRef.current.value.length;
+        textareaRef.current.setSelectionRange(len, len);
+      }
+    }, 50);
+  }, [slashQuery, newMessage]);
 
   // Sincroniza estado de chat aberto no mobile para o Layout
   useEffect(() => {
@@ -892,18 +987,20 @@ export default function ConversationsPage() {
     };
   }, [loadConversations, loadMessages]);
 
-  // Polling leve contínuo de contingência (caso a rede móvel oscile a conexão WebSocket)
+  // Polling leve contínuo de contingência (ativo apenas se a conexão WebSocket cair)
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'hidden') return;
-      loadConversations();
-      if (selectedConvRef.current && !loadingMore && !sending) {
-        loadMessages(selectedConvRef.current.id, 1, true);
+      if (!socket?.connected) {
+        loadConversations();
+        if (selectedConvRef.current && !loadingMore && !sending) {
+          loadMessages(selectedConvRef.current.id, 1, true);
+        }
       }
-    }, 5000);
+    }, 10000);
 
     return () => window.clearInterval(interval);
-  }, [loadConversations, loadMessages, loadingMore, sending]);
+  }, [loadConversations, loadMessages, loadingMore, sending, socket?.connected]);
 
   const handleSync = async () => {
     if (!selectedAccountId || selectedAccountId === ALL_ACCOUNTS || syncing) return;
@@ -1116,9 +1213,6 @@ export default function ConversationsPage() {
         currentReply?.id,
         currentReply?.content,
       );
-      if (selectedConvRef.current) {
-        await loadMessages(selectedConvRef.current.id, 1);
-      }
     } catch (err: any) {
       setNewMessage(text);
       setReplyingTo(currentReply);
@@ -1712,7 +1806,140 @@ export default function ConversationsPage() {
             </div>
 
             {/* Input com Safe Area do iPhone */}
-            <div className="bg-white/90 backdrop-blur-md border-t border-monte-sereno/15 p-2 sm:p-3 pb-safe">
+            <div className="bg-white/90 backdrop-blur-md border-t border-monte-sereno/15 p-2 sm:p-3 pb-safe relative">
+              {/* Menu Flutuante ao Digitar /atalho */}
+              {slashQuery !== null && matchingQuickMessages.length > 0 && (
+                <div className="absolute bottom-full mb-2 left-2 right-2 sm:left-12 sm:right-12 max-w-lg bg-white rounded-2xl shadow-2xl border border-emerald-300 p-2 z-40 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="flex items-center justify-between px-2.5 py-1 mb-1 border-b border-slate-100 text-[11px] text-slate-500 font-medium">
+                    <span className="flex items-center gap-1.5 text-monte-verde font-semibold">
+                      <Zap className="w-3.5 h-3.5" />
+                      Mensagens Rápidas
+                    </span>
+                    <span className="text-slate-400 text-[10px]">
+                      Use ↑ ↓ e Enter para inserir (Esc fecha)
+                    </span>
+                  </div>
+                  <div className="space-y-1 max-h-56 overflow-y-auto">
+                    {matchingQuickMessages.map((qm, idx) => {
+                      const isHighlighted = idx === slashIndex;
+                      return (
+                        <button
+                          key={qm.id}
+                          type="button"
+                          onClick={() => handleSelectQuickMessage(qm)}
+                          onMouseEnter={() => setSlashIndex(idx)}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-start justify-between gap-2 ${
+                            isHighlighted
+                              ? 'bg-emerald-50 text-monte-azul border border-emerald-200'
+                              : 'hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-xs text-monte-verde">
+                                /{qm.shortcut}
+                              </span>
+                              <span className="text-xs font-semibold text-slate-800 truncate">
+                                {qm.title}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate mt-0.5 font-normal">
+                              {qm.content}
+                            </p>
+                          </div>
+                          {qm.category && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">
+                              {qm.category}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Popover do Catálogo de Mensagens Rápidas (botão ⚡) */}
+              {showQuickMenu && (
+                <div
+                  ref={quickMenuRef}
+                  className="absolute bottom-full mb-2 left-2 sm:left-4 w-[92vw] sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 z-40 animate-in fade-in zoom-in-95 duration-100"
+                >
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                    <span className="flex items-center gap-1.5 font-bold text-xs text-monte-azul">
+                      <Zap className="w-4 h-4 text-monte-verde" />
+                      Mensagens Rápidas
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to="/mensagem"
+                        className="text-[11px] text-monte-verde hover:underline font-medium"
+                      >
+                        Gerenciar
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setShowQuickMenu(false)}
+                        className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar atalho ou texto..."
+                      value={quickSearch}
+                      onChange={e => setQuickSearch(e.target.value)}
+                      className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-monte-verde"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="space-y-1 max-h-60 overflow-y-auto">
+                    {filteredQuickMenuMessages.length === 0 ? (
+                      <div className="text-center py-6 text-slate-400 text-xs">
+                        Nenhuma mensagem rápida encontrada.
+                        <div className="mt-2">
+                          <Link to="/mensagem" className="btn-primary text-[11px] py-1 px-3">
+                            Cadastrar em /mensagem
+                          </Link>
+                        </div>
+                      </div>
+                    ) : (
+                      filteredQuickMenuMessages.map(qm => (
+                        <button
+                          key={qm.id}
+                          type="button"
+                          onClick={() => handleSelectQuickMessage(qm)}
+                          className="w-full text-left p-2 rounded-lg hover:bg-emerald-50/70 border border-transparent hover:border-emerald-200 transition-colors flex flex-col gap-0.5 group"
+                        >
+                          <div className="flex items-center justify-between gap-1 w-full">
+                            <span className="font-mono font-bold text-xs text-monte-verde">
+                              /{qm.shortcut}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-800 truncate flex-1 ml-1.5">
+                              {qm.title}
+                            </span>
+                            {qm.category && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                                {qm.category}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                            {qm.content}
+                          </p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Banner de resposta a mensagem citada */}
               {replyingTo && (
                 <div className="bg-monte-areiaSecao/90 border border-monte-sereno/20 rounded-xl mb-2 px-3 py-2 flex items-center justify-between gap-2 text-xs shadow-xs">
@@ -1755,6 +1982,17 @@ export default function ConversationsPage() {
                 </div>
               )}
               <div className="flex items-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickMenu(prev => !prev)}
+                  className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors ${
+                    showQuickMenu ? 'bg-monte-verde text-white shadow-sm' : 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao'
+                  }`}
+                  title="Mensagens Rápidas (/atalho)"
+                  disabled={!isConnected}
+                >
+                  <Zap className="w-5 h-5" />
+                </button>
                 <label className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem">
                   <ImageIcon className="w-5 h-5" />
                   <input type="file" accept="image/*" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
@@ -1764,12 +2002,48 @@ export default function ConversationsPage() {
                   <input type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
                 <textarea
+                  ref={textareaRef}
                   className="input-rect flex-1 resize-none min-h-[42px] max-h-32 text-base sm:text-sm py-2 px-3.5 leading-relaxed rounded-2xl"
                   rows={1}
-                  placeholder={isConnected ? 'Mensagem...' : 'WhatsApp desconectado...'}
+                  placeholder={isConnected ? 'Mensagem... (digite / para atalhos)' : 'WhatsApp desconectado...'}
                   value={newMessage}
-                  onChange={e => setNewMessage(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  onChange={e => {
+                    setNewMessage(e.target.value);
+                    if (dismissedSlash && !e.target.value.includes('/')) {
+                      setDismissedSlash(false);
+                    }
+                  }}
+                  onKeyDown={e => {
+                    if (slashQuery !== null && matchingQuickMessages.length > 0) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setSlashIndex(prev => (prev + 1) % matchingQuickMessages.length);
+                        return;
+                      }
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setSlashIndex(prev => (prev - 1 + matchingQuickMessages.length) % matchingQuickMessages.length);
+                        return;
+                      }
+                      if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault();
+                        const selected = matchingQuickMessages[slashIndex] || matchingQuickMessages[0];
+                        if (selected) {
+                          handleSelectQuickMessage(selected);
+                        }
+                        return;
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setDismissedSlash(true);
+                        return;
+                      }
+                    }
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
                   disabled={!isConnected}
                 />
                 <button

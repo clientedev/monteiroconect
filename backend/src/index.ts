@@ -24,6 +24,7 @@ import searchRoutes from './routes/searchRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import chatbotRoutes from './routes/chatbotRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import quickMessageRoutes from './routes/quickMessageRoutes.js';
 
 async function ensureMessageColumns(): Promise<void> {
   // O banco do Railway pode ter sido criado antes da inclusão de campos de
@@ -53,7 +54,30 @@ async function ensureMessageColumns(): Promise<void> {
     await prisma.$executeRawUnsafe(
       'CREATE INDEX IF NOT EXISTS "Message_conversationId_timestamp_idx" ON "Message" ("conversationId", "timestamp")',
     );
-    logger.info('Schema de mensagens verificado (deduplicação e timestamp ativos).');
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "Message_waMsgId_idx" ON "Message" ("waMsgId")',
+    );
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "QuickMessage" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "title" TEXT NOT NULL,
+        "shortcut" TEXT NOT NULL,
+        "content" TEXT NOT NULL,
+        "category" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await prisma.$executeRawUnsafe(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "QuickMessage_shortcut_key" ON "QuickMessage" ("shortcut")',
+    );
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "QuickMessage_shortcut_idx" ON "QuickMessage" ("shortcut")',
+    );
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "QuickMessage_title_idx" ON "QuickMessage" ("title")',
+    );
+    logger.info('Schema de mensagens e mensagens rápidas verificado (deduplicação, índice waMsgId e QuickMessage ativos).');
   } catch (err: any) {
     // Em uma base vazia a tabela ainda não existe; o db push abaixo a criará.
     // Outros erros devem interromper o boot para não aceitar mensagens e
@@ -138,6 +162,7 @@ async function bootstrap() {
   app.use('/api/upload', uploadRoutes);
   app.use('/api/chatbots', chatbotRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api/quick-messages', quickMessageRoutes);
 
   // Serve frontend buildado (produção — mesma origem, sem CORS)
   const frontendDist = path.resolve(process.cwd(), '../frontend/dist');

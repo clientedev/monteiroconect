@@ -57,11 +57,17 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [loadStats]);
 
-  // Atualizações em tempo real via Socket
+  // Atualizações em tempo real via Socket (com debounce para evitar sobrecarga em mensagens consecutivas)
   useEffect(() => {
     if (!socket) return;
 
-    const onUpdate = () => loadStats();
+    let debounceTimer: NodeJS.Timeout | null = null;
+    const onUpdate = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadStats();
+      }, 1200);
+    };
 
     socket.on('message:new', onUpdate);
     socket.on('message:sent', onUpdate);
@@ -72,6 +78,7 @@ export default function DashboardPage() {
     socket.on('history:imported', onUpdate);
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       socket.off('message:new', onUpdate);
       socket.off('message:sent', onUpdate);
       socket.off('whatsapp:status', onUpdate);

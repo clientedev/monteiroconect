@@ -247,3 +247,31 @@ export const pushApi = {
     api.post<{ success: boolean }>('/notifications/unsubscribe', { endpoint }),
   test: () => api.post<{ success: boolean; message: string }>('/notifications/test'),
 };
+
+export interface QuickMessage {
+  id: string;
+  title: string;
+  shortcut: string;
+  content: string;
+  category?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Quick Messages (Mensagens Rápidas)
+export const quickMessageApi = {
+  list: (search?: string, category?: string) => {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (category) params.set('category', category);
+    const qs = params.toString();
+    return api.get<QuickMessage[]>(`/quick-messages${qs ? `?${qs}` : ''}`);
+  },
+  get: (id: string) => api.get<QuickMessage>(`/quick-messages/${id}`),
+  create: (data: { title: string; shortcut: string; content: string; category?: string | null }) =>
+    api.post<QuickMessage>('/quick-messages', data),
+  update: (id: string, data: { title: string; shortcut: string; content: string; category?: string | null }) =>
+    api.put<QuickMessage>(`/quick-messages/${id}`, data),
+  delete: (id: string) => api.del<{ message: string; id: string }>(`/quick-messages/${id}`),
+};
+

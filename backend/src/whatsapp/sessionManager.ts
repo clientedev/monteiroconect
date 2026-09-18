@@ -67,10 +67,48 @@ class WhatsAppSessionManager extends EventEmitter {
   private reconnectTimers = new Map<string, NodeJS.Timeout>();
   private connectionGenerations = new Map<string, number>();
   private realtimeMessageQueues = new Map<string, Promise<void>>();
+  // Cache de mensagens brutas (proto.IMessage) para resposta instantânea ao callback getMessage do Baileys.
+  // Evita o loop de retentativas E2EE do WhatsApp Web que trava o navegador ao enviar várias mensagens.
+  private recentRawMessages = new Map<string, { message: proto.IMessage; timestamp: number }>();
+  // Deduplicação de eventos em tempo real do Baileys (evita reprocessamento concorrente de 'append' + 'notify')
+  private processedUpsertMsgIds = new Map<string, number>();
+  // Rastreamento de mensagens enviadas pelo próprio sistema (evita reprocessar eco outgoing do Baileys)
+  private recentlySentByUs = new Map<string, number>();
+  // Cache rápido de contato e conversa (evita 2-4 consultas ao banco por mensagem consecutiva)
+  private contactConvCache = new Map<string, { contact: any; conversation: any; expiresAt: number }>();
 
   constructor() {
     super();
     this.setMaxListeners(200);
+  }
+
+  private cacheRawMessage(id: string | null | undefined, message: proto.IMessage | null | undefined): void {
+    if (!id || !message) return;
+    this.recentRawMessages.set(id, { message, timestamp: Date.now() });
+    if (this.recentRawMessages.size > 2000) {
+      const oldestKey = this.recentRawMessages.keys().next().value;
+      if (oldestKey) this.recentRawMessages.delete(oldestKey);
+    }
+  }
+
+  private cleanOldProcessedUpserts(): void {
+    const now = Date.now();
+    const cutoff = now - 120_000;
+    if (this.processedUpsertMsgIds.size > 100) {
+      for (const [key, time] of this.processedUpsertMsgIds.entries()) {
+        if (time < cutoff) this.processedUpsertMsgIds.delete(key);
+      }
+    }
+    if (this.recentlySentByUs.size > 100) {
+      for (const [key, time] of this.recentlySentByUs.entries()) {
+        if (time < cutoff) this.recentlySentByUs.delete(key);
+      }
+    }
+    if (this.contactConvCache.size > 100) {
+      for (const [key, item] of this.contactConvCache.entries()) {
+        if (item.expiresAt < now) this.contactConvCache.delete(key);
+      }
+    }
   }
 
   async initialize(): Promise<void> {
@@ -242,9 +280,15 @@ class WhatsAppSessionManager extends EventEmitter {
           const cutoff = Date.now() / 1000 - Math.max(1, env.historySyncDays) * 86400;
           return ts >= cutoff;
         },
-        // Callback getMessage para resposta de E2EE retries sem congelar clientes web
+        // Callback getMessage para resposta imediata de E2EE retries sem congelar clientes web
         getMessage: async (key) => {
           if (!key.id) return undefined;
+          // 1. Consulta cache em memória primeiro (0ms, evita consultas ao banco e loop de retentativa)
+          const cached = this.recentRawMessages.get(key.id);
+          if (cached?.message) {
+            return cached.message;
+          }
+          // 2. Consulta de contingência no banco com índice waMsgId
           try {
             const msg = await prisma.message.findFirst({
               where: { waMsgId: key.id },
@@ -369,15 +413,31 @@ class WhatsAppSessionManager extends EventEmitter {
         }
       });
 
-      // Mensagens recebidas E enviadas de outros dispositivos (celular) —
+      // Mensagens recebidas E enviadas de outros dispositivos (celular/WhatsApp Web) —
       // comportamento igual ao WhatsApp Web, que espelha tudo
       socket.ev.on('messages.upsert', async (m: { type: MessageUpsertType; messages: WAMessage[] }) => {
         if (!isCurrentSocket()) return;
         if (m.type !== 'notify' && m.type !== 'append') return;
+        this.cleanOldProcessedUpserts();
         const messages = Array.isArray(m.messages) ? m.messages : [];
         for (const msg of messages) {
           if (!isCurrentSocket()) return;
+          const msgId = msg.key?.id;
+          if (msgId && msg.message) {
+            this.cacheRawMessage(msgId, msg.message);
+          }
           if (!this.isUsableChatMessage(accountId, msg)) continue;
+
+          // Deduplicação: ignora se o mesmo ID já foi enfileirado/processado recentemente
+          // (evita que o Baileys emita 'append' e logo em seguida 'notify' para a mesma mensagem do WhatsApp Web)
+          if (msgId) {
+            const dedupKey = `${accountId}:${msgId}`;
+            if (this.processedUpsertMsgIds.has(dedupKey)) {
+              continue;
+            }
+            this.processedUpsertMsgIds.set(dedupKey, Date.now());
+          }
+
           this.enqueueRealtimeMessage(accountId, msg);
         }
       });
@@ -763,6 +823,12 @@ class WhatsAppSessionManager extends EventEmitter {
     const fromPhone = this.jidToContactPhone(jid);
     const variants = this.getCanonicalPhoneVariants(fromPhone);
 
+    const cacheKey = `${accountId}:${fromPhone}`;
+    const cached = this.contactConvCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { contact: cached.contact, conversation: cached.conversation };
+    }
+
     let groupSubject: string | null = null;
     if (isGroup) {
       groupSubject = await this.getGroupName(accountId, jid);
@@ -849,6 +915,12 @@ class WhatsAppSessionManager extends EventEmitter {
         data: { isMuted: true },
       });
     }
+
+    this.contactConvCache.set(cacheKey, {
+      contact: primaryContact,
+      conversation: primaryConversation,
+      expiresAt: Date.now() + 60_000,
+    });
 
     return { contact: primaryContact, conversation: primaryConversation };
   }
@@ -947,6 +1019,7 @@ class WhatsAppSessionManager extends EventEmitter {
       }
 
       if (mergedCount > 0) {
+        this.contactConvCache.clear();
         logger.info(`[${accountId}] Deduplicação concluída: ${mergedCount} contato(s) unificados.`);
         this.emit('contacts-updated', { accountId });
       }
@@ -1027,7 +1100,10 @@ class WhatsAppSessionManager extends EventEmitter {
         }
       }
     }
-    if (changed || cleanedCount > 0) this.emit('contacts-updated', { accountId });
+    if (changed || cleanedCount > 0) {
+      this.contactConvCache.clear();
+      this.emit('contacts-updated', { accountId });
+    }
   }
 
   /**
@@ -1104,8 +1180,8 @@ class WhatsAppSessionManager extends EventEmitter {
     let m: any = msg.message || {};
     let messageType = Object.keys(m)[0] || 'unknown';
 
-    // Desembrulha wrappers que o WhatsApp usa em respostas/mensagens efêmeras
-    const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage', 'editedMessage'];
+    // Desembrulha wrappers que o WhatsApp usa em respostas/mensagens efêmeras/dispositivos vinculados
+    const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage', 'editedMessage', 'deviceSentMessage'];
     for (let i = 0; i < 3 && WRAPPERS.includes(messageType); i++) {
       const inner = m[messageType]?.message;
       if (!inner) break;
@@ -1236,6 +1312,13 @@ class WhatsAppSessionManager extends EventEmitter {
       if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.includes('@newsletter')) return;
 
       const waMsgId = msg.key.id || null;
+      if (waMsgId && this.recentlySentByUs.has(waMsgId)) {
+        // Mensagem gerada por este sistema; já persistida e transmitida via websocket
+        return;
+      }
+      if (waMsgId && msg.message) {
+        this.cacheRawMessage(waMsgId, msg.message);
+      }
 
       const { contact, conversation } = await this.findOrCreateContactAndConversation(accountId, remoteJid, null);
 
@@ -2047,6 +2130,12 @@ class WhatsAppSessionManager extends EventEmitter {
     try {
       const toPhone = this.jidToContactPhone(this.canonicalJid(accountId, jid));
       const waMsgId = result?.key?.id || null;
+      if (waMsgId) {
+        this.recentlySentByUs.set(waMsgId, Date.now());
+        if (result?.message) {
+          this.cacheRawMessage(waMsgId, result.message);
+        }
+      }
       const now = new Date();
 
       const { contact, conversation } = await this.findOrCreateContactAndConversation(accountId, jid, senderName);

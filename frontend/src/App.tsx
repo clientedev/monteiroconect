@@ -13,6 +13,7 @@ import AttendantsPage from './pages/AttendantsPage';
 import TagsPage from './pages/TagsPage';
 import ChatbotsPage from './pages/ChatbotsPage';
 import SettingsPage from './pages/SettingsPage';
+import QuickMessagesPage from './pages/QuickMessagesPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -46,6 +47,8 @@ export default function App() {
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="attendants" element={<AttendantsPage />} />
         <Route path="tags" element={<TagsPage />} />
+        <Route path="mensagem" element={<QuickMessagesPage />} />
+        <Route path="quick-messages" element={<Navigate to="/mensagem" replace />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>

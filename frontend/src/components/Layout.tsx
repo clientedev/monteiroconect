@@ -6,7 +6,7 @@ import ForceChangePasswordModal from './ForceChangePasswordModal';
 import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone, UserCheck,
   LogOut, Search, Menu, X, Bot, User, Clock, ArrowRight, Loader2, Sparkles, Phone, Settings,
-  PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, ExternalLink,
+  PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, ExternalLink, MessageSquareQuote,
 } from 'lucide-react';
 import { Component, type ErrorInfo, type ReactNode, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { dashboardApi } from '../lib/api';
@@ -77,6 +77,7 @@ const manageItems = [
   { to: '/contacts', icon: Users, label: 'Contatos' },
   { to: '/attendants', icon: Users, label: 'Atendentes' },
   { to: '/tags', icon: Tags, label: 'Etiquetas' },
+  { to: '/mensagem', icon: MessageSquareQuote, label: 'Mensagens Rápidas' },
   { to: '/settings', icon: Settings, label: 'Notificações & Config' },
 ];
 
@@ -209,18 +210,24 @@ export default function Layout() {
     return () => clearInterval(interval);
   }, [loadUnreadCount]);
 
-  // Atualiza badge em tempo real
+  // Atualiza badge em tempo real com debounce
   useEffect(() => {
     if (!socket) return;
 
-    const onNewMsg = () => loadUnreadCount();
-    const onRead = () => loadUnreadCount();
+    let timer: NodeJS.Timeout | null = null;
+    const scheduleUpdate = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        loadUnreadCount();
+      }, 1200);
+    };
 
-    socket.on('message:new', onNewMsg);
-    socket.on('conversation:read', onRead);
+    socket.on('message:new', scheduleUpdate);
+    socket.on('conversation:read', scheduleUpdate);
     return () => {
-      socket.off('message:new', onNewMsg);
-      socket.off('conversation:read', onRead);
+      if (timer) clearTimeout(timer);
+      socket.off('message:new', scheduleUpdate);
+      socket.off('conversation:read', scheduleUpdate);
     };
   }, [socket, loadUnreadCount]);
 
