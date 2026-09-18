@@ -575,8 +575,24 @@ export default function ConversationsPage() {
   const [messages, setMessages] = useState<Map<string, Msg>>(new Map());
   const [newMessage, setNewMessage] = useState('');
   const [search, setSearch] = useState('');
-  const [includeGroups, setIncludeGroups] = useState(true);
+  const [includeGroups, setIncludeGroups] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('mc_include_groups');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return false; // 'Sem grupos' ativo por padrão (oculta grupos)
+  });
   const [availableTags, setAvailableTags] = useState<ConversationTag[]>([]);
+
+  const toggleIncludeGroups = () => {
+    setIncludeGroups(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('mc_include_groups', String(next));
+      } catch {}
+      return next;
+    });
+  };
   const [attendants, setAttendants] = useState<any[]>([]);
   const [selectedAttendantName, setSelectedAttendantName] = useState<string>(() => {
     try {
@@ -1650,19 +1666,19 @@ export default function ConversationsPage() {
           </button>
            <button
              type="button"
-             onClick={() => setIncludeGroups(current => !current)}
-             title={includeGroups ? 'Ocultar grupos' : 'Mostrar grupos'}
-             aria-label={includeGroups ? 'Ocultar grupos' : 'Mostrar grupos'}
-             className={`p-2.5 rounded-full transition-colors flex-shrink-0 ${
-               includeGroups
-                 ? 'text-monte-sereno hover:text-monte-terracota hover:bg-monte-terracota/10'
-                 : 'text-monte-verde bg-monte-verde/10'
+             onClick={toggleIncludeGroups}
+             title={!includeGroups ? 'Filtro ativo: Sem grupos (clique para exibir grupos)' : 'Exibindo grupos (clique para ocultar grupos)'}
+             aria-label={!includeGroups ? 'Filtro ativo: Sem grupos' : 'Exibindo grupos'}
+             className={`px-3 py-1.5 rounded-full transition-all flex-shrink-0 flex items-center gap-1.5 text-xs ${
+               !includeGroups
+                 ? 'bg-monte-verde/15 text-monte-verde border border-monte-verde/30 font-semibold shadow-2xs'
+                 : 'text-monte-sereno hover:text-monte-verde hover:bg-monte-verde/10 border border-transparent font-medium'
              }`}
            >
-             {includeGroups ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-               <span className="hidden sm:inline text-[11px] font-semibold">
-                 {includeGroups ? 'Grupos' : 'Sem grupos'}
-               </span>
+             {!includeGroups ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+             <span className="hidden sm:inline">
+               {!includeGroups ? 'Sem grupos' : 'Com grupos'}
+             </span>
            </button>
            {syncProgress && hideSyncProgress && (
              <button
