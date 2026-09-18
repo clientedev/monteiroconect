@@ -61,7 +61,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!socket) return;
 
-    let debounceTimer: NodeJS.Timeout | null = null;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const onUpdate = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
