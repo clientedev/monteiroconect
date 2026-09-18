@@ -307,6 +307,19 @@ class WhatsAppSessionManager extends EventEmitter {
       });
 
       session.socket = socket;
+
+      // Intercepta e responde localmente requisições de sincronização de AppState (w:sync:app:state).
+      // Isso elimina o loop de sincronização entre o Baileys e o WhatsApp Web oficial que congelava
+      // a interface do WhatsApp oficial quando o usuário usava atalhos (/atalho) ou mensagens rápidas.
+      const originalQuery = socket.query.bind(socket);
+      socket.query = async (node: any, timeoutMs?: number) => {
+        if (node?.attrs?.xmlns === 'w:sync:app:state') {
+          return { tag: 'iq', attrs: { type: 'result', id: node?.attrs?.id }, content: [] };
+        }
+        return originalQuery(node, timeoutMs);
+      };
+      (socket as any).resyncAppState = async () => {};
+
       const isCurrentSocket = () =>
         !session.isDestroying &&
         session.socket === socket &&
@@ -1563,10 +1576,11 @@ class WhatsAppSessionManager extends EventEmitter {
       const msgType = messageType === 'conversation' || messageType === 'extendedTextMessage'
         ? 'text'
         : (mediaType || messageType);
-      const savedMediaUrl = mediaType
+      const dl = mediaType
         ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType, accountId)
         : null;
-      const mediaData = mediaType ? this.extractMediaInfo(msg, mediaType) : null;
+      const savedMediaUrl = dl?.mediaUrl || null;
+      const mediaData = dl?.mediaData || (mediaType ? this.extractMediaInfo(msg, mediaType) : null);
 
       let savedMessage: any;
       let alreadyStored = false;
@@ -1598,7 +1612,7 @@ class WhatsAppSessionManager extends EventEmitter {
             where: { conversationId: conversation.id, waMsgId },
           });
         } else {
-          throw dbErr;
+          logger.warn(`[${accountId}] Erro ao salvar mensagem do aparelho: ${dbErr?.message?.slice(0, 100)}`);
         }
       }
       if (!savedMessage || alreadyStored) return;
@@ -1622,7 +1636,7 @@ class WhatsAppSessionManager extends EventEmitter {
           type: savedMessage.type,
           content,
           mediaType,
-           mediaUrl: savedMediaUrl,
+          mediaUrl: savedMediaUrl,
           isFromMe: true,
           quotedMessageId,
           quotedContent,
@@ -1632,7 +1646,7 @@ class WhatsAppSessionManager extends EventEmitter {
       });
     } catch (err) {
       logger.error(`Erro ao espelhar mensagem enviada do celular (${accountId}):`, err);
-          throw err;
+      // Removido throw err para evitar bloqueio em cascata da fila de eventos do WhatsApp
     }
   }
 
@@ -1920,8 +1934,14 @@ class WhatsAppSessionManager extends EventEmitter {
         const isGroupHist = jid.endsWith('@g.us');
 
         let histMediaUrl: string | null = null;
+        let histMediaData: string | null = null;
         if (mediaType && ts >= mediaCutoff) {
-          histMediaUrl = await this.tryDownloadMedia(m, mid, mediaType, accountId);
+          const dl = await this.tryDownloadMedia(m, mid, mediaType, accountId);
+          histMediaUrl = dl?.mediaUrl || null;
+          histMediaData = dl?.mediaData || null;
+        }
+        if (!histMediaData && mediaType) {
+          histMediaData = this.extractMediaInfo(m, mediaType);
         }
 
         const msgType = messageType === 'conversation' || messageType === 'extendedTextMessage'
@@ -1934,7 +1954,7 @@ class WhatsAppSessionManager extends EventEmitter {
           content,
           mediaType,
           mediaUrl: histMediaUrl,
-          mediaData: mediaType ? this.extractMediaInfo(m, mediaType) : null,
+          mediaData: histMediaData,
           isFromMe: !!m.key.fromMe,
           isRead: true,
           quotedMessageId,
@@ -2041,10 +2061,15 @@ class WhatsAppSessionManager extends EventEmitter {
 
   /**
    * Baixa mídia do WhatsApp com tratamento de wrappers e mensagens enviadas por outros dispositivos.
-   * Desembrulha deviceSentMessage e templates antes de passar ao Baileys para evitar exceções do tipo
-   * 'deviceSentMessage is not a media message', e garante a extensão correta (.pdf, .webp, .mp4, etc.).
+   * Salva o arquivo em disco e armazena cópia em base64 no banco de dados para mídias até 15MB,
+   * garantindo que os arquivos NUNCA sejam perdidos mesmo com reinícios ou redeploys no Railway.
    */
-  private async tryDownloadMedia(msg: WAMessage, msgId: string, mediaType: string, accountId?: string): Promise<string | null> {
+  private async tryDownloadMedia(
+    msg: WAMessage,
+    msgId: string,
+    mediaType: string,
+    accountId?: string,
+  ): Promise<{ mediaUrl: string; mediaData: string } | null> {
     const DOWNLOADABLE = ['image', 'video', 'audio', 'document', 'sticker'];
     if (!mediaType || !DOWNLOADABLE.includes(mediaType)) return null;
 
@@ -2065,13 +2090,11 @@ class WhatsAppSessionManager extends EventEmitter {
         else if (hdr.videoMessage) mediaMessagePayload = { videoMessage: hdr.videoMessage };
       }
 
-      // Garante que se tiver directPath sem url, a url seja inicializada para o Baileys não rejeitar
       const targetObj = mediaMessagePayload?.documentMessage || mediaMessagePayload?.[type];
       if (targetObj && targetObj.directPath && !targetObj.url) {
         targetObj.url = '';
       }
 
-      // Constrói objeto limpo para o downloadMediaMessage do Baileys
       const cleanMsg: WAMessage = {
         ...msg,
         message: mediaMessagePayload,
@@ -2084,34 +2107,45 @@ class WhatsAppSessionManager extends EventEmitter {
         reuploadRequest: reupload || (async (m: any) => m),
       };
 
-      let buffer: Buffer | null = null;
-      try {
-        buffer = (await downloadMediaMessage(
-          cleanMsg,
-          'buffer',
-          {},
-          ctxOptions,
-        )) as Buffer;
-      } catch (dlErr) {
-        logger.debug(`downloadMediaMessage falhou (${msgId}), tentando downloadContentFromMessage direto:`, dlErr);
-        const mObj = targetObj || inner.documentMessage || inner.imageMessage || inner.videoMessage || inner.audioMessage || inner.stickerMessage;
-        if (mObj && (mObj.mediaKey || mObj.directPath)) {
-          const stream = await downloadContentFromMessage(
-            {
-              mediaKey: mObj.mediaKey,
-              directPath: mObj.directPath,
-              url: mObj.url,
-            },
-            (mediaType === 'sticker' ? 'sticker' : mediaType) as any,
+      // Executa o download com timeout estrito de 10s para nunca travar o processamento
+      const downloadTask = (async (): Promise<Buffer | null> => {
+        try {
+          const buf = (await downloadMediaMessage(
+            cleanMsg,
+            'buffer',
+            {},
             ctxOptions,
-          );
-          const chunks: Buffer[] = [];
-          for await (const chunk of stream) chunks.push(chunk);
-          buffer = Buffer.concat(chunks);
+          )) as Buffer;
+          if (buf && Buffer.isBuffer(buf) && buf.length > 0) return buf;
+        } catch (dlErr) {
+          logger.debug(`downloadMediaMessage falhou (${msgId}), tentando downloadContentFromMessage direto:`, dlErr);
         }
-      }
 
-      if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) return null;
+        try {
+          const mObj = targetObj || inner.documentMessage || inner.imageMessage || inner.videoMessage || inner.audioMessage || inner.stickerMessage;
+          if (mObj && (mObj.mediaKey || mObj.directPath)) {
+            const stream = await downloadContentFromMessage(
+              {
+                mediaKey: mObj.mediaKey,
+                directPath: mObj.directPath,
+                url: mObj.url,
+              },
+              (mediaType === 'sticker' ? 'sticker' : mediaType) as any,
+              ctxOptions,
+            );
+            const chunks: Buffer[] = [];
+            for await (const chunk of stream) chunks.push(chunk);
+            const buf = Buffer.concat(chunks);
+            if (buf.length > 0) return buf;
+          }
+        } catch {}
+        return null;
+      })();
+
+      const buffer = await Promise.race([
+        downloadTask,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000)),
+      ]);
 
       // 1. Tenta extrair extensão real a partir do nome do arquivo original
       const docFileName = inner.documentMessage?.fileName || inner.documentWithCaptionMessage?.message?.documentMessage?.fileName || '';
@@ -2160,7 +2194,7 @@ class WhatsAppSessionManager extends EventEmitter {
         'text/csv': 'csv',
         'text/html': 'html',
       };
-      const detectedMime = this.mediaMimeType(cleanMsg) || '';
+      const detectedMime = this.mediaMimeType(cleanMsg) || targetObj?.mimetype || '';
       const ext = (mediaType === 'sticker')
         ? 'webp'
         : (docExt || mimeExtMap[detectedMime] || extMap[mediaType] || (mediaType === 'document' ? 'pdf' : 'bin'));
@@ -2170,10 +2204,33 @@ class WhatsAppSessionManager extends EventEmitter {
       const uploadDir = path.resolve(env.uploadPath);
       await fs.mkdir(uploadDir, { recursive: true });
       const filePath = path.join(uploadDir, fileName);
-      await fs.writeFile(filePath, buffer);
-      return `/uploads/${fileName}`;
+
+      if (buffer && buffer.length > 0) {
+        await fs.writeFile(filePath, buffer);
+      }
+
+      const mediaKey = targetObj?.mediaKey
+        ? Buffer.from(targetObj.mediaKey).toString('base64')
+        : null;
+
+      const mediaDataObj: any = {
+        mediaKey,
+        directPath: targetObj?.directPath || null,
+        url: targetObj?.url || null,
+        mimetype: detectedMime || null,
+        fileName: docFileName || null,
+        fileLength: buffer ? buffer.length : (typeof targetObj?.fileLength === 'number' ? targetObj.fileLength : Number(targetObj?.fileLength || 0)),
+        mediaType,
+        // Salva base64 no banco caso <= 15MB para sobrevivência definitiva a reinícios de container
+        base64: (buffer && buffer.length <= 15 * 1024 * 1024) ? buffer.toString('base64') : null,
+      };
+
+      return {
+        mediaUrl: `/uploads/${fileName}`,
+        mediaData: JSON.stringify(mediaDataObj),
+      };
     } catch (err) {
-      logger.warn(`Erro ao baixar mídia para mensagem ${msgId}:`, err);
+      logger.warn(`Erro ao processar mídia para mensagem ${msgId}:`, err);
       return null;
     }
   }
@@ -2182,7 +2239,7 @@ class WhatsAppSessionManager extends EventEmitter {
    * Extrai e serializa metadados e chaves criptográficas da mídia para que possam ser
    * persistidos no banco e recuperados sob demanda caso o container do Railway reinicie.
    */
-  private extractMediaInfo(msg: WAMessage, mediaType: string): string | null {
+  private extractMediaInfo(msg: WAMessage, mediaType: string, buffer?: Buffer | null): string | null {
     try {
       const { inner, type } = this.unwrapMessage(msg);
       let mObj: any = null;
@@ -2208,6 +2265,7 @@ class WhatsAppSessionManager extends EventEmitter {
         fileName: mObj.fileName || null,
         fileLength: typeof mObj.fileLength === 'number' ? mObj.fileLength : Number(mObj.fileLength || 0),
         mediaType,
+        base64: (buffer && buffer.length <= 15 * 1024 * 1024) ? buffer.toString('base64') : null,
       });
     } catch {
       return null;
@@ -2217,10 +2275,23 @@ class WhatsAppSessionManager extends EventEmitter {
   /**
    * Recupera um arquivo de mídia sob demanda caso o arquivo físico não esteja no disco
    * (ex: após novo deploy ou reinício de container no Railway).
-   * Baixa e descriptografa diretamente dos servidores MMS do WhatsApp via Baileys.
+   * 1. Restaura direto do base64 persistido no banco (instantâneo e permanente).
+   * 2. Tenta recuperar usando o cache em memória (recentRawMessages).
+   * 3. Usa reuploadRequest via socket ativo do WhatsApp para renovar links MMS expirados.
+   * 4. Fallback para downloadContentFromMessage direto.
    */
   async recoverMediaFile(safeFilename: string): Promise<{ filePath: string; originalName?: string } | null> {
     try {
+      const uploadDir = path.resolve(env.uploadPath);
+      await fs.mkdir(uploadDir, { recursive: true });
+      const targetPath = path.join(uploadDir, safeFilename);
+
+      // 0. Já existe no disco?
+      try {
+        await fs.access(targetPath);
+        return { filePath: targetPath };
+      } catch {}
+
       const match = safeFilename.match(/^(\d+)-([a-zA-Z0-9_-]+)\.([a-zA-Z0-9]+)$/);
       const safeId = match ? match[2] : null;
 
@@ -2231,13 +2302,120 @@ class WhatsAppSessionManager extends EventEmitter {
             ...(safeId ? [{ waMsgId: safeId }, { messageId: safeId }] : []),
           ],
         },
+        include: {
+          conversation: {
+            include: {
+              contact: true,
+            },
+          },
+        },
       });
 
-      const uploadDir = path.resolve(env.uploadPath);
-      await fs.mkdir(uploadDir, { recursive: true });
-      const targetPath = path.join(uploadDir, safeFilename);
+      // 1. Tenta recuperar usando base64 armazenado no banco (instantâneo, persistência definitiva)
+      if (msg?.mediaData) {
+        try {
+          const info = JSON.parse(msg.mediaData);
+          if (info?.base64) {
+            const buffer = Buffer.from(info.base64, 'base64');
+            if (buffer.length > 0) {
+              await fs.writeFile(targetPath, buffer);
+              logger.info(`Mídia ${safeFilename} recuperada com sucesso do banco de dados (base64)`);
+              return { filePath: targetPath, originalName: info.fileName || msg.content || safeFilename };
+            }
+          }
+        } catch (base64Err) {
+          logger.warn(`Erro ao restaurar base64 para ${safeFilename}:`, base64Err);
+        }
+      }
 
-      // 1. Tenta recuperar usando mediaData armazenado no banco
+      // 2. Tenta recuperar usando o cache em memória de mensagens brutas (recentRawMessages)
+      if (safeId && this.recentRawMessages.has(safeId)) {
+        try {
+          const cached = this.recentRawMessages.get(safeId);
+          if (cached?.message) {
+            const cleanMsg: any = { key: { id: safeId }, message: cached.message };
+            const session = msg?.whatsappId ? this.sessions.get(msg.whatsappId) : this.sessions.values().next().value;
+            const buffer = (await downloadMediaMessage(cleanMsg, 'buffer', {}, {
+              logger,
+              reuploadRequest: session?.socket?.updateMediaMessage || (async (m: any) => m),
+            } as any)) as Buffer;
+            if (buffer && Buffer.isBuffer(buffer) && buffer.length > 0) {
+              await fs.writeFile(targetPath, buffer);
+              if (msg && buffer.length <= 15 * 1024 * 1024) {
+                try {
+                  const existingInfo = msg.mediaData ? JSON.parse(msg.mediaData) : {};
+                  existingInfo.base64 = buffer.toString('base64');
+                  await prisma.message.update({
+                    where: { id: msg.id },
+                    data: { mediaData: JSON.stringify(existingInfo) },
+                  });
+                } catch {}
+              }
+              logger.info(`Mídia ${safeFilename} recuperada com sucesso via cache recente`);
+              return { filePath: targetPath, originalName: msg?.content || safeFilename };
+            }
+          }
+        } catch (cacheErr) {
+          logger.warn(`Tentativa via recentRawMessages falhou para ${safeFilename}:`, cacheErr);
+        }
+      }
+
+      // 3. Tenta recuperar via reuploadRequest do WhatsApp (renova links expirados com os servidores do WhatsApp)
+      if (msg?.mediaData) {
+        try {
+          const info = JSON.parse(msg.mediaData);
+          const session = msg.whatsappId ? this.sessions.get(msg.whatsappId) : this.sessions.values().next().value;
+          if (session?.socket && (info.mediaKey || info.directPath)) {
+            const mType = info.mediaType === 'sticker' ? 'stickerMessage'
+              : info.mediaType === 'image' ? 'imageMessage'
+              : info.mediaType === 'video' ? 'videoMessage'
+              : info.mediaType === 'audio' ? 'audioMessage'
+              : 'documentMessage';
+
+            const reconstructedMsg: any = {
+              key: {
+                remoteJid: msg.conversation?.contact?.phone ? `${msg.conversation.contact.phone}@s.whatsapp.net` : msg.fromPhone || '',
+                id: msg.waMsgId || safeId,
+                fromMe: msg.isFromMe,
+              },
+              message: {
+                [mType]: {
+                  url: info.url || '',
+                  directPath: info.directPath || '',
+                  mediaKey: info.mediaKey ? Buffer.from(info.mediaKey, 'base64') : undefined,
+                  mimetype: info.mimetype || 'application/octet-stream',
+                  fileName: info.fileName || msg.content || safeFilename,
+                  fileLength: info.fileLength || 0,
+                },
+              },
+            };
+
+            const buffer = (await downloadMediaMessage(reconstructedMsg, 'buffer', {}, {
+              logger,
+              reuploadRequest: session.socket.updateMediaMessage,
+            } as any)) as Buffer;
+
+            if (buffer && Buffer.isBuffer(buffer) && buffer.length > 0) {
+              await fs.writeFile(targetPath, buffer);
+              if (buffer.length <= 15 * 1024 * 1024) {
+                try {
+                  info.base64 = buffer.toString('base64');
+                  await prisma.message.update({
+                    where: { id: msg.id },
+                    data: { mediaData: JSON.stringify(info) },
+                  });
+                } catch {}
+              }
+              logger.info(`Mídia ${safeFilename} recuperada com sucesso via reuploadRequest do WhatsApp`);
+              return { filePath: targetPath, originalName: info.fileName || msg.content || safeFilename };
+            }
+          }
+        } catch (reuploadErr) {
+          logger.warn(`Tentativa via reuploadRequest falhou para ${safeFilename}:`, reuploadErr);
+        }
+      }
+
+      // 4. Último recurso: downloadContentFromMessage direto
       if (msg?.mediaData) {
         try {
           const info = JSON.parse(msg.mediaData);
@@ -2255,30 +2433,21 @@ class WhatsAppSessionManager extends EventEmitter {
             const buffer = Buffer.concat(chunks);
             if (buffer.length > 0) {
               await fs.writeFile(targetPath, buffer);
-              logger.info(`Mídia ${safeFilename} recuperada com sucesso via mediaData do WhatsApp`);
+              if (buffer.length <= 15 * 1024 * 1024) {
+                try {
+                  info.base64 = buffer.toString('base64');
+                  await prisma.message.update({
+                    where: { id: msg.id },
+                    data: { mediaData: JSON.stringify(info) },
+                  });
+                } catch {}
+              }
+              logger.info(`Mídia ${safeFilename} recuperada com sucesso via stream direto`);
               return { filePath: targetPath, originalName: info.fileName || msg.content || safeFilename };
             }
           }
-        } catch (mediaDataErr) {
-          logger.warn(`Tentativa via mediaData falhou para ${safeFilename}:`, mediaDataErr);
-        }
-      }
-
-      // 2. Tenta recuperar usando o cache em memória de mensagens brutas (recentRawMessages)
-      if (safeId && this.recentRawMessages.has(safeId)) {
-        try {
-          const cached = this.recentRawMessages.get(safeId);
-          if (cached?.message) {
-            const cleanMsg: any = { key: { id: safeId }, message: cached.message };
-            const buffer = (await downloadMediaMessage(cleanMsg, 'buffer', {}, { logger } as any)) as Buffer;
-            if (buffer && Buffer.isBuffer(buffer) && buffer.length > 0) {
-              await fs.writeFile(targetPath, buffer);
-              logger.info(`Mídia ${safeFilename} recuperada com sucesso via cache recente`);
-              return { filePath: targetPath, originalName: msg?.content || safeFilename };
-            }
-          }
-        } catch (cacheErr) {
-          logger.warn(`Tentativa via recentRawMessages falhou para ${safeFilename}:`, cacheErr);
+        } catch (directErr) {
+          logger.warn(`Tentativa via downloadContentFromMessage falhou para ${safeFilename}:`, directErr);
         }
       }
 
@@ -2310,8 +2479,9 @@ class WhatsAppSessionManager extends EventEmitter {
         ? 'text'
         : (mediaType || messageType);
 
-      const savedMediaUrl = mediaType ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType, accountId) : null;
-      const mediaData = mediaType ? this.extractMediaInfo(msg, mediaType) : null;
+      const dl = mediaType ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType, accountId) : null;
+      const savedMediaUrl = dl?.mediaUrl || null;
+      const mediaData = dl?.mediaData || (mediaType ? this.extractMediaInfo(msg, mediaType) : null);
 
       let savedMessage: any;
       let alreadyStored = false;
@@ -2575,6 +2745,22 @@ class WhatsAppSessionManager extends EventEmitter {
 
       const { contact, conversation } = await this.findOrCreateContactAndConversation(accountId, jid, senderName);
 
+      let mediaData: string | null = null;
+      if (mediaUrl) {
+        try {
+          const mediaPath = this.resolveMediaPath(mediaUrl);
+          const buf = await fs.readFile(mediaPath);
+          if (buf && buf.length <= 15 * 1024 * 1024) {
+            mediaData = JSON.stringify({
+              mediaType: type,
+              fileName: path.basename(mediaUrl),
+              fileLength: buf.length,
+              base64: buf.toString('base64'),
+            });
+          }
+        } catch {}
+      }
+
       let savedMessage: any;
       try {
         savedMessage = await prisma.message.create({
@@ -2585,6 +2771,7 @@ class WhatsAppSessionManager extends EventEmitter {
             content,
             mediaUrl,
             mediaType: type === 'text' ? null : type,
+            mediaData,
             isFromMe: true,
             isRead: true,
             senderName: senderName || null,

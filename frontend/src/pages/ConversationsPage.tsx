@@ -158,14 +158,21 @@ function DocumentMessageCard({ msg }: { msg: Msg }) {
       // 1. Tenta baixar via endpoint dedicado de download autenticado
       const downloadEndpoint = `/api/conversations/media/download?url=${encodeURIComponent(msg.mediaUrl)}&filename=${encodeURIComponent(fileName)}`;
       const token = localStorage.getItem('wa_token');
-      const res = await fetch(downloadEndpoint, {
+      let res = await fetch(downloadEndpoint, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+
+      // 2. Fallback para rota direta de upload
       if (!res.ok) {
-        // Fallback: abre direto pela URL de upload com parâmetro de download
-        window.open(`${msg.mediaUrl}?download=1&name=${encodeURIComponent(fileName)}`, '_blank');
+        res = await fetch(`${msg.mediaUrl}?download=1&name=${encodeURIComponent(fileName)}`);
+      }
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        alert(errJson?.error || 'Este documento expirou ou não pôde ser recuperado do WhatsApp.');
         return;
       }
+
       const blob = await res.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -175,18 +182,29 @@ function DocumentMessageCard({ msg }: { msg: Msg }) {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(blobUrl);
-    } catch {
-      window.open(msg.mediaUrl, '_blank');
+    } catch (err: any) {
+      alert('Não foi possível baixar o arquivo: ' + (err?.message || 'Falha de rede'));
     } finally {
       setDownloading(false);
     }
   };
 
-  const handlePreview = (e: React.MouseEvent) => {
+  const handlePreview = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!msg.mediaUrl) return;
-    window.open(msg.mediaUrl, '_blank');
+    try {
+      const res = await fetch(msg.mediaUrl);
+      if (res.ok) {
+        const blob = await res.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+      } else {
+        window.open(msg.mediaUrl, '_blank');
+      }
+    } catch {
+      window.open(msg.mediaUrl, '_blank');
+    }
   };
 
   const badgeStyle = useMemo(() => {
