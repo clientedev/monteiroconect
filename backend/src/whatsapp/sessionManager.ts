@@ -7,6 +7,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
+  downloadContentFromMessage,
 } from '@whiskeysockets/baileys';
 import type { ConnectionState, WAMessage, MessageUpsertType, proto } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
@@ -1565,6 +1566,7 @@ class WhatsAppSessionManager extends EventEmitter {
       const savedMediaUrl = mediaType
         ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType, accountId)
         : null;
+      const mediaData = mediaType ? this.extractMediaInfo(msg, mediaType) : null;
 
       let savedMessage: any;
       let alreadyStored = false;
@@ -1577,6 +1579,7 @@ class WhatsAppSessionManager extends EventEmitter {
             content,
             mediaType,
             mediaUrl: savedMediaUrl,
+            mediaData,
             isFromMe: true,
             isRead: true,
             quotedMessageId,
@@ -1931,6 +1934,7 @@ class WhatsAppSessionManager extends EventEmitter {
           content,
           mediaType,
           mediaUrl: histMediaUrl,
+          mediaData: mediaType ? this.extractMediaInfo(m, mediaType) : null,
           isFromMe: !!m.key.fromMe,
           isRead: true,
           quotedMessageId,
@@ -2038,7 +2042,7 @@ class WhatsAppSessionManager extends EventEmitter {
   /**
    * Baixa mídia do WhatsApp com tratamento de wrappers e mensagens enviadas por outros dispositivos.
    * Desembrulha deviceSentMessage e templates antes de passar ao Baileys para evitar exceções do tipo
-   * 'deviceSentMessage is not a media message', e garante a extensão .webp para figurinhas.
+   * 'deviceSentMessage is not a media message', e garante a extensão correta (.pdf, .webp, .mp4, etc.).
    */
   private async tryDownloadMedia(msg: WAMessage, msgId: string, mediaType: string, accountId?: string): Promise<string | null> {
     const DOWNLOADABLE = ['image', 'video', 'audio', 'document', 'sticker'];
@@ -2061,6 +2065,12 @@ class WhatsAppSessionManager extends EventEmitter {
         else if (hdr.videoMessage) mediaMessagePayload = { videoMessage: hdr.videoMessage };
       }
 
+      // Garante que se tiver directPath sem url, a url seja inicializada para o Baileys não rejeitar
+      const targetObj = mediaMessagePayload?.documentMessage || mediaMessagePayload?.[type];
+      if (targetObj && targetObj.directPath && !targetObj.url) {
+        targetObj.url = '';
+      }
+
       // Constrói objeto limpo para o downloadMediaMessage do Baileys
       const cleanMsg: WAMessage = {
         ...msg,
@@ -2073,42 +2083,208 @@ class WhatsAppSessionManager extends EventEmitter {
         logger: logger as any,
         reuploadRequest: reupload || (async (m: any) => m),
       };
-      const buffer = await downloadMediaMessage(
-        cleanMsg,
-        'buffer',
-        {},
-        ctxOptions,
-      );
+
+      let buffer: Buffer | null = null;
+      try {
+        buffer = (await downloadMediaMessage(
+          cleanMsg,
+          'buffer',
+          {},
+          ctxOptions,
+        )) as Buffer;
+      } catch (dlErr) {
+        logger.debug(`downloadMediaMessage falhou (${msgId}), tentando downloadContentFromMessage direto:`, dlErr);
+        const mObj = targetObj || inner.documentMessage || inner.imageMessage || inner.videoMessage || inner.audioMessage || inner.stickerMessage;
+        if (mObj && (mObj.mediaKey || mObj.directPath)) {
+          const stream = await downloadContentFromMessage(
+            {
+              mediaKey: mObj.mediaKey,
+              directPath: mObj.directPath,
+              url: mObj.url,
+            },
+            (mediaType === 'sticker' ? 'sticker' : mediaType) as any,
+            ctxOptions,
+          );
+          const chunks: Buffer[] = [];
+          for await (const chunk of stream) chunks.push(chunk);
+          buffer = Buffer.concat(chunks);
+        }
+      }
+
       if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) return null;
+
+      // 1. Tenta extrair extensão real a partir do nome do arquivo original
+      const docFileName = inner.documentMessage?.fileName || inner.documentWithCaptionMessage?.message?.documentMessage?.fileName || '';
+      let docExt = '';
+      if (docFileName) {
+        const raw = path.extname(docFileName).replace(/^\./, '').toLowerCase().trim();
+        if (raw && raw.length <= 10) docExt = raw;
+      }
 
       const extMap: Record<string, string> = {
         image: 'jpg',
         video: 'mp4',
         audio: 'ogg',
-        document: 'bin',
+        document: 'pdf',
         sticker: 'webp',
       };
       const mimeExtMap: Record<string, string> = {
         'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
         'image/png': 'png',
         'image/gif': 'gif',
         'image/webp': 'webp',
         'video/mp4': 'mp4',
         'video/webm': 'webm',
+        'video/3gpp': '3gp',
+        'video/quicktime': 'mov',
         'audio/ogg': 'ogg',
         'audio/opus': 'opus',
         'audio/mpeg': 'mp3',
         'audio/mp4': 'm4a',
+        'audio/wav': 'wav',
         'application/pdf': 'pdf',
+        'application/msword': 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'application/vnd.ms-excel': 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+        'application/vnd.ms-powerpoint': 'ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+        'application/zip': 'zip',
+        'application/x-zip-compressed': 'zip',
+        'application/x-rar-compressed': 'rar',
+        'application/vnd.rar': 'rar',
+        'application/x-tar': 'tar',
+        'application/x-7z-compressed': '7z',
+        'text/plain': 'txt',
+        'text/csv': 'csv',
+        'text/html': 'html',
       };
-      const ext = (mediaType === 'sticker') ? 'webp' : (mimeExtMap[this.mediaMimeType(cleanMsg) || ''] || extMap[mediaType] || 'bin');
+      const detectedMime = this.mediaMimeType(cleanMsg) || '';
+      const ext = (mediaType === 'sticker')
+        ? 'webp'
+        : (docExt || mimeExtMap[detectedMime] || extMap[mediaType] || (mediaType === 'document' ? 'pdf' : 'bin'));
+
       const safeId = msgId.replace(/[^a-zA-Z0-9_-]/g, '_');
       const fileName = `${Date.now()}-${safeId}.${ext}`;
-      const filePath = path.join(env.uploadPath, fileName);
+      const uploadDir = path.resolve(env.uploadPath);
+      await fs.mkdir(uploadDir, { recursive: true });
+      const filePath = path.join(uploadDir, fileName);
       await fs.writeFile(filePath, buffer);
       return `/uploads/${fileName}`;
     } catch (err) {
       logger.warn(`Erro ao baixar mídia para mensagem ${msgId}:`, err);
+      return null;
+    }
+  }
+
+  /**
+   * Extrai e serializa metadados e chaves criptográficas da mídia para que possam ser
+   * persistidos no banco e recuperados sob demanda caso o container do Railway reinicie.
+   */
+  private extractMediaInfo(msg: WAMessage, mediaType: string): string | null {
+    try {
+      const { inner, type } = this.unwrapMessage(msg);
+      let mObj: any = null;
+      if (inner[type]) mObj = inner[type];
+      else if (inner.documentMessage) mObj = inner.documentMessage;
+      else if (inner.imageMessage) mObj = inner.imageMessage;
+      else if (inner.videoMessage) mObj = inner.videoMessage;
+      else if (inner.audioMessage) mObj = inner.audioMessage;
+      else if (inner.stickerMessage) mObj = inner.stickerMessage;
+
+      if (!mObj) return null;
+
+      const mediaKey = mObj.mediaKey
+        ? Buffer.from(mObj.mediaKey).toString('base64')
+        : null;
+      if (!mediaKey && !mObj.url && !mObj.directPath) return null;
+
+      return JSON.stringify({
+        mediaKey,
+        directPath: mObj.directPath || null,
+        url: mObj.url || null,
+        mimetype: mObj.mimetype || null,
+        fileName: mObj.fileName || null,
+        fileLength: typeof mObj.fileLength === 'number' ? mObj.fileLength : Number(mObj.fileLength || 0),
+        mediaType,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Recupera um arquivo de mídia sob demanda caso o arquivo físico não esteja no disco
+   * (ex: após novo deploy ou reinício de container no Railway).
+   * Baixa e descriptografa diretamente dos servidores MMS do WhatsApp via Baileys.
+   */
+  async recoverMediaFile(safeFilename: string): Promise<{ filePath: string; originalName?: string } | null> {
+    try {
+      const match = safeFilename.match(/^(\d+)-([a-zA-Z0-9_-]+)\.([a-zA-Z0-9]+)$/);
+      const safeId = match ? match[2] : null;
+
+      const msg = await prisma.message.findFirst({
+        where: {
+          OR: [
+            { mediaUrl: { contains: safeFilename } },
+            ...(safeId ? [{ waMsgId: safeId }, { messageId: safeId }] : []),
+          ],
+        },
+      });
+
+      const uploadDir = path.resolve(env.uploadPath);
+      await fs.mkdir(uploadDir, { recursive: true });
+      const targetPath = path.join(uploadDir, safeFilename);
+
+      // 1. Tenta recuperar usando mediaData armazenado no banco
+      if (msg?.mediaData) {
+        try {
+          const info = JSON.parse(msg.mediaData);
+          if (info && (info.mediaKey || info.directPath)) {
+            const stream = await downloadContentFromMessage(
+              {
+                mediaKey: info.mediaKey ? Buffer.from(info.mediaKey, 'base64') : (undefined as any),
+                directPath: info.directPath || undefined,
+                url: info.url || undefined,
+              },
+              (info.mediaType === 'sticker' ? 'sticker' : (info.mediaType || 'document')) as any,
+            );
+            const chunks: Buffer[] = [];
+            for await (const chunk of stream) chunks.push(chunk);
+            const buffer = Buffer.concat(chunks);
+            if (buffer.length > 0) {
+              await fs.writeFile(targetPath, buffer);
+              logger.info(`Mídia ${safeFilename} recuperada com sucesso via mediaData do WhatsApp`);
+              return { filePath: targetPath, originalName: info.fileName || msg.content || safeFilename };
+            }
+          }
+        } catch (mediaDataErr) {
+          logger.warn(`Tentativa via mediaData falhou para ${safeFilename}:`, mediaDataErr);
+        }
+      }
+
+      // 2. Tenta recuperar usando o cache em memória de mensagens brutas (recentRawMessages)
+      if (safeId && this.recentRawMessages.has(safeId)) {
+        try {
+          const cached = this.recentRawMessages.get(safeId);
+          if (cached?.message) {
+            const cleanMsg: any = { key: { id: safeId }, message: cached.message };
+            const buffer = (await downloadMediaMessage(cleanMsg, 'buffer', {}, { logger } as any)) as Buffer;
+            if (buffer && Buffer.isBuffer(buffer) && buffer.length > 0) {
+              await fs.writeFile(targetPath, buffer);
+              logger.info(`Mídia ${safeFilename} recuperada com sucesso via cache recente`);
+              return { filePath: targetPath, originalName: msg?.content || safeFilename };
+            }
+          }
+        } catch (cacheErr) {
+          logger.warn(`Tentativa via recentRawMessages falhou para ${safeFilename}:`, cacheErr);
+        }
+      }
+
+      return null;
+    } catch (err) {
+      logger.warn(`Erro geral ao tentar recuperar mídia ${safeFilename}:`, err);
       return null;
     }
   }
@@ -2135,6 +2311,7 @@ class WhatsAppSessionManager extends EventEmitter {
         : (mediaType || messageType);
 
       const savedMediaUrl = mediaType ? await this.tryDownloadMedia(msg, waMsgId || Date.now().toString(), mediaType, accountId) : null;
+      const mediaData = mediaType ? this.extractMediaInfo(msg, mediaType) : null;
 
       let savedMessage: any;
       let alreadyStored = false;
@@ -2147,6 +2324,7 @@ class WhatsAppSessionManager extends EventEmitter {
             content,
             mediaType,
             mediaUrl: savedMediaUrl,
+            mediaData,
             isFromMe: false,
             quotedMessageId,
             quotedContent,
@@ -2176,6 +2354,7 @@ class WhatsAppSessionManager extends EventEmitter {
                 content,
                 mediaType,
                 mediaUrl: savedMediaUrl,
+                mediaData,
                 isFromMe: false,
                 quotedMessageId,
                 quotedContent,

@@ -42,6 +42,7 @@ async function ensureMessageColumns(): Promise<void> {
     'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "fromPhone" TEXT',
     'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "toPhone" TEXT',
     'ALTER TABLE "Conversation" ADD COLUMN IF NOT EXISTS "aiEnabled" BOOLEAN NOT NULL DEFAULT TRUE',
+    'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "mediaData" TEXT',
   ];
 
   try {
@@ -165,7 +166,86 @@ async function bootstrap() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  // Serve uploads
+  // Garante que o diretório de uploads existe
+  await fs.mkdir(path.resolve(env.uploadPath), { recursive: true });
+
+  const getMimeType = (file: string): string => {
+    const ext = path.extname(file).toLowerCase();
+    const map: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.ogg': 'audio/ogg',
+      '.opus': 'audio/opus',
+      '.mp3': 'audio/mpeg',
+      '.m4a': 'audio/mp4',
+      '.zip': 'application/zip',
+      '.rar': 'application/vnd.rar',
+      '.txt': 'text/plain; charset=utf-8',
+      '.csv': 'text/csv; charset=utf-8',
+    };
+    return map[ext] || 'application/octet-stream';
+  };
+
+  // Serve uploads com recuperação sob demanda para mídias do WhatsApp
+  app.get('/uploads/:filename', async (req, res) => {
+    const { filename } = req.params;
+    const safeFilename = path.basename(filename);
+    const uploadDir = path.resolve(env.uploadPath);
+    const filePath = path.join(uploadDir, safeFilename);
+
+    // 1. Arquivo físico existente em disco
+    try {
+      await fs.access(filePath);
+      const mimeType = getMimeType(filePath);
+      res.setHeader('Content-Type', mimeType);
+      if (req.query.download === '1') {
+        const downloadName = (req.query.name as string) || safeFilename;
+        const safeHeader = downloadName.replace(/[^\w\s.-]/gi, '_');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeHeader}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
+      } else {
+        res.setHeader('Content-Disposition', 'inline');
+      }
+      return res.sendFile(filePath);
+    } catch {
+      // Continua para recuperação se não estiver no disco
+    }
+
+    // 2. Tenta recuperar mídia sob demanda via Baileys / WhatsApp MMS
+    try {
+      const recovered = await sessionManager.recoverMediaFile(safeFilename);
+      if (recovered && recovered.filePath) {
+        const mimeType = getMimeType(recovered.filePath);
+        res.setHeader('Content-Type', mimeType);
+        const downloadName = recovered.originalName || (req.query.name as string) || safeFilename;
+        if (req.query.download === '1') {
+          const safeHeader = downloadName.replace(/[^\w\s.-]/gi, '_');
+          res.setHeader('Content-Disposition', `attachment; filename="${safeHeader}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
+        } else {
+          res.setHeader('Content-Disposition', 'inline');
+        }
+        return res.sendFile(recovered.filePath);
+      }
+    } catch (recErr) {
+      logger.warn(`Erro na recuperação sob demanda de mídia (${safeFilename}):`, recErr);
+    }
+
+    // 3. Resposta amigável quando o arquivo não existe e não pôde ser recuperado
+    return res.status(404).json({
+      error: 'Arquivo de mídia não encontrado ou expirado no WhatsApp.',
+      code: 'MEDIA_NOT_FOUND',
+      filename: safeFilename,
+    });
+  });
+
   app.use('/uploads', express.static(path.resolve(env.uploadPath)));
 
   // API routes

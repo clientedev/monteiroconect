@@ -1,4 +1,8 @@
 import { Router } from 'express';
+import path from 'node:path';
+import { promises as fs, createReadStream } from 'node:fs';
+import { env } from '../config/env.js';
+import { sessionManager } from '../whatsapp/sessionManager.js';
 import { listConversations, getConversation, getConversationMessages, markConversationRead, assignConversation, setConversationAiEnabled, setConversationMuted, cleanupDuplicateConversations } from '../services/conversationService.js';
 import { sendWhatsAppMessage, broadcastWhatsAppMessages } from '../services/whatsappService.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
@@ -59,6 +63,68 @@ router.post('/send', async (req: AuthRequest, res, next) => {
       body.quotedContent,
     );
     res.json({ success: true, result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Download de arquivo de mídia com cabeçalhos adequados e recuperação sob demanda
+router.get('/media/download', async (req, res, next) => {
+  try {
+    const rawUrl = (req.query.url as string) || '';
+    const requestedName = (req.query.filename as string) || 'documento';
+    if (!rawUrl || !rawUrl.startsWith('/uploads/')) {
+      throw new AppError('URL de mídia inválida', 400);
+    }
+
+    const safeFilename = path.basename(rawUrl.slice('/uploads/'.length));
+    const uploadDir = path.resolve(env.uploadPath);
+    const filePath = path.join(uploadDir, safeFilename);
+
+    let finalPath = filePath;
+    let finalOriginalName = requestedName;
+
+    try {
+      await fs.access(filePath);
+    } catch {
+      // Tenta recuperar via Baileys / WhatsApp MMS
+      const recovered = await sessionManager.recoverMediaFile(safeFilename);
+      if (!recovered) {
+        throw new AppError('Arquivo não encontrado no servidor ou expirado no WhatsApp', 404);
+      }
+      finalPath = recovered.filePath;
+      if (recovered.originalName) finalOriginalName = recovered.originalName;
+    }
+
+    const ext = path.extname(finalOriginalName).toLowerCase() || path.extname(safeFilename).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.mp4': 'video/mp4',
+      '.ogg': 'audio/ogg',
+      '.opus': 'audio/opus',
+      '.mp3': 'audio/mpeg',
+      '.m4a': 'audio/mp4',
+      '.zip': 'application/zip',
+      '.rar': 'application/vnd.rar',
+      '.txt': 'text/plain; charset=utf-8',
+      '.csv': 'text/csv; charset=utf-8',
+    };
+    const contentType = mimeMap[ext] || 'application/octet-stream';
+    const safeHeader = finalOriginalName.replace(/[^\w\s.-]/gi, '_');
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeHeader}"; filename*=UTF-8''${encodeURIComponent(finalOriginalName)}`);
+
+    const stream = createReadStream(finalPath);
+    stream.pipe(res);
   } catch (err) {
     next(err);
   }

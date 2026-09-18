@@ -9,7 +9,7 @@ import {
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
   Maximize2, Minimize2, ExternalLink, Reply, Share2, Bell, BellOff, ArrowLeft,
-  Zap, MessageSquareQuote,
+  Zap, MessageSquareQuote, FileText, Download,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -74,6 +74,7 @@ interface Msg {
   quotedMessageId?: string | null;
   quotedContent?: string | null;
   senderName?: string | null;
+  caption?: string | null;
 }
 
 /** Esconde identificadores técnicos (LID/JID de grupo) da exibição */
@@ -140,6 +141,158 @@ function formatLastMessagePreview(text: string | null | undefined): string {
   if (trimmed === '[secretEncryptedMessage]') return '🔒 Mensagem protegida';
   if (trimmed === '[messageContextInfo]' || trimmed === '[unknown]') return 'Mensagem';
   return trimmed;
+}
+
+function DocumentMessageCard({ msg }: { msg: Msg }) {
+  const [downloading, setDownloading] = useState(false);
+  const fileName = msg.content || 'Documento.pdf';
+  const ext = (fileName.split('.').pop() || 'pdf').toLowerCase();
+  const isPdf = ext === 'pdf';
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!msg.mediaUrl) return;
+    setDownloading(true);
+    try {
+      // 1. Tenta baixar via endpoint dedicado de download autenticado
+      const downloadEndpoint = `/api/conversations/media/download?url=${encodeURIComponent(msg.mediaUrl)}&filename=${encodeURIComponent(fileName)}`;
+      const token = localStorage.getItem('wa_token');
+      const res = await fetch(downloadEndpoint, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        // Fallback: abre direto pela URL de upload com parâmetro de download
+        window.open(`${msg.mediaUrl}?download=1&name=${encodeURIComponent(fileName)}`, '_blank');
+        return;
+      }
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(msg.mediaUrl, '_blank');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handlePreview = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!msg.mediaUrl) return;
+    window.open(msg.mediaUrl, '_blank');
+  };
+
+  const badgeStyle = useMemo(() => {
+    if (ext === 'pdf') {
+      return {
+        bg: msg.isFromMe ? 'bg-red-400/30 text-white border-red-300/40' : 'bg-red-500/10 text-red-600 border-red-500/20',
+        label: 'PDF',
+      };
+    }
+    if (['doc', 'docx'].includes(ext)) {
+      return {
+        bg: msg.isFromMe ? 'bg-blue-400/30 text-white border-blue-300/40' : 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+        label: 'DOC',
+      };
+    }
+    if (['xls', 'xlsx', 'csv'].includes(ext)) {
+      return {
+        bg: msg.isFromMe ? 'bg-emerald-400/30 text-white border-emerald-300/40' : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+        label: 'XLS',
+      };
+    }
+    if (['zip', 'rar', '7z'].includes(ext)) {
+      return {
+        bg: msg.isFromMe ? 'bg-amber-400/30 text-white border-amber-300/40' : 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+        label: 'ZIP',
+      };
+    }
+    return {
+      bg: msg.isFromMe ? 'bg-white/20 text-white border-white/30' : 'bg-slate-100 text-slate-600 border-slate-200',
+      label: ext.slice(0, 4).toUpperCase(),
+    };
+  }, [ext, msg.isFromMe]);
+
+  return (
+    <div className="my-1 max-w-sm sm:max-w-md">
+      <div className={`flex items-center gap-2.5 p-2.5 rounded-2xl border transition-all ${
+        msg.isFromMe
+          ? 'bg-white/15 border-white/20 text-white'
+          : 'bg-slate-50/90 border-slate-200 text-slate-800 shadow-2xs'
+      }`}>
+        {/* Badge do tipo de arquivo */}
+        <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center font-bold text-xs flex-shrink-0 border ${badgeStyle.bg}`}>
+          <FileText className="w-4 h-4 mb-0.5" />
+          <span className="text-[8px] uppercase tracking-wider font-extrabold leading-none">{badgeStyle.label}</span>
+        </div>
+
+        {/* Informações do arquivo */}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold truncate leading-tight" title={fileName}>
+            {fileName}
+          </p>
+          <p className={`text-[10px] mt-0.5 ${msg.isFromMe ? 'text-white/70' : 'text-slate-400'}`}>
+            Documento {ext.toUpperCase()}
+          </p>
+        </div>
+
+        {/* Botões de Ação */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {isPdf && msg.mediaUrl && (
+            <button
+              type="button"
+              onClick={handlePreview}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                msg.isFromMe
+                  ? 'hover:bg-white/20 text-white'
+                  : 'hover:bg-slate-200/80 text-slate-600'
+              }`}
+              title="Visualizar documento"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </button>
+          )}
+          {msg.mediaUrl ? (
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloading}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs ${
+                msg.isFromMe
+                  ? 'bg-white text-emerald-800 hover:bg-white/90 active:scale-95'
+                  : 'bg-monte-verde text-white hover:bg-monte-verde/90 active:scale-95'
+              }`}
+              title="Baixar documento"
+            >
+              {downloading ? (
+                <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">{downloading ? 'Baixando...' : 'Baixar'}</span>
+            </button>
+          ) : (
+            <span className={`text-[10px] font-medium px-2 py-1 rounded-md ${
+              msg.isFromMe ? 'bg-white/10 text-white/70' : 'bg-slate-100 text-slate-400'
+            }`}>
+              Indisponível
+            </span>
+          )}
+        </div>
+      </div>
+      {/* Se houver legenda cadastrada diferente do nome do arquivo, exibe */}
+      {msg.caption && msg.caption !== fileName && (
+        <p className="text-xs mt-1.5 px-1 leading-relaxed opacity-90">{msg.caption}</p>
+      )}
+    </div>
+  );
 }
 
 function ChatMessageItem({
@@ -295,14 +448,11 @@ function ChatMessageItem({
         {msg.mediaType === 'audio' && !msg.mediaUrl && (
           <p className="text-xs opacity-70 mb-1">Áudio sem arquivo disponível</p>
         )}
-        {msg.content && msg.mediaType !== 'sticker' && msg.type !== 'sticker' && (
+        {msg.content && msg.mediaType !== 'sticker' && msg.type !== 'sticker' && msg.mediaType !== 'document' && (
           <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderContent(msg.content)}</p>
         )}
-        {msg.mediaType === 'document' && msg.mediaUrl && (
-          <div className="flex items-center gap-2">
-            <Paperclip className="w-4 h-4 opacity-70" />
-            <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline break-all">{msg.content || 'Documento'}</a>
-          </div>
+        {msg.mediaType === 'document' && (
+          <DocumentMessageCard msg={msg} />
         )}
         {(msg.mediaType === 'location' || msg.mediaType === 'contact') && (
           <p className="text-xs opacity-70 mb-1">

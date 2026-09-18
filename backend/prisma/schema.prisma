@@ -129,6 +129,8 @@ model Message {
   content        String?
   mediaUrl       String?
   mediaType      String?
+  /// Metadados de mídia (mediaKey, directPath, etc.) para recuperação automática após reinício de container
+  mediaData      String?
   caption        String?
   isFromMe       Boolean  @default(false)
   isRead         Boolean  @default(false)
