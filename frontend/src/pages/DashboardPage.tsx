@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dashboardApi } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import { Smartphone, MessageSquare, Mail, TrendingUp, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -38,6 +39,8 @@ interface Stats {
 
 export default function DashboardPage() {
   const { socket } = useSocket();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -93,8 +96,8 @@ export default function DashboardPage() {
   if (loading) return <LoadingSkeleton />;
 
   const cards = [
-    { label: 'Whatsapps conectados', value: stats?.connectedCount || 0, icon: Smartphone, gradient: 'from-monte-verde to-emerald-600' },
-    { label: 'Conversas abertas', value: stats?.totalConversations || 0, icon: MessageSquare, gradient: 'from-monte-azul to-sky-600' },
+    { label: isAdmin ? 'Whatsapps conectados' : 'Meus Whatsapps conectados', value: stats?.connectedCount || 0, icon: Smartphone, gradient: 'from-monte-verde to-emerald-600' },
+    { label: isAdmin ? 'Conversas abertas' : 'Minhas conversas abertas', value: stats?.totalConversations || 0, icon: MessageSquare, gradient: 'from-monte-azul to-sky-600' },
     { label: 'Mensagens não lidas', value: stats?.unreadMessages || 0, icon: Mail, gradient: 'from-monte-terracota to-red-500' },
     { label: 'Mensagens hoje', value: stats?.messagesToday || 0, icon: TrendingUp, gradient: 'from-purple-600 to-indigo-600' },
     { label: 'Mensagens armazenadas', value: stats?.totalMessages || 0, icon: MessageSquare, gradient: 'from-slate-600 to-slate-800' },
@@ -126,7 +129,9 @@ export default function DashboardPage() {
       {/* Per account */}
       <div className="card-static overflow-hidden">
         <div className="px-6 py-4 border-b border-monte-sereno/15">
-          <h3 className="font-bold font-display text-monte-azul text-lg">Whatsapps Cadastrados</h3>
+          <h3 className="font-bold font-display text-monte-azul text-lg">
+            {isAdmin ? 'Whatsapps Cadastrados' : 'Meus Whatsapps'}
+          </h3>
         </div>
         <div className="divide-y divide-monte-sereno/10">
           {stats?.messagesPerAccount?.map((acc: any) => (
@@ -146,10 +151,16 @@ export default function DashboardPage() {
           ))}
           {(!stats?.messagesPerAccount?.length) && (
             <div className="px-6 py-10 text-center text-monte-sereno text-sm">
-              Nenhum WhatsApp cadastrado.{' '}
-              <Link to="/whatsapp" className="text-monte-verde hover:text-monte-azul font-semibold transition-colors">
-                Adicionar
-              </Link>
+              {isAdmin ? (
+                <>
+                  Nenhum WhatsApp cadastrado.{' '}
+                  <Link to="/whatsapp" className="text-monte-verde hover:text-monte-azul font-semibold transition-colors">
+                    Adicionar
+                  </Link>
+                </>
+              ) : (
+                <>Nenhum WhatsApp atribuído ao seu usuário. Solicite a liberação ao administrador.</>
+              )}
             </div>
           )}
         </div>

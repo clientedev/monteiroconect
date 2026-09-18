@@ -1,5 +1,5 @@
 import { prisma } from '../database/client.js';
-import { SessionUser } from './accessService.js';
+import { SessionUser, accessibleAccountIds } from './accessService.js';
 import { sessionManager } from '../whatsapp/sessionManager.js';
 
 function startOfSaoPauloDay(now = new Date()): Date {
@@ -17,6 +17,9 @@ function startOfSaoPauloDay(now = new Date()): Date {
 
 export async function getDashboardStats(user?: SessionUser) {
   const today = startOfSaoPauloDay();
+  const accountIds = user ? await accessibleAccountIds(user) : null;
+  const accountFilter = accountIds !== null ? { in: accountIds } : undefined;
+
   const [
     totalConversations,
     unreadMessages,
@@ -28,11 +31,25 @@ export async function getDashboardStats(user?: SessionUser) {
     rawAccounts,
     assignedConversations,
   ] = await Promise.all([
-    prisma.conversation.count({ where: { isOpen: true } }),
-    prisma.conversation.aggregate({ _sum: { unreadCount: true }, where: { unreadCount: { gt: 0 } } }),
-    prisma.message.count(),
+    prisma.conversation.count({
+      where: {
+        isOpen: true,
+        ...(accountFilter ? { whatsappId: accountFilter } : {}),
+      },
+    }),
+    prisma.conversation.aggregate({
+      _sum: { unreadCount: true },
+      where: {
+        unreadCount: { gt: 0 },
+        ...(accountFilter ? { whatsappId: accountFilter } : {}),
+      },
+    }),
+    prisma.message.count({
+      where: accountFilter ? { whatsappId: accountFilter } : undefined,
+    }),
     prisma.message.count({
       where: {
+        ...(accountFilter ? { whatsappId: accountFilter } : {}),
         OR: [
           { timestamp: { gte: today } },
           { timestamp: null, createdAt: { gte: today } },
@@ -40,6 +57,7 @@ export async function getDashboardStats(user?: SessionUser) {
       },
     }),
     prisma.message.findMany({
+      where: accountFilter ? { whatsappId: accountFilter } : undefined,
       orderBy: [
         { timestamp: { sort: 'desc', nulls: 'last' } },
         { createdAt: 'desc' },
@@ -51,14 +69,21 @@ export async function getDashboardStats(user?: SessionUser) {
       orderBy: { lastMessageAt: 'desc' },
       take: 10,
       include: { contact: true, whatsapp: { select: { id: true, name: true, phone: true } } },
-      where: { isOpen: true },
+      where: {
+        isOpen: true,
+        ...(accountFilter ? { whatsappId: accountFilter } : {}),
+      },
     }),
     prisma.conversation.findMany({
-      where: { unreadCount: { gt: 0 } },
+      where: {
+        unreadCount: { gt: 0 },
+        ...(accountFilter ? { whatsappId: accountFilter } : {}),
+      },
       orderBy: { lastMessageAt: 'desc' },
       include: { contact: true, whatsapp: { select: { id: true, name: true, phone: true } } },
     }),
     prisma.whatsAppAccount.findMany({
+      where: accountFilter ? { id: accountFilter } : undefined,
       select: {
         id: true,
         name: true,
@@ -71,6 +96,7 @@ export async function getDashboardStats(user?: SessionUser) {
           where: {
             isOpen: true,
             assignments: { some: { userId: user.id } },
+            ...(accountFilter ? { whatsappId: accountFilter } : {}),
           },
           orderBy: [{ lastMessageAt: 'desc' }, { updatedAt: 'desc' }],
           take: 20,
