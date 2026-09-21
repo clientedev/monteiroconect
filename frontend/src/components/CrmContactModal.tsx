@@ -398,10 +398,6 @@ export default function CrmContactModal({
         policyNumber: formPolicyNumber.trim() || undefined,
         premiumValue: formPremiumValue.trim() || undefined,
         expirationDate: formExpirationDate.trim() || undefined,
-
-        dealProduct: formDealProduct.trim() || undefined,
-        dealValue: formDealValue.trim() || undefined,
-        dealStatus: formDealStatus,
         notes: formNotes.trim() || undefined,
       });
 
@@ -1142,66 +1138,36 @@ export default function CrmContactModal({
                 </div>
 
                 {/* 💰 SEÇÃO 4: NEGÓCIO NO FUNIL DE VENDAS */}
-                <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-monte-sereno/15 space-y-4">
-                  <div className="flex items-center justify-between border-b border-monte-sereno/10 pb-2">
-                    <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2">
-                      <DollarSign className="w-4 h-4 text-monte-verde" /> 💰 4. Negócio no Funil de Vendas (LEADS & Pipeline)
-                    </h5>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOppProduct(formDealProduct || formProduct || 'Auto');
-                        setOppValue(formDealValue || '');
-                        setOppStatus(formDealStatus || 'Enviar Cotação');
-                        setOppNotes(formNotes || '');
-                        setOppError(null);
-                        setOppSuccess(null);
-                        setShowOpportunityModal(true);
-                      }}
-                      className="px-2.5 py-1 rounded-xl bg-monte-verde text-white hover:bg-emerald-700 text-[11px] font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
-                    >
-                      <PlusCircle className="w-3 h-3" /> Criar Oportunidade
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-monte-sereno font-semibold mb-1">Produto da Cotação / Oportunidade</label>
-                      <input
-                        type="text"
-                        className="input-rect text-xs w-full"
-                        placeholder="Ex: Cotação Seguro Auto"
-                        value={formDealProduct}
-                        onChange={(e) => setFormDealProduct(e.target.value)}
-                      />
+                <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-monte-sereno/15 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-monte-verde/15 text-monte-verde flex items-center justify-center">
+                      <DollarSign className="w-4 h-4" />
                     </div>
-
                     <div>
-                      <label className="block text-monte-sereno font-semibold mb-1">Valor Estimado do Negócio (R$)</label>
-                      <input
-                        type="text"
-                        className="input-rect text-xs w-full"
-                        placeholder="Ex: 3.500,00"
-                        value={formDealValue}
-                        onChange={(e) => setFormDealValue(e.target.value)}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-monte-sereno font-semibold mb-1">Etapa no Funil</label>
-                      <select
-                        className="input-rect text-xs w-full"
-                        value={formDealStatus}
-                        onChange={(e) => setFormDealStatus(e.target.value)}
-                      >
-                        {PIPELINE_STAGE_OPTIONS.map((stg) => (
-                          <option key={stg} value={stg}>
-                            {stg}
-                          </option>
-                        ))}
-                      </select>
+                      <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider">
+                        4. Negócio no Funil de Vendas (LEADS & Pipeline)
+                      </h5>
+                      <p className="text-[11px] text-monte-sereno">
+                        Adicione novas oportunidades e cotações diretamente no funil do CRM.
+                      </p>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOppProduct(formProduct || 'Auto');
+                      setOppValue('');
+                      setOppStatus('Enviar Cotação');
+                      setOppDate('');
+                      setOppNotes('');
+                      setOppError(null);
+                      setOppSuccess(null);
+                      setShowOpportunityModal(true);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-monte-verde to-emerald-700 text-white hover:opacity-95 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4" /> Criar Oportunidade
+                  </button>
                 </div>
 
                 {/* 📝 SEÇÃO 5: OBSERVAÇÕES E NOTAS */}
