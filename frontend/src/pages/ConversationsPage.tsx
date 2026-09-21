@@ -143,20 +143,41 @@ function formatLastMessagePreview(text: string | null | undefined): string {
   return trimmed;
 }
 
+export function formatMediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/uploads/')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('uploads/')) {
+    return `/${trimmed}`;
+  }
+  if (trimmed.startsWith('/')) {
+    return `/uploads${trimmed}`;
+  }
+  return `/uploads/${trimmed}`;
+}
+
 function DocumentMessageCard({ msg }: { msg: Msg }) {
   const [downloading, setDownloading] = useState(false);
   const fileName = msg.content || 'Documento.pdf';
   const ext = (fileName.split('.').pop() || 'pdf').toLowerCase();
   const isPdf = ext === 'pdf';
 
+  const normalizedUrl = formatMediaUrl(msg.mediaUrl);
+
   const handleDownload = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!msg.mediaUrl) return;
+    if (!normalizedUrl) return;
     setDownloading(true);
     try {
       // 1. Tenta baixar via endpoint dedicado de download autenticado
-      const downloadEndpoint = `/api/conversations/media/download?url=${encodeURIComponent(msg.mediaUrl)}&filename=${encodeURIComponent(fileName)}`;
+      const downloadEndpoint = `/api/conversations/media/download?url=${encodeURIComponent(normalizedUrl)}&filename=${encodeURIComponent(fileName)}`;
       const token = localStorage.getItem('wa_token');
       let res = await fetch(downloadEndpoint, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -164,7 +185,7 @@ function DocumentMessageCard({ msg }: { msg: Msg }) {
 
       // 2. Fallback para rota direta de upload
       if (!res.ok) {
-        res = await fetch(`${msg.mediaUrl}?download=1&name=${encodeURIComponent(fileName)}`);
+        res = await fetch(`${normalizedUrl}?download=1&name=${encodeURIComponent(fileName)}`);
       }
 
       if (!res.ok) {
@@ -192,18 +213,18 @@ function DocumentMessageCard({ msg }: { msg: Msg }) {
   const handlePreview = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!msg.mediaUrl) return;
+    if (!normalizedUrl) return;
     try {
-      const res = await fetch(msg.mediaUrl);
+      const res = await fetch(normalizedUrl);
       if (res.ok) {
         const blob = await res.blob();
         const blobUrl = window.URL.createObjectURL(blob);
         window.open(blobUrl, '_blank');
       } else {
-        window.open(msg.mediaUrl, '_blank');
+        window.open(normalizedUrl, '_blank');
       }
     } catch {
-      window.open(msg.mediaUrl, '_blank');
+      window.open(normalizedUrl, '_blank');
     }
   };
 
@@ -410,11 +431,14 @@ function ChatMessageItem({
         {msg.mediaType === 'image' && msg.mediaUrl && (
           <div className="mb-2 -mx-1 -mt-1 rounded-t-3xl overflow-hidden">
             <img
-              src={msg.mediaUrl}
+              src={formatMediaUrl(msg.mediaUrl) || ''}
               alt="Imagem"
               className="w-full max-h-96 object-cover cursor-pointer"
               loading="lazy"
-              onClick={() => window.open(msg.mediaUrl!, '_blank')}
+              onClick={() => {
+                const u = formatMediaUrl(msg.mediaUrl);
+                if (u) window.open(u, '_blank');
+              }}
               onError={(e) => {
                 (e.target as HTMLElement).style.display = 'none';
               }}
@@ -425,11 +449,14 @@ function ChatMessageItem({
           <div className="mb-2 p-1 flex flex-col items-center">
             {msg.mediaUrl ? (
               <img
-                src={msg.mediaUrl}
+                src={formatMediaUrl(msg.mediaUrl) || ''}
                 alt="Figurinha"
                 className="w-32 h-32 md:w-36 md:h-36 object-contain cursor-pointer transition-transform hover:scale-105 active:scale-95"
                 loading="lazy"
-                onClick={() => window.open(msg.mediaUrl!, '_blank')}
+                onClick={() => {
+                  const u = formatMediaUrl(msg.mediaUrl);
+                  if (u) window.open(u, '_blank');
+                }}
                 onError={(e) => {
                   const target = e.target as HTMLElement;
                   target.style.display = 'none';
@@ -445,19 +472,19 @@ function ChatMessageItem({
         )}
         {msg.mediaType === 'video' && msg.mediaUrl && (
           <div className="mb-2">
-            <video src={msg.mediaUrl} controls className="rounded-2xl max-w-full max-h-80" />
+            <video src={formatMediaUrl(msg.mediaUrl) || ''} controls className="rounded-2xl max-w-full max-h-80" />
           </div>
         )}
         {msg.mediaType === 'audio' && msg.mediaUrl && (
           <div className="mb-2 space-y-1">
             <audio
-              src={msg.mediaUrl}
+              src={formatMediaUrl(msg.mediaUrl) || ''}
               controls
               preload="metadata"
               className="max-w-full rounded-lg"
             />
             <div className="text-[10px] opacity-70 text-right">
-              <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline">
+              <a href={formatMediaUrl(msg.mediaUrl) || ''} target="_blank" rel="noopener noreferrer" className="underline">
                 Baixar áudio
               </a>
             </div>

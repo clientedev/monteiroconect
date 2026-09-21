@@ -348,6 +348,17 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
         }));
       }
 
+      // Deduplica negociações para nunca multiplicar na tela (mesmo produto e etapa)
+      const seenDealKeys = new Set<string>();
+      mergedDeals = mergedDeals.filter((d: any) => {
+        const prod = (d.product || d.produto || d.title || '').trim().toLowerCase();
+        const stg = (d.status || d.etapa || d.stage || '').trim().toLowerCase();
+        const key = `${prod}_${stg}`;
+        if (seenDealKeys.has(key)) return false;
+        seenDealKeys.add(key);
+        return true;
+      });
+
       return {
         found: isFound || Boolean(local),
         query: data.query || { phone: cleanPhone },

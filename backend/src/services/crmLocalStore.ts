@@ -112,13 +112,23 @@ export function addLocalCrmDeal(cleanPhone: string, deal: LocalCrmDeal) {
   if (!cleanPhone) return;
   const existing = store[cleanPhone] || { phone: cleanPhone, deals: [], updatedAt: new Date().toISOString() };
 
-  // Evita duplicatas idênticas adicionadas em sequência
-  const filtered = existing.deals.filter(
-    d => !(d.product === deal.product && d.status === deal.status && d.value === deal.value)
+  const normProduct = (deal.product || deal.produto || deal.title || '').trim().toLowerCase();
+
+  // Procura se já existe uma oportunidade para este produto
+  const existingIndex = existing.deals.findIndex(
+    d => (d.product || d.produto || d.title || '').trim().toLowerCase() === normProduct
   );
 
-  filtered.unshift(deal);
-  existing.deals = filtered;
+  if (existingIndex >= 0) {
+    existing.deals[existingIndex] = {
+      ...existing.deals[existingIndex],
+      ...deal,
+      createdAt: existing.deals[existingIndex].createdAt || deal.createdAt,
+    };
+  } else {
+    existing.deals.unshift(deal);
+  }
+
   existing.updatedAt = new Date().toISOString();
   store[cleanPhone] = existing;
 

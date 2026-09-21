@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { contactApi } from '../lib/api';
 import {
   X,
@@ -429,6 +429,19 @@ export default function CrmContactModal({
   const insurance = crmData?.insurance;
   const pipeline = crmData?.pipeline;
 
+  const dealsToDisplay = useMemo(() => {
+    const rawDeals = Array.isArray(pipeline?.deals) ? pipeline.deals : [];
+    const seen = new Set<string>();
+    return rawDeals.filter((d: any) => {
+      const prod = (d.product || d.produto || d.title || 'Oportunidade').trim().toLowerCase();
+      const stg = (d.status || d.etapa || d.stage || '').trim().toLowerCase();
+      const key = `${prod}_${stg}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [pipeline?.deals]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
       <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-monte-sereno/20">
@@ -675,7 +688,7 @@ export default function CrmContactModal({
                     </h4>
                     <div className="flex items-center gap-2">
                       <div className="text-xs font-semibold px-2.5 py-0.5 bg-blue-100 text-blue-700 rounded-full">
-                        {pipeline?.activeDealsCount || 0} oportunidades
+                        {dealsToDisplay.length} oportunidades
                       </div>
                       <button
                         type="button"
@@ -695,7 +708,7 @@ export default function CrmContactModal({
                     </div>
                   </div>
 
-                  {!pipeline?.deals || pipeline.deals.length === 0 ? (
+                  {dealsToDisplay.length === 0 ? (
                     <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-dashed border-monte-sereno/20 text-center space-y-2">
                       <p className="text-xs text-monte-sereno italic">
                         Nenhuma oportunidade ativa no funil.
@@ -718,9 +731,9 @@ export default function CrmContactModal({
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {pipeline.deals.map((d: any, idx: number) => (
+                      {dealsToDisplay.map((d: any, idx: number) => (
                         <div
-                          key={idx}
+                          key={d.id || `${d.product}-${idx}`}
                           className="p-3 bg-monte-areiaSecao/50 rounded-xl border border-monte-sereno/10 text-xs flex items-center justify-between"
                         >
                           <div>
@@ -728,7 +741,7 @@ export default function CrmContactModal({
                               {d.product || d.produto || d.title || 'Oportunidade'}
                             </p>
                             <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-monte-azul/10 text-monte-azul text-[11px]">
-                              {d.status || d.etapa || 'Em andamento'}
+                              {d.status || d.etapa || d.stage || 'Em andamento'}
                             </span>
                           </div>
                           <div className="text-right font-bold text-monte-verde text-sm">

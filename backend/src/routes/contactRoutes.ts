@@ -14,16 +14,26 @@ const router = Router();
 // ROTA PÚBLICA: tags <img> não enviam header de autorização — exigir JWT
 // aqui fazia toda foto falhar com 401. O ID do contato (cuid) é inviolável.
 // Aceita telefone, @lid (privacidade) e @g.us (grupos) como JID do contato.
+const DEFAULT_AVATAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><circle cx="64" cy="64" r="64" fill="#e2e8f0"/><circle cx="64" cy="48" r="24" fill="#94a3b8"/><path d="M24 108c0-22.091 17.909-40 40-40s40 17.909 40 40" fill="#94a3b8"/></svg>`;
+
 router.get('/:id/avatar', async (req, res) => {
   try {
     const contact = await prisma.contact.findUnique({
       where: { id: req.params.id },
       select: { id: true, phone: true, whatsappId: true, avatarUrl: true },
     });
-    if (!contact) return res.status(404).json({ error: 'Contato não encontrado' });
+    if (!contact) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.status(200).send(DEFAULT_AVATAR_SVG);
+    }
 
     const url = await sessionManager.getAvatarUrl(contact.whatsappId, contact.phone);
-    if (!url) return res.status(404).json({ error: 'Sem foto de perfil' });
+    if (!url) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.status(200).send(DEFAULT_AVATAR_SVG);
+    }
 
     if (url !== contact.avatarUrl) {
       prisma.contact.update({ where: { id: contact.id }, data: { avatarUrl: url } }).catch(() => {});
@@ -31,7 +41,9 @@ router.get('/:id/avatar', async (req, res) => {
 
     return res.redirect(url);
   } catch {
-    return res.status(404).json({ error: 'Sem foto de perfil' });
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.status(200).send(DEFAULT_AVATAR_SVG);
   }
 });
 
