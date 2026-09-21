@@ -188,6 +188,15 @@ export const contactApi = {
     api.post<{ results: Record<string, any> }>('/contacts/crm-batch-lookup', { phones }),
   crmCreate: (data: Record<string, any>) =>
     api.post<{ ok: boolean; data?: any; error?: string }>('/contacts/crm-create', data),
+  crmCreateOpportunity: (data: {
+    phone: string;
+    name?: string;
+    dealProduct: string;
+    dealValue?: string | number;
+    dealStatus?: string;
+    notes?: string;
+  }) =>
+    api.post<{ ok: boolean; data?: any; error?: string }>('/contacts/crm-deal', data),
 };
 
 

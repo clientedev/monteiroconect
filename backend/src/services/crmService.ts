@@ -67,6 +67,10 @@ export function extractProductsFromCrm(data: any): string[] {
     if (!val) return;
     if (typeof val === 'string' && val.trim()) {
       const clean = val.trim();
+      if (clean.includes(',')) {
+        clean.split(',').map(s => s.trim()).filter(Boolean).forEach(addValue);
+        return;
+      }
       if (clean.toUpperCase() !== 'PF' && clean.toUpperCase() !== 'PJ') {
         productsSet.add(clean);
       }
@@ -248,6 +252,8 @@ export interface CreateCrmContactInput {
 
   // Apólice Inicial / Produto
   product?: string;
+  produto?: string;
+  produtos?: string | string[];
   insurer?: string;
   policyNumber?: string;
   premiumValue?: string | number;
@@ -279,6 +285,16 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
   try {
     logger.info(`Cadastrando/Atualizando contato no CRM Monteiro Seguros: phone=${cleanPhone}, name=${input.name}`);
 
+    const productVal = (
+      input.product ||
+      input.produto ||
+      (typeof input.produtos === 'string'
+        ? input.produtos
+        : Array.isArray(input.produtos)
+        ? input.produtos.join(', ')
+        : undefined)
+    )?.trim() || undefined;
+
     const payload = {
       name: input.name,
       nome: input.name,
@@ -304,13 +320,13 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
       consultor: input.assignedToName || undefined,
       responsavel: input.assignedToName || undefined,
 
-      // Produto / Ramo no cadastro base do contato
-      product: input.product || undefined,
-      products: input.product ? [input.product] : undefined,
-      produto: input.product || undefined,
-      produtos: input.product ? [input.product] : undefined,
-      ramo: input.product || undefined,
-      ramoSeguro: input.product || undefined,
+      // Produto / Ramo no cadastro base do contato (alimenta coluna produtos no CRM)
+      product: productVal,
+      products: productVal ? [productVal] : undefined,
+      produto: productVal,
+      produtos: productVal,
+      ramo: productVal,
+      ramoSeguro: productVal,
       insurer: input.insurer || undefined,
       seguradora: input.insurer || undefined,
 
@@ -333,10 +349,11 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
       estado: input.state || undefined,
 
       // Apólice / Seguro inicial
-      insurance: input.product ? {
-        product: input.product,
-        produto: input.product,
-        ramo: input.product,
+      insurance: productVal ? {
+        product: productVal,
+        produto: productVal,
+        produtos: productVal,
+        ramo: productVal,
         insurer: input.insurer || undefined,
         seguradora: input.insurer || undefined,
         policyNumber: input.policyNumber || undefined,
@@ -352,18 +369,59 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
         dataVencimento: input.expirationDate || undefined,
       } : undefined,
 
-      // Negócio no Funil
+      // Negócio no Funil (LEADS & Pipeline)
       pipeline: input.dealProduct ? {
         product: input.dealProduct,
         produto: input.dealProduct,
         title: input.dealProduct,
         titulo: input.dealProduct,
+        name: input.dealProduct,
         value: input.dealValue || undefined,
         valor: input.dealValue || undefined,
         dealValue: input.dealValue || undefined,
         status: input.dealStatus || 'Cotação',
         etapa: input.dealStatus || 'Cotação',
         stage: input.dealStatus || 'Cotação',
+      } : undefined,
+      deal: input.dealProduct ? {
+        product: input.dealProduct,
+        produto: input.dealProduct,
+        title: input.dealProduct,
+        titulo: input.dealProduct,
+        value: input.dealValue || undefined,
+        valor: input.dealValue || undefined,
+        status: input.dealStatus || 'Cotação',
+        etapa: input.dealStatus || 'Cotação',
+      } : undefined,
+      opportunity: input.dealProduct ? {
+        product: input.dealProduct,
+        produto: input.dealProduct,
+        title: input.dealProduct,
+        titulo: input.dealProduct,
+        value: input.dealValue || undefined,
+        valor: input.dealValue || undefined,
+        status: input.dealStatus || 'Cotação',
+        etapa: input.dealStatus || 'Cotação',
+      } : undefined,
+      oportunidade: input.dealProduct ? {
+        product: input.dealProduct,
+        produto: input.dealProduct,
+        title: input.dealProduct,
+        titulo: input.dealProduct,
+        value: input.dealValue || undefined,
+        valor: input.dealValue || undefined,
+        status: input.dealStatus || 'Cotação',
+        etapa: input.dealStatus || 'Cotação',
+      } : undefined,
+      lead: input.dealProduct ? {
+        product: input.dealProduct,
+        produto: input.dealProduct,
+        title: input.dealProduct,
+        titulo: input.dealProduct,
+        value: input.dealValue || undefined,
+        valor: input.dealValue || undefined,
+        status: input.dealStatus || 'Cotação',
+        etapa: input.dealStatus || 'Cotação',
       } : undefined,
 
       notes: input.notes || undefined,
@@ -395,6 +453,109 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
       return { ok: false, error: 'Timeout de 10s ao cadastrar no CRM' };
     }
     logger.error(`Erro ao cadastrar contato no CRM (${cleanPhone}):`, err?.message || err);
+    return { ok: false, error: err?.message || 'Falha de conexão com o CRM' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export interface CreateOpportunityInput {
+  phone: string;
+  name?: string;
+  dealProduct: string;
+  dealValue?: string | number;
+  dealStatus?: string;
+  notes?: string;
+}
+
+/**
+ * Envia uma nova oportunidade/cotação diretamente para o módulo LEADS & Pipeline no CRM da Monteiro Seguros.
+ * POST {CRM_BASE_URL}/api/v1/external/contacts
+ * Header: X-API-Key: {{CRM_API_KEY}}
+ */
+export async function createOpportunityInCrm(input: CreateOpportunityInput): Promise<{ ok: boolean; data?: any; error?: string }> {
+  const cleanPhone = normalizePhoneForCrm(input.phone);
+  if (!cleanPhone) {
+    return { ok: false, error: 'Telefone inválido para criar oportunidade' };
+  }
+
+  // Consulta se o contato já existe para preservar dados cadastrais
+  const existing = await lookupContactInCrm(cleanPhone).catch(() => ({ found: false } as CrmLookupResponse));
+  const contactName = input.name || existing.contact?.name || 'Lead WhatsApp';
+
+  const crmUrl = `${env.crmBaseUrl}/api/v1/external/contacts`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    logger.info(`Criando Oportunidade no LEADS & Pipeline do CRM: phone=${cleanPhone}, produto=${input.dealProduct}`);
+
+    const opportunityData = {
+      product: input.dealProduct,
+      produto: input.dealProduct,
+      title: input.dealProduct,
+      titulo: input.dealProduct,
+      name: input.dealProduct,
+      nome: input.dealProduct,
+      value: input.dealValue || undefined,
+      valor: input.dealValue || undefined,
+      dealValue: input.dealValue || undefined,
+      status: input.dealStatus || 'Cotação',
+      etapa: input.dealStatus || 'Cotação',
+      stage: input.dealStatus || 'Cotação',
+      notes: input.notes || undefined,
+      observacoes: input.notes || undefined,
+    };
+
+    const payload = {
+      name: contactName,
+      nome: contactName,
+      fullName: contactName,
+      phone: cleanPhone,
+      telefone: cleanPhone,
+      whatsapp: cleanPhone,
+      type: existing.contact?.type || 'PF',
+      tipo: existing.contact?.type || 'PF',
+      email: existing.contact?.email || undefined,
+      document: existing.contact?.document || undefined,
+
+      // Pipeline e sinônimos para compatibilidade total com LEADS & Pipeline do CRM
+      pipeline: opportunityData,
+      deal: opportunityData,
+      opportunity: opportunityData,
+      oportunidade: opportunityData,
+      lead: opportunityData,
+      deals: [opportunityData],
+      opportunities: [opportunityData],
+
+      notes: input.notes || undefined,
+      observacoes: input.notes || undefined,
+    };
+
+    const res = await fetch(crmUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-API-Key': env.crmApiKey,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      logger.warn(`API CRM criar oportunidade respondeu status ${res.status}: ${errText.slice(0, 200)}`);
+      return { ok: false, error: `CRM respondeu erro (HTTP ${res.status}): ${errText.slice(0, 150) || 'Falha ao criar oportunidade'}` };
+    }
+
+    const data = (await res.json()) as any;
+    return { ok: true, data };
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      return { ok: false, error: 'Timeout de 10s ao conectar com o CRM' };
+    }
+    logger.error(`Erro ao criar oportunidade no CRM (${cleanPhone}):`, err?.message || err);
     return { ok: false, error: err?.message || 'Falha de conexão com o CRM' };
   } finally {
     clearTimeout(timeout);

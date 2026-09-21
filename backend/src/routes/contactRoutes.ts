@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { listContacts, updateContact } from '../services/contactService.js';
-import { lookupContactInCrm, batchLookupContactsInCrm, createContactInCrm } from '../services/crmService.js';
+import { lookupContactInCrm, batchLookupContactsInCrm, createContactInCrm, createOpportunityInCrm } from '../services/crmService.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { sessionManager } from '../whatsapp/sessionManager.js';
 import { prisma } from '../database/client.js';
@@ -73,6 +73,8 @@ router.post('/crm-create', async (req, res, next) => {
       city: z.string().trim().optional(),
       state: z.string().trim().optional(),
       product: z.string().trim().optional(),
+      produto: z.string().trim().optional(),
+      produtos: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
       insurer: z.string().trim().optional(),
       policyNumber: z.string().trim().optional(),
       premiumValue: z.union([z.string(), z.number()]).optional(),
@@ -103,6 +105,27 @@ router.post('/crm-create', async (req, res, next) => {
       }
     } else {
       return res.status(400).json({ error: result.error || 'Falha ao cadastrar contato no CRM' });
+    }
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/crm-deal', async (req, res, next) => {
+  try {
+    const body = z.object({
+      phone: z.string().trim().min(8, 'Telefone é obrigatório'),
+      name: z.string().trim().optional(),
+      dealProduct: z.string().trim().min(1, 'Produto da oportunidade é obrigatório'),
+      dealValue: z.union([z.string(), z.number()]).optional(),
+      dealStatus: z.string().trim().optional(),
+      notes: z.string().trim().optional(),
+    }).parse(req.body);
+
+    const result = await createOpportunityInCrm(body);
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error || 'Falha ao criar oportunidade no LEADS & Pipeline do CRM' });
     }
     res.json(result);
   } catch (err) {

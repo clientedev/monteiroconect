@@ -22,6 +22,9 @@ import {
   FileEdit,
   Tag,
   Layers,
+  PlusCircle,
+  TrendingUp,
+  Send,
 } from 'lucide-react';
 
 interface CrmContactModalProps {
@@ -54,15 +57,17 @@ const INSURER_OPTIONS = [
 
 const PRODUCT_OPTIONS = [
   'Auto',
-  'Saúde',
-  'Vida',
-  'Residencial',
-  'Empresarial',
-  'Odonto',
   'Consórcio',
-  'Previdência',
+  'Empresarial',
   'Fiança Locatícia',
+  'Odonto',
+  'Pet',
+  'Previdência',
+  'Residencial',
   'Responsabilidade Civil',
+  'Saúde',
+  'Viagem',
+  'Vida',
   'Outro',
 ];
 
@@ -121,6 +126,59 @@ export default function CrmContactModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
+  // Modal / Drawer de Criar Oportunidade no LEADS & Pipeline
+  const [showOpportunityModal, setShowOpportunityModal] = useState(false);
+  const [oppProduct, setOppProduct] = useState('');
+  const [oppValue, setOppValue] = useState('');
+  const [oppStatus, setOppStatus] = useState('Cotação');
+  const [oppNotes, setOppNotes] = useState('');
+  const [oppSubmitting, setOppSubmitting] = useState(false);
+  const [oppError, setOppError] = useState<string | null>(null);
+  const [oppSuccess, setOppSuccess] = useState<string | null>(null);
+
+  const handleCreateOpportunity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oppProduct.trim()) {
+      setOppError('Por favor, selecione ou informe o produto da oportunidade.');
+      return;
+    }
+    setOppSubmitting(true);
+    setOppError(null);
+    setOppSuccess(null);
+
+    try {
+      const res = await contactApi.crmCreateOpportunity({
+        phone: formPhone || contact?.phone || '',
+        name: formName || contact?.name || undefined,
+        dealProduct: oppProduct.trim(),
+        dealValue: oppValue.trim() || undefined,
+        dealStatus: oppStatus,
+        notes: oppNotes.trim() || undefined,
+      });
+
+      if (res.ok) {
+        setOppSuccess('Oportunidade criada com sucesso e enviada para o LEADS & Pipeline no CRM!');
+        setTimeout(() => {
+          if (contact) {
+            fetchCrmData(contact.phone, contact.id);
+          }
+          setShowOpportunityModal(false);
+          setOppProduct('');
+          setOppValue('');
+          setOppStatus('Cotação');
+          setOppNotes('');
+          setOppSuccess(null);
+        }, 1200);
+      } else {
+        setOppError(res.error || 'Não foi possível criar a oportunidade no CRM.');
+      }
+    } catch (err: any) {
+      setOppError(err?.message || 'Falha ao conectar com o servidor do CRM.');
+    } finally {
+      setOppSubmitting(false);
+    }
+  };
+
   const populateFormFromCrmData = (data: any, currentContact: any) => {
     if (!data) return;
     const raw = data?.raw || {};
@@ -159,7 +217,15 @@ export default function CrmContactModal({
     // Apólice / Seguro
     setFormProduct(
       (data?.products && data.products.length > 0 ? data.products[0] : null) ||
-      firstPolicy.product || firstPolicy.produto || crmC.product || raw.product || ''
+      crmC.produtos ||
+      crmC.produto ||
+      crmC.product ||
+      raw.produtos ||
+      raw.produto ||
+      raw.product ||
+      firstPolicy.product ||
+      firstPolicy.produto ||
+      ''
     );
     setFormInsurer(firstPolicy.insurer || firstPolicy.seguradora || raw.insurer || raw.seguradora || '');
     setFormPolicyNumber(firstPolicy.policyNumber || firstPolicy.apolice || firstPolicy.numeroApolice || raw.policyNumber || raw.apolice || '');
@@ -281,6 +347,8 @@ export default function CrmContactModal({
         state: formState.trim() || undefined,
 
         product: formProduct.trim() || undefined,
+        produto: formProduct.trim() || undefined,
+        produtos: formProduct.trim() || undefined,
         insurer: formInsurer.trim() || undefined,
         policyNumber: formPolicyNumber.trim() || undefined,
         premiumValue: formPremiumValue.trim() || undefined,
@@ -404,6 +472,21 @@ export default function CrmContactModal({
                         {crmContact.status}
                       </span>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOppProduct(formProduct || 'Auto');
+                        setOppValue('');
+                        setOppStatus('Cotação');
+                        setOppNotes('');
+                        setOppError(null);
+                        setOppSuccess(null);
+                        setShowOpportunityModal(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-monte-azul to-monte-verde text-white hover:opacity-95 text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" /> Criar Oportunidade
+                    </button>
                     <button
                       type="button"
                       onClick={() => setActiveTab('create')}
@@ -543,17 +626,51 @@ export default function CrmContactModal({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between border-b border-monte-sereno/10 pb-2">
                     <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2">
-                      <DollarSign className="w-4 h-4 text-monte-verde" /> 💰 Negociações no Funil
+                      <DollarSign className="w-4 h-4 text-monte-verde" /> 💰 Negociações no Funil (LEADS & Pipeline)
                     </h4>
-                    <div className="text-xs font-semibold px-2.5 py-0.5 bg-blue-100 text-blue-700 rounded-full">
-                      {pipeline?.activeDealsCount || 0} oportunidades
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-semibold px-2.5 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                        {pipeline?.activeDealsCount || 0} oportunidades
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOppProduct(formProduct || 'Auto');
+                          setOppValue('');
+                          setOppStatus('Cotação');
+                          setOppNotes('');
+                          setOppError(null);
+                          setOppSuccess(null);
+                          setShowOpportunityModal(true);
+                        }}
+                        className="px-2.5 py-1 rounded-xl bg-monte-verde text-white hover:bg-emerald-700 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5" /> Criar Oportunidade
+                      </button>
                     </div>
                   </div>
 
                   {!pipeline?.deals || pipeline.deals.length === 0 ? (
-                    <p className="text-xs text-monte-sereno italic p-3 bg-monte-areiaSecao/30 rounded-xl">
-                      Nenhuma oportunidade ativa no funil.
-                    </p>
+                    <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-dashed border-monte-sereno/20 text-center space-y-2">
+                      <p className="text-xs text-monte-sereno italic">
+                        Nenhuma oportunidade ativa no funil.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOppProduct(formProduct || 'Auto');
+                          setOppValue('');
+                          setOppStatus('Cotação');
+                          setOppNotes('');
+                          setOppError(null);
+                          setOppSuccess(null);
+                          setShowOpportunityModal(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-monte-verde text-white hover:bg-emerald-700 text-xs font-bold transition-all shadow-xs cursor-pointer"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5" /> Criar Oportunidade no Funil
+                      </button>
+                    </div>
                   ) : (
                     <div className="space-y-2">
                       {pipeline.deals.map((d: any, idx: number) => (
@@ -944,9 +1061,26 @@ export default function CrmContactModal({
 
                 {/* 💰 SEÇÃO 4: NEGÓCIO NO FUNIL DE VENDAS */}
                 <div className="p-4 bg-monte-areiaSecao/30 rounded-2xl border border-monte-sereno/15 space-y-4">
-                  <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2 border-b border-monte-sereno/10 pb-2">
-                    <DollarSign className="w-4 h-4 text-monte-verde" /> 💰 4. Negócio no Funil de Vendas (CRM)
-                  </h5>
+                  <div className="flex items-center justify-between border-b border-monte-sereno/10 pb-2">
+                    <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2">
+                      <DollarSign className="w-4 h-4 text-monte-verde" /> 💰 4. Negócio no Funil de Vendas (LEADS & Pipeline)
+                    </h5>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOppProduct(formDealProduct || formProduct || 'Auto');
+                        setOppValue(formDealValue || '');
+                        setOppStatus(formDealStatus || 'Cotação');
+                        setOppNotes(formNotes || '');
+                        setOppError(null);
+                        setOppSuccess(null);
+                        setShowOpportunityModal(true);
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-monte-verde text-white hover:bg-emerald-700 text-[11px] font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                    >
+                      <PlusCircle className="w-3 h-3" /> Criar Oportunidade
+                    </button>
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
@@ -1062,6 +1196,179 @@ export default function CrmContactModal({
           )}
         </div>
       </div>
+
+      {/* Modal Dialog: Criar Oportunidade no LEADS & Pipeline */}
+      {showOpportunityModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-monte-verde/30 flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-monte-azul via-emerald-700 to-monte-verde text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-white shadow-inner">
+                  <TrendingUp className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-base leading-tight flex items-center gap-2">
+                    Criar Oportunidade
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-white/20 text-white font-semibold">LEADS & Pipeline</span>
+                  </h4>
+                  <p className="text-xs text-white/80">
+                    Envia diretamente para o funil do CRM da Monteiro Seguros via API
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOpportunityModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer transition-colors"
+                title="Fechar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form Body */}
+            <form onSubmit={handleCreateOpportunity} className="p-6 space-y-4">
+              {/* Alertas */}
+              {oppError && (
+                <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded-xl text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{oppError}</span>
+                </div>
+              )}
+              {oppSuccess && (
+                <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{oppSuccess}</span>
+                </div>
+              )}
+
+              {/* Informações do Contato */}
+              <div className="p-3 bg-monte-areiaSecao/50 rounded-2xl border border-monte-sereno/15 flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-monte-sereno block text-[11px]">Cliente / Lead:</span>
+                  <span className="font-bold text-monte-azul">{formName || contact.name || 'Contato WhatsApp'}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-monte-sereno block text-[11px]">WhatsApp:</span>
+                  <span className="font-mono text-monte-verde font-semibold">{formPhone || contact.phone}</span>
+                </div>
+              </div>
+
+              {/* Produto da Cotação / Ramo */}
+              <div>
+                <label className="block text-xs font-bold text-monte-azul mb-1">
+                  Produto da Cotação / Ramo <span className="text-red-500">*</span>
+                </label>
+                <select
+                  className="input-rect text-xs w-full mb-1.5"
+                  value={PRODUCT_OPTIONS.includes(oppProduct) ? oppProduct : oppProduct ? 'Outro' : ''}
+                  onChange={(e) => {
+                    if (e.target.value !== 'Outro') {
+                      setOppProduct(e.target.value);
+                    } else {
+                      setOppProduct('');
+                    }
+                  }}
+                >
+                  <option value="">Selecione o Produto...</option>
+                  {PRODUCT_OPTIONS.map((prod) => (
+                    <option key={prod} value={prod}>
+                      {prod}
+                    </option>
+                  ))}
+                </select>
+                {(!PRODUCT_OPTIONS.includes(oppProduct) || oppProduct === 'Outro') && (
+                  <input
+                    type="text"
+                    className="input-rect text-xs w-full"
+                    placeholder="Ou digite o nome do produto..."
+                    value={oppProduct}
+                    onChange={(e) => setOppProduct(e.target.value)}
+                  />
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Valor Estimado */}
+                <div>
+                  <label className="block text-xs font-bold text-monte-azul mb-1">
+                    Valor Estimado (R$)
+                  </label>
+                  <input
+                    type="text"
+                    className="input-rect text-xs w-full"
+                    placeholder="Ex: 3.500,00"
+                    value={oppValue}
+                    onChange={(e) => setOppValue(e.target.value)}
+                  />
+                </div>
+
+                {/* Etapa no Funil */}
+                <div>
+                  <label className="block text-xs font-bold text-monte-azul mb-1">
+                    Etapa no Funil (Pipeline)
+                  </label>
+                  <select
+                    className="input-rect text-xs w-full"
+                    value={oppStatus}
+                    onChange={(e) => setOppStatus(e.target.value)}
+                  >
+                    <option value="Cotação">Cotação</option>
+                    <option value="Proposta Enviada">Proposta Enviada</option>
+                    <option value="Em Negociação">Em Negociação</option>
+                    <option value="Fechado / Ganho">Fechado / Ganho</option>
+                    <option value="Perdido">Perdido</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Observações */}
+              <div>
+                <label className="block text-xs font-bold text-monte-azul mb-1">
+                  Notas / Observações da Cotação
+                </label>
+                <textarea
+                  rows={3}
+                  className="input-rect text-xs w-full resize-none"
+                  placeholder="Descreva detalhes solicitados pelo cliente, coberturas ou dados adicionais..."
+                  value={oppNotes}
+                  onChange={(e) => setOppNotes(e.target.value)}
+                />
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-monte-sereno/15">
+                <button
+                  type="button"
+                  onClick={() => setShowOpportunityModal(false)}
+                  disabled={oppSubmitting}
+                  className="px-4 py-2.5 rounded-xl border border-monte-sereno/30 text-monte-sereno hover:text-monte-azul text-xs font-bold cursor-pointer transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={oppSubmitting || !oppProduct.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-monte-verde to-emerald-700 text-white text-xs font-bold shadow-md hover:opacity-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {oppSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Enviando para o CRM...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Criar Oportunidade no Funil</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
