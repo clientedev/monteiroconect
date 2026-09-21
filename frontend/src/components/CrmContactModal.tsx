@@ -71,6 +71,16 @@ const PRODUCT_OPTIONS = [
   'Outro',
 ];
 
+const PIPELINE_STAGE_OPTIONS = [
+  'Enviar Cotação',
+  'Revisão Agendada',
+  'Aguardando Retorno do Cliente',
+  'Em Implantação',
+  'Implantado',
+  'Venda Perdida',
+  'Apólice Cancelada',
+];
+
 const UF_OPTIONS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
   'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
@@ -119,7 +129,7 @@ export default function CrmContactModal({
   // 4. Negócio no Funil de Vendas
   const [formDealProduct, setFormDealProduct] = useState('');
   const [formDealValue, setFormDealValue] = useState('');
-  const [formDealStatus, setFormDealStatus] = useState('Cotação');
+  const [formDealStatus, setFormDealStatus] = useState('Enviar Cotação');
   const [formNotes, setFormNotes] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
@@ -130,7 +140,7 @@ export default function CrmContactModal({
   const [showOpportunityModal, setShowOpportunityModal] = useState(false);
   const [oppProduct, setOppProduct] = useState('');
   const [oppValue, setOppValue] = useState('');
-  const [oppStatus, setOppStatus] = useState('Cotação');
+  const [oppStatus, setOppStatus] = useState('Enviar Cotação');
   const [oppNotes, setOppNotes] = useState('');
   const [oppSubmitting, setOppSubmitting] = useState(false);
   const [oppError, setOppError] = useState<string | null>(null);
@@ -165,7 +175,7 @@ export default function CrmContactModal({
           setShowOpportunityModal(false);
           setOppProduct('');
           setOppValue('');
-          setOppStatus('Cotação');
+          setOppStatus('Enviar Cotação');
           setOppNotes('');
           setOppSuccess(null);
         }, 1200);
@@ -235,7 +245,7 @@ export default function CrmContactModal({
     // Funil
     setFormDealProduct(firstDeal.product || firstDeal.produto || firstDeal.title || firstDeal.titulo || raw.dealProduct || '');
     setFormDealValue(firstDeal.valueFormatted || (firstDeal.value ? String(firstDeal.value) : '') || raw.dealValue || raw.valorNegocio || '');
-    setFormDealStatus(firstDeal.status || firstDeal.etapa || raw.dealStatus || 'Cotação');
+    setFormDealStatus(firstDeal.status || firstDeal.etapa || raw.dealStatus || 'Enviar Cotação');
 
     // Observações
     setFormNotes(crmC.notes || crmC.observacoes || raw.notes || raw.observacoes || '');
@@ -305,7 +315,7 @@ export default function CrmContactModal({
 
     setFormDealProduct('');
     setFormDealValue('');
-    setFormDealStatus('Cotação');
+    setFormDealStatus('Enviar Cotação');
     setFormNotes('');
 
     setFormError(null);
@@ -477,7 +487,7 @@ export default function CrmContactModal({
                       onClick={() => {
                         setOppProduct(formProduct || 'Auto');
                         setOppValue('');
-                        setOppStatus('Cotação');
+                        setOppStatus('Enviar Cotação');
                         setOppNotes('');
                         setOppError(null);
                         setOppSuccess(null);
@@ -637,7 +647,7 @@ export default function CrmContactModal({
                         onClick={() => {
                           setOppProduct(formProduct || 'Auto');
                           setOppValue('');
-                          setOppStatus('Cotação');
+                          setOppStatus('Enviar Cotação');
                           setOppNotes('');
                           setOppError(null);
                           setOppSuccess(null);
@@ -660,7 +670,7 @@ export default function CrmContactModal({
                         onClick={() => {
                           setOppProduct(formProduct || 'Auto');
                           setOppValue('');
-                          setOppStatus('Cotação');
+                          setOppStatus('Enviar Cotação');
                           setOppNotes('');
                           setOppError(null);
                           setOppSuccess(null);
@@ -1070,7 +1080,7 @@ export default function CrmContactModal({
                       onClick={() => {
                         setOppProduct(formDealProduct || formProduct || 'Auto');
                         setOppValue(formDealValue || '');
-                        setOppStatus(formDealStatus || 'Cotação');
+                        setOppStatus(formDealStatus || 'Enviar Cotação');
                         setOppNotes(formNotes || '');
                         setOppError(null);
                         setOppSuccess(null);
@@ -1112,11 +1122,11 @@ export default function CrmContactModal({
                         value={formDealStatus}
                         onChange={(e) => setFormDealStatus(e.target.value)}
                       >
-                        <option value="Cotação">Cotação</option>
-                        <option value="Proposta Enviada">Proposta Enviada</option>
-                        <option value="Em Negociação">Em Negociação</option>
-                        <option value="Fechado / Ganho">Fechado / Ganho</option>
-                        <option value="Perdido">Perdido</option>
+                        {PIPELINE_STAGE_OPTIONS.map((stg) => (
+                          <option key={stg} value={stg}>
+                            {stg}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -1314,11 +1324,11 @@ export default function CrmContactModal({
                     value={oppStatus}
                     onChange={(e) => setOppStatus(e.target.value)}
                   >
-                    <option value="Cotação">Cotação</option>
-                    <option value="Proposta Enviada">Proposta Enviada</option>
-                    <option value="Em Negociação">Em Negociação</option>
-                    <option value="Fechado / Ganho">Fechado / Ganho</option>
-                    <option value="Perdido">Perdido</option>
+                    {PIPELINE_STAGE_OPTIONS.map((stg) => (
+                      <option key={stg} value={stg}>
+                        {stg}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
