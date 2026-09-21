@@ -87,6 +87,21 @@ const UF_OPTIONS = [
   'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
 ];
 
+function formatDateForInput(val: any): string {
+  if (!val) return '';
+  if (typeof val !== 'string') return '';
+  const trimmed = val.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+    return trimmed.split('T')[0];
+  }
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+    const [d, m, y] = trimmed.split('/');
+    return `${y}-${m}-${d}`;
+  }
+  return '';
+}
+
 export default function CrmContactModal({
   contact,
   onClose,
@@ -141,6 +156,7 @@ export default function CrmContactModal({
   const [oppProduct, setOppProduct] = useState('');
   const [oppValue, setOppValue] = useState('');
   const [oppStatus, setOppStatus] = useState('Enviar Cotação');
+  const [oppDate, setOppDate] = useState('');
   const [oppNotes, setOppNotes] = useState('');
   const [oppSubmitting, setOppSubmitting] = useState(false);
   const [oppError, setOppError] = useState<string | null>(null);
@@ -163,7 +179,8 @@ export default function CrmContactModal({
         dealProduct: oppProduct.trim(),
         dealValue: oppValue.trim() || undefined,
         dealStatus: oppStatus,
-        notes: oppNotes.trim() || undefined,
+        dealDate: oppDate.trim() || undefined,
+        notes: (oppNotes.trim() + (oppDate ? ` [Data de Agendamento: ${oppDate}]` : '')).trim() || undefined,
       });
 
       if (res.ok) {
@@ -176,6 +193,7 @@ export default function CrmContactModal({
           setOppProduct('');
           setOppValue('');
           setOppStatus('Enviar Cotação');
+          setOppDate('');
           setOppNotes('');
           setOppSuccess(null);
         }, 1200);
@@ -207,7 +225,9 @@ export default function CrmContactModal({
     );
     setFormEmail(crmC.email || raw.email || '');
     setFormAnniversaryDate(
-      crmC.anniversaryDate || crmC.birthDate || crmC.dataNascimento || raw.anniversaryDate || raw.birthDate || raw.dataNascimento || ''
+      formatDateForInput(
+        crmC.anniversaryDate || crmC.birthDate || crmC.dataNascimento || raw.anniversaryDate || raw.birthDate || raw.dataNascimento || ''
+      )
     );
     setFormStatus(crmC.status || raw.status || 'Ativo');
     setFormAssignedToName(
@@ -225,8 +245,7 @@ export default function CrmContactModal({
     setFormState(crmC.state || crmC.uf || crmC.estado || raw.state || raw.uf || addr.state || addr.uf || '');
 
     // Apólice / Seguro
-    setFormProduct(
-      (data?.products && data.products.length > 0 ? data.products[0] : null) ||
+    const incomingProduct = (data?.products && data.products.length > 0 ? data.products[0] : null) ||
       crmC.produtos ||
       crmC.produto ||
       crmC.product ||
@@ -235,20 +254,36 @@ export default function CrmContactModal({
       raw.product ||
       firstPolicy.product ||
       firstPolicy.produto ||
-      ''
-    );
-    setFormInsurer(firstPolicy.insurer || firstPolicy.seguradora || raw.insurer || raw.seguradora || '');
-    setFormPolicyNumber(firstPolicy.policyNumber || firstPolicy.apolice || firstPolicy.numeroApolice || raw.policyNumber || raw.apolice || '');
-    setFormPremiumValue(firstPolicy.premiumValue || firstPolicy.premio || firstPolicy.valor || raw.premiumValue || raw.premio || '');
-    setFormExpirationDate(firstPolicy.expirationDate || firstPolicy.vencimento || raw.expirationDate || raw.vencimento || '');
+      '';
+    if (incomingProduct) setFormProduct(incomingProduct);
 
-    // Funil
-    setFormDealProduct(firstDeal.product || firstDeal.produto || firstDeal.title || firstDeal.titulo || raw.dealProduct || '');
-    setFormDealValue(firstDeal.valueFormatted || (firstDeal.value ? String(firstDeal.value) : '') || raw.dealValue || raw.valorNegocio || '');
-    setFormDealStatus(firstDeal.status || firstDeal.etapa || raw.dealStatus || 'Enviar Cotação');
+    const incomingInsurer = firstPolicy.insurer || firstPolicy.seguradora || raw.insurer || raw.seguradora || '';
+    if (incomingInsurer) setFormInsurer(incomingInsurer);
+
+    const incomingPolicyNumber = firstPolicy.policyNumber || firstPolicy.apolice || firstPolicy.numeroApolice || raw.policyNumber || raw.apolice || '';
+    if (incomingPolicyNumber) setFormPolicyNumber(incomingPolicyNumber);
+
+    const incomingPremiumValue = firstPolicy.premiumValueFormatted || (firstPolicy.premiumValue ? String(firstPolicy.premiumValue) : '') || firstPolicy.premio || firstPolicy.valor || raw.premiumValueFormatted || raw.premiumValue || raw.premio || '';
+    if (incomingPremiumValue) setFormPremiumValue(incomingPremiumValue);
+
+    const incomingExpirationDate = formatDateForInput(
+      firstPolicy.expirationDate || firstPolicy.vencimento || raw.expirationDate || raw.vencimento || ''
+    );
+    if (incomingExpirationDate) setFormExpirationDate(incomingExpirationDate);
+
+    // Funil de Vendas (LEADS & Pipeline)
+    const incomingDealProduct = firstDeal.product || firstDeal.produto || firstDeal.title || firstDeal.titulo || raw.dealProduct || '';
+    if (incomingDealProduct) setFormDealProduct(incomingDealProduct);
+
+    const incomingDealValue = firstDeal.valueFormatted || (firstDeal.value ? String(firstDeal.value) : '') || raw.dealValueFormatted || raw.dealValue || raw.valorNegocio || raw.valor || '';
+    if (incomingDealValue) setFormDealValue(incomingDealValue);
+
+    const incomingDealStatus = firstDeal.status || firstDeal.etapa || raw.dealStatus || '';
+    if (incomingDealStatus) setFormDealStatus(incomingDealStatus);
 
     // Observações
-    setFormNotes(crmC.notes || crmC.observacoes || raw.notes || raw.observacoes || '');
+    const incomingNotes = crmC.notes || crmC.observacoes || raw.notes || raw.observacoes || '';
+    if (incomingNotes) setFormNotes(incomingNotes);
   };
 
   const fetchCrmData = (phone: string, id: string) => {
@@ -843,9 +878,21 @@ export default function CrmContactModal({
                       <label className="block text-monte-sereno font-semibold mb-1">Data de Aniversário / Nascimento</label>
                       <input
                         type="date"
-                        className="input-rect text-xs w-full"
+                        className="input-rect text-xs w-full cursor-pointer select-none"
                         value={formAnniversaryDate}
                         onChange={(e) => setFormAnniversaryDate(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Backspace' || e.key === 'Delete') {
+                            setFormAnniversaryDate('');
+                          } else if (e.key !== 'Tab' && e.key !== 'Escape') {
+                            e.preventDefault();
+                          }
+                        }}
+                        onClick={(e) => {
+                          try {
+                            (e.currentTarget as any).showPicker?.();
+                          } catch {}
+                        }}
                       />
                     </div>
 
@@ -1061,9 +1108,21 @@ export default function CrmContactModal({
                       <label className="block text-monte-sereno font-semibold mb-1">Data de Vencimento / Renovação</label>
                       <input
                         type="date"
-                        className="input-rect text-xs w-full"
+                        className="input-rect text-xs w-full cursor-pointer select-none"
                         value={formExpirationDate}
                         onChange={(e) => setFormExpirationDate(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Backspace' || e.key === 'Delete') {
+                            setFormExpirationDate('');
+                          } else if (e.key !== 'Tab' && e.key !== 'Escape') {
+                            e.preventDefault();
+                          }
+                        }}
+                        onClick={(e) => {
+                          try {
+                            (e.currentTarget as any).showPicker?.();
+                          } catch {}
+                        }}
                       />
                     </div>
                   </div>
@@ -1331,6 +1390,31 @@ export default function CrmContactModal({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Data de Agendamento / Retorno */}
+              <div>
+                <label className="block text-xs font-bold text-monte-azul mb-1">
+                  Data de Agendamento / Retorno (Opcional)
+                </label>
+                <input
+                  type="date"
+                  className="input-rect text-xs w-full cursor-pointer select-none"
+                  value={oppDate}
+                  onChange={(e) => setOppDate(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Backspace' || e.key === 'Delete') {
+                      setOppDate('');
+                    } else if (e.key !== 'Tab' && e.key !== 'Escape') {
+                      e.preventDefault();
+                    }
+                  }}
+                  onClick={(e) => {
+                    try {
+                      (e.currentTarget as any).showPicker?.();
+                    } catch {}
+                  }}
+                />
               </div>
 
               {/* Observações */}

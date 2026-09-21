@@ -120,6 +120,7 @@ router.post('/crm-deal', async (req, res, next) => {
       dealProduct: z.string().trim().min(1, 'Produto da oportunidade é obrigatório'),
       dealValue: z.union([z.string(), z.number()]).optional(),
       dealStatus: z.string().trim().optional(),
+      dealDate: z.string().trim().optional(),
       notes: z.string().trim().optional(),
     }).parse(req.body);
 

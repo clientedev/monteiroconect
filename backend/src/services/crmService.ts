@@ -1,5 +1,11 @@
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import {
+  getLocalCrmContact,
+  saveLocalCrmContact,
+  addLocalCrmDeal,
+  LocalCrmContactRecord,
+} from './crmLocalStore.js';
 
 export interface CrmContactInfo {
   name: string;
@@ -18,6 +24,8 @@ export interface CrmPolicyItem {
   product?: string;
   policyNumber?: string;
   expirationDate?: string;
+  premiumValue?: number;
+  premiumValueFormatted?: string;
   [key: string]: any;
 }
 
@@ -49,6 +57,28 @@ export interface CrmLookupResponse {
   products?: string[];
   raw?: any;
   error?: string;
+}
+
+/**
+ * Utilitário para converter valores monetários (ex: "3.500,00", "R$ 2.450,50") em número Float válido.
+ */
+export function parseCurrency(val: any): number | undefined {
+  if (val === undefined || val === null || val === '') return undefined;
+  if (typeof val === 'number') return isNaN(val) ? undefined : val;
+  if (typeof val === 'string') {
+    const clean = val.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
+    const num = parseFloat(clean);
+    return isNaN(num) ? undefined : num;
+  }
+  return undefined;
+}
+
+/**
+ * Utilitário para formatar números em Real Brasileiro (R$ 0.000,00).
+ */
+export function formatCurrency(num: number | undefined): string | undefined {
+  if (num === undefined || num === null || isNaN(num)) return undefined;
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 }
 
 /**
@@ -155,7 +185,65 @@ export function normalizePhoneForCrm(phone: string): string {
 }
 
 /**
- * Consulta a API do CRM da Monteiro Seguros por telefone.
+ * Constrói resposta a partir do cache local quando o CRM está indisponível ou não possui os dados salvos.
+ */
+function buildResponseFromLocal(cleanPhone: string, local: LocalCrmContactRecord): CrmLookupResponse {
+  const deals = (local.deals || []).map(d => ({
+    product: d.product,
+    title: d.title || d.product,
+    value: d.value,
+    valueFormatted: d.valueFormatted || (d.value ? formatCurrency(d.value) : undefined),
+    status: d.status,
+    notes: d.notes,
+    createdAt: d.createdAt,
+  }));
+
+  const policies = local.insurance ? [{
+    product: local.insurance.product,
+    insurer: local.insurance.insurer,
+    policyNumber: local.insurance.policyNumber,
+    premiumValue: local.insurance.premiumValue,
+    premiumValueFormatted: local.insurance.premiumValueFormatted,
+    expirationDate: local.insurance.expirationDate,
+  }] : [];
+
+  const products = Array.from(new Set([
+    ...(local.produtos || []),
+    ...(local.product ? [local.product] : []),
+  ]));
+
+  return {
+    found: true,
+    query: { phone: cleanPhone },
+    contact: {
+      name: local.name || 'Contato WhatsApp',
+      type: local.type || 'PF',
+      email: local.email,
+      document: local.document,
+      status: local.status || 'Ativo',
+      anniversaryDate: local.anniversaryDate,
+      assignedTo: local.assignedToName ? { name: local.assignedToName } : undefined,
+    },
+    insurance: {
+      activePoliciesCount: policies.length,
+      totalAnnualPremiumFormatted: local.insurance?.premiumValueFormatted || 'R$ 0,00',
+      policies,
+    },
+    pipeline: {
+      activeDealsCount: deals.length,
+      deals,
+    },
+    products,
+    raw: {
+      ...local,
+      source: 'wa_local_store',
+    },
+  };
+}
+
+/**
+ * Consulta a API do CRM da Monteiro Seguros por telefone,
+ * mesclando com o armazenamento local persistente do sistema Whats.
  * GET {CRM_BASE_URL}/api/v1/external/contacts/lookup?phone={{remoteJid_ou_numero_whatsapp}}
  * Header: X-API-Key: {{CRM_API_KEY}}
  */
@@ -166,6 +254,7 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
     return { found: false, query: { phone: rawPhone || '' }, products: [] };
   }
 
+  const local = getLocalCrmContact(cleanPhone);
   const crmUrl = `${env.crmBaseUrl}/api/v1/external/contacts/lookup?phone=${encodeURIComponent(cleanPhone)}`;
 
   const controller = new AbortController();
@@ -186,6 +275,9 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       logger.warn(`API CRM respondeu status ${res.status}: ${errText.slice(0, 200)}`);
+      if (local && (local.name || local.deals?.length || local.insurance)) {
+        return buildResponseFromLocal(cleanPhone, local);
+      }
       return {
         found: false,
         query: { phone: cleanPhone },
@@ -197,28 +289,104 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
     const data = (await res.json()) as any;
 
     if (data && typeof data === 'object') {
+      const isFound = Boolean(data.found);
       const products = extractProductsFromCrm(data);
+
+      if (!isFound && local && (local.name || local.deals?.length || local.insurance)) {
+        return buildResponseFromLocal(cleanPhone, local);
+      }
+
+      // Mescla produtos do CRM com o cache local
+      const mergedProducts = Array.from(new Set([
+        ...products,
+        ...(local?.produtos || []),
+        ...(local?.product ? [local.product] : []),
+      ]));
+
+      // Mescla apólices e prêmios
+      const policies = Array.isArray(data.insurance?.policies) && data.insurance.policies.length > 0
+        ? data.insurance.policies.map((p: any) => {
+            const numVal = parseCurrency(p.premiumValue || p.premio || p.valor);
+            const valFmt = p.premiumValueFormatted || formatCurrency(numVal);
+            return {
+              ...p,
+              premiumValue: numVal ?? p.premiumValue,
+              premiumValueFormatted: valFmt || p.premiumValueFormatted,
+            };
+          })
+        : local?.insurance ? [{
+            product: local.insurance.product,
+            insurer: local.insurance.insurer,
+            policyNumber: local.insurance.policyNumber,
+            premiumValue: local.insurance.premiumValue,
+            premiumValueFormatted: local.insurance.premiumValueFormatted,
+            expirationDate: local.insurance.expirationDate,
+          }] : [];
+
+      // Mescla oportunidades do funil e valores
+      const crmDeals = Array.isArray(data.pipeline?.deals) ? data.pipeline.deals : [];
+      let mergedDeals = crmDeals.map((d: any) => {
+        const numVal = parseCurrency(d.value || d.valor);
+        const valFmt = d.valueFormatted || formatCurrency(numVal);
+        return {
+          ...d,
+          value: numVal ?? d.value,
+          valueFormatted: valFmt || d.valueFormatted,
+        };
+      });
+
+      // Se o CRM não retornou negócios no funil, usa os negócios salvos localmente
+      if (mergedDeals.length === 0 && local?.deals && local.deals.length > 0) {
+        mergedDeals = local.deals.map(d => ({
+          product: d.product,
+          title: d.title || d.product,
+          value: d.value,
+          valueFormatted: d.valueFormatted || (d.value ? formatCurrency(d.value) : undefined),
+          status: d.status,
+          notes: d.notes,
+          createdAt: d.createdAt,
+        }));
+      }
+
       return {
-        found: Boolean(data.found),
+        found: isFound || Boolean(local),
         query: data.query || { phone: cleanPhone },
-        contact: data.contact,
-        insurance: data.insurance ? {
-          activePoliciesCount: data.insurance.activePoliciesCount ?? data.insurance.policies?.length ?? 0,
-          totalAnnualPremiumFormatted: data.insurance.totalAnnualPremiumFormatted || 'R$ 0,00',
-          policies: Array.isArray(data.insurance.policies) ? data.insurance.policies : [],
-        } : undefined,
-        pipeline: data.pipeline ? {
-          activeDealsCount: data.pipeline.activeDealsCount ?? data.pipeline.deals?.length ?? 0,
-          deals: Array.isArray(data.pipeline.deals) ? data.pipeline.deals : [],
-        } : undefined,
-        products,
-        raw: data,
+        contact: {
+          name: data.contact?.name || local?.name || '',
+          type: data.contact?.type || local?.type || 'PF',
+          email: data.contact?.email || local?.email,
+          document: data.contact?.document || local?.document,
+          status: data.contact?.status || local?.status || 'Ativo',
+          anniversaryDate: data.contact?.anniversaryDate || local?.anniversaryDate,
+          assignedTo: data.contact?.assignedTo || (local?.assignedToName ? { name: local.assignedToName } : undefined),
+        },
+        insurance: {
+          activePoliciesCount: data.insurance?.activePoliciesCount ?? policies.length,
+          totalAnnualPremiumFormatted: data.insurance?.totalAnnualPremiumFormatted || (local?.insurance?.premiumValueFormatted) || 'R$ 0,00',
+          policies,
+        },
+        pipeline: {
+          activeDealsCount: data.pipeline?.activeDealsCount ?? mergedDeals.length,
+          deals: mergedDeals,
+        },
+        products: mergedProducts,
+        raw: {
+          ...data,
+          ...(local ? { localCache: local } : {}),
+        },
       };
+    }
+
+    if (local && (local.name || local.deals?.length || local.insurance)) {
+      return buildResponseFromLocal(cleanPhone, local);
     }
 
     return { found: false, query: { phone: cleanPhone }, products: [] };
 
   } catch (err: any) {
+    if (local && (local.name || local.deals?.length || local.insurance)) {
+      return buildResponseFromLocal(cleanPhone, local);
+    }
     if (err?.name === 'AbortError') {
       logger.error(`Timeout de 10s na consulta CRM (${cleanPhone})`);
       return { found: false, query: { phone: cleanPhone }, error: 'Timeout ao conectar com o CRM (10s)' };
@@ -277,23 +445,79 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
     return { ok: false, error: 'Telefone inválido para cadastro no CRM' };
   }
 
-  const crmUrl = `${env.crmBaseUrl}/api/v1/external/contacts`;
+  const productVal = (
+    input.product ||
+    input.produto ||
+    (typeof input.produtos === 'string'
+      ? input.produtos
+      : Array.isArray(input.produtos)
+      ? input.produtos.join(', ')
+      : undefined)
+  )?.trim() || undefined;
 
+  // Normalização precisa de valores numéricos (moeda brasileira R$ -> Float)
+  const numPremium = parseCurrency(input.premiumValue);
+  const strPremiumFormatted = formatCurrency(numPremium) || (input.premiumValue ? String(input.premiumValue) : undefined);
+
+  const numDeal = parseCurrency(input.dealValue);
+  const strDealFormatted = formatCurrency(numDeal) || (input.dealValue ? String(input.dealValue) : undefined);
+
+  // 1. GUARDA IMEDIATAMENTE NO SISTEMA WHATS (Persistência Local Confiável)
+  try {
+    saveLocalCrmContact(cleanPhone, {
+      phone: cleanPhone,
+      name: input.name,
+      type: input.type || 'PF',
+      email: input.email || undefined,
+      document: input.document || undefined,
+      status: input.status || 'Ativo',
+      anniversaryDate: input.anniversaryDate || undefined,
+      secondaryPhone: input.secondaryPhone ? normalizePhoneForCrm(input.secondaryPhone) : undefined,
+      assignedToName: input.assignedToName || undefined,
+      zipCode: input.zipCode || undefined,
+      address: input.address || undefined,
+      number: input.number || undefined,
+      complement: input.complement || undefined,
+      neighborhood: input.neighborhood || undefined,
+      city: input.city || undefined,
+      state: input.state || undefined,
+      product: productVal,
+      produto: productVal,
+      produtos: productVal ? [productVal] : undefined,
+      insurance: productVal ? {
+        product: productVal,
+        insurer: input.insurer || undefined,
+        policyNumber: input.policyNumber || undefined,
+        premiumValue: numPremium,
+        premiumValueFormatted: strPremiumFormatted,
+        expirationDate: input.expirationDate || undefined,
+      } : undefined,
+    });
+
+    if (input.dealProduct) {
+      addLocalCrmDeal(cleanPhone, {
+        product: input.dealProduct,
+        produto: input.dealProduct,
+        title: input.dealProduct,
+        value: numDeal,
+        valueFormatted: strDealFormatted,
+        status: input.dealStatus || 'Enviar Cotação',
+        etapa: input.dealStatus || 'Enviar Cotação',
+        notes: input.notes || undefined,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  } catch (err: any) {
+    logger.error('Erro ao gravar contato no armazenamento local Whats:', err?.message);
+  }
+
+  // 2. ENVIA PARA A API DO CRM EXTERNO
+  const crmUrl = `${env.crmBaseUrl}/api/v1/external/contacts`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
 
   try {
     logger.info(`Cadastrando/Atualizando contato no CRM Monteiro Seguros: phone=${cleanPhone}, name=${input.name}`);
-
-    const productVal = (
-      input.product ||
-      input.produto ||
-      (typeof input.produtos === 'string'
-        ? input.produtos
-        : Array.isArray(input.produtos)
-        ? input.produtos.join(', ')
-        : undefined)
-    )?.trim() || undefined;
 
     const payload = {
       name: input.name,
@@ -348,7 +572,7 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
       uf: input.state || undefined,
       estado: input.state || undefined,
 
-      // Apólice / Seguro inicial
+      // Apólice / Seguro inicial (enviamos numérico e formatado)
       insurance: productVal ? {
         product: productVal,
         produto: productVal,
@@ -360,25 +584,32 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
         policy: input.policyNumber || undefined,
         apolice: input.policyNumber || undefined,
         numeroApolice: input.policyNumber || undefined,
-        premiumValue: input.premiumValue || undefined,
-        premio: input.premiumValue || undefined,
-        valorPremio: input.premiumValue || undefined,
-        valor: input.premiumValue || undefined,
+        premiumValue: numPremium ?? input.premiumValue ?? undefined,
+        premio: numPremium ?? input.premiumValue ?? undefined,
+        valorPremio: numPremium ?? input.premiumValue ?? undefined,
+        valor: numPremium ?? input.premiumValue ?? undefined,
+        premiumValueFormatted: strPremiumFormatted,
         expirationDate: input.expirationDate || undefined,
         vencimento: input.expirationDate || undefined,
         dataVencimento: input.expirationDate || undefined,
       } : undefined,
 
-      // Negócio no Funil (LEADS & Pipeline)
+      // Negócio no Funil (LEADS & Pipeline) - enviamos numérico e formatado
+      dealProduct: input.dealProduct || undefined,
+      dealValue: numDeal ?? input.dealValue ?? undefined,
+      dealValueFormatted: strDealFormatted,
+      valor: numDeal ?? input.dealValue ?? undefined,
+      value: numDeal ?? input.dealValue ?? undefined,
       pipeline: input.dealProduct ? {
         product: input.dealProduct,
         produto: input.dealProduct,
         title: input.dealProduct,
         titulo: input.dealProduct,
         name: input.dealProduct,
-        value: input.dealValue || undefined,
-        valor: input.dealValue || undefined,
-        dealValue: input.dealValue || undefined,
+        value: numDeal ?? input.dealValue ?? undefined,
+        valor: numDeal ?? input.dealValue ?? undefined,
+        dealValue: numDeal ?? input.dealValue ?? undefined,
+        valueFormatted: strDealFormatted,
         status: input.dealStatus || 'Enviar Cotação',
         etapa: input.dealStatus || 'Enviar Cotação',
         stage: input.dealStatus || 'Enviar Cotação',
@@ -388,8 +619,10 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
         produto: input.dealProduct,
         title: input.dealProduct,
         titulo: input.dealProduct,
-        value: input.dealValue || undefined,
-        valor: input.dealValue || undefined,
+        value: numDeal ?? input.dealValue ?? undefined,
+        valor: numDeal ?? input.dealValue ?? undefined,
+        dealValue: numDeal ?? input.dealValue ?? undefined,
+        valueFormatted: strDealFormatted,
         status: input.dealStatus || 'Enviar Cotação',
         etapa: input.dealStatus || 'Enviar Cotação',
       } : undefined,
@@ -398,8 +631,10 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
         produto: input.dealProduct,
         title: input.dealProduct,
         titulo: input.dealProduct,
-        value: input.dealValue || undefined,
-        valor: input.dealValue || undefined,
+        value: numDeal ?? input.dealValue ?? undefined,
+        valor: numDeal ?? input.dealValue ?? undefined,
+        dealValue: numDeal ?? input.dealValue ?? undefined,
+        valueFormatted: strDealFormatted,
         status: input.dealStatus || 'Enviar Cotação',
         etapa: input.dealStatus || 'Enviar Cotação',
       } : undefined,
@@ -408,8 +643,10 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
         produto: input.dealProduct,
         title: input.dealProduct,
         titulo: input.dealProduct,
-        value: input.dealValue || undefined,
-        valor: input.dealValue || undefined,
+        value: numDeal ?? input.dealValue ?? undefined,
+        valor: numDeal ?? input.dealValue ?? undefined,
+        dealValue: numDeal ?? input.dealValue ?? undefined,
+        valueFormatted: strDealFormatted,
         status: input.dealStatus || 'Enviar Cotação',
         etapa: input.dealStatus || 'Enviar Cotação',
       } : undefined,
@@ -418,8 +655,10 @@ export async function createContactInCrm(input: CreateCrmContactInput): Promise<
         produto: input.dealProduct,
         title: input.dealProduct,
         titulo: input.dealProduct,
-        value: input.dealValue || undefined,
-        valor: input.dealValue || undefined,
+        value: numDeal ?? input.dealValue ?? undefined,
+        valor: numDeal ?? input.dealValue ?? undefined,
+        dealValue: numDeal ?? input.dealValue ?? undefined,
+        valueFormatted: strDealFormatted,
         status: input.dealStatus || 'Enviar Cotação',
         etapa: input.dealStatus || 'Enviar Cotação',
       } : undefined,
@@ -465,11 +704,13 @@ export interface CreateOpportunityInput {
   dealProduct: string;
   dealValue?: string | number;
   dealStatus?: string;
+  dealDate?: string;
   notes?: string;
 }
 
 /**
- * Envia uma nova oportunidade/cotação diretamente para o módulo LEADS & Pipeline no CRM da Monteiro Seguros.
+ * Envia uma nova oportunidade/cotação diretamente para o módulo LEADS & Pipeline no CRM da Monteiro Seguros,
+ * e salva de forma persistente no sistema Whats.
  * POST {CRM_BASE_URL}/api/v1/external/contacts
  * Header: X-API-Key: {{CRM_API_KEY}}
  */
@@ -479,16 +720,41 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
     return { ok: false, error: 'Telefone inválido para criar oportunidade' };
   }
 
+  // Normalização do valor monetário (R$ 3.500,00 -> 3500.00 Float)
+  const numDeal = parseCurrency(input.dealValue);
+  const strDealFormatted = formatCurrency(numDeal) || (input.dealValue ? String(input.dealValue) : undefined);
+
   // Consulta se o contato já existe para preservar dados cadastrais
   const existing = await lookupContactInCrm(cleanPhone).catch(() => ({ found: false } as CrmLookupResponse));
   const contactName = input.name || existing.contact?.name || 'Lead WhatsApp';
 
+  // 1. GUARDA IMEDIATAMENTE NO SISTEMA WHATS (Persistência Local Confiável)
+  try {
+    addLocalCrmDeal(cleanPhone, {
+      product: input.dealProduct,
+      produto: input.dealProduct,
+      title: input.dealProduct,
+      value: numDeal,
+      valueFormatted: strDealFormatted,
+      status: input.dealStatus || 'Enviar Cotação',
+      etapa: input.dealStatus || 'Enviar Cotação',
+      notes: (input.notes || '') + (input.dealDate ? ` [Data Retorno: ${input.dealDate}]` : ''),
+      createdAt: new Date().toISOString(),
+    });
+    if (contactName && (!existing.contact?.name || existing.contact.name === 'Lead WhatsApp')) {
+      saveLocalCrmContact(cleanPhone, { name: contactName });
+    }
+  } catch (err: any) {
+    logger.error('Erro ao salvar oportunidade no armazenamento local Whats:', err?.message);
+  }
+
+  // 2. ENVIA PARA A API DO CRM EXTERNO
   const crmUrl = `${env.crmBaseUrl}/api/v1/external/contacts`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
 
   try {
-    logger.info(`Criando Oportunidade no LEADS & Pipeline do CRM: phone=${cleanPhone}, produto=${input.dealProduct}`);
+    logger.info(`Criando Oportunidade no LEADS & Pipeline do CRM: phone=${cleanPhone}, produto=${input.dealProduct}, valor=${numDeal}`);
 
     const opportunityData = {
       product: input.dealProduct,
@@ -497,14 +763,15 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
       titulo: input.dealProduct,
       name: input.dealProduct,
       nome: input.dealProduct,
-      value: input.dealValue || undefined,
-      valor: input.dealValue || undefined,
-      dealValue: input.dealValue || undefined,
+      value: numDeal ?? input.dealValue ?? undefined,
+      valor: numDeal ?? input.dealValue ?? undefined,
+      dealValue: numDeal ?? input.dealValue ?? undefined,
+      valueFormatted: strDealFormatted,
       status: input.dealStatus || 'Enviar Cotação',
       etapa: input.dealStatus || 'Enviar Cotação',
       stage: input.dealStatus || 'Enviar Cotação',
-      notes: input.notes || undefined,
-      observacoes: input.notes || undefined,
+      notes: (input.notes || '') + (input.dealDate ? ` [Data Retorno: ${input.dealDate}]` : '') || undefined,
+      observacoes: (input.notes || '') + (input.dealDate ? ` [Data Retorno: ${input.dealDate}]` : '') || undefined,
     };
 
     const payload = {
@@ -518,6 +785,13 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
       tipo: existing.contact?.type || 'PF',
       email: existing.contact?.email || undefined,
       document: existing.contact?.document || undefined,
+
+      // Valores no root para compatibilidade máxima com qualquer leitor do CRM
+      dealProduct: input.dealProduct,
+      dealValue: numDeal ?? input.dealValue ?? undefined,
+      dealValueFormatted: strDealFormatted,
+      value: numDeal ?? input.dealValue ?? undefined,
+      valor: numDeal ?? input.dealValue ?? undefined,
 
       // Pipeline e sinônimos para compatibilidade total com LEADS & Pipeline do CRM
       pipeline: opportunityData,

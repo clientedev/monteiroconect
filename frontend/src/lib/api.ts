@@ -194,6 +194,7 @@ export const contactApi = {
     dealProduct: string;
     dealValue?: string | number;
     dealStatus?: string;
+    dealDate?: string;
     notes?: string;
   }) =>
     api.post<{ ok: boolean; data?: any; error?: string }>('/contacts/crm-deal', data),
