@@ -25,6 +25,7 @@ import {
   PlusCircle,
   TrendingUp,
   Send,
+  RefreshCw,
 } from 'lucide-react';
 
 interface CrmContactModalProps {
@@ -460,13 +461,71 @@ export default function CrmContactModal({
   const insurance = crmData?.insurance;
   const pipeline = crmData?.pipeline;
 
+  const getDealAssignedName = (d: any) => {
+    // 1. Direct deal fields
+    const direct =
+      d?.assignedToName ||
+      d?.responsavel ||
+      d?.consultor ||
+      d?.funcionario ||
+      d?.atendente ||
+      (typeof d?.assignedTo === 'string' ? d.assignedTo : null) ||
+      d?.assignedTo?.name ||
+      d?.assignedTo?.user?.name ||
+      d?.assignedTo?.username;
+
+    if (direct && typeof direct === 'string' && direct.trim()) {
+      const trimmed = direct.trim();
+      const matched = crmUsers.find(
+        (u) =>
+          u.id === trimmed ||
+          u.name?.toLowerCase() === trimmed.toLowerCase() ||
+          u.email?.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (matched?.name) return matched.name;
+      return trimmed;
+    }
+
+    // 2. Deal ID / Email lookup in crmUsers
+    const rawId = d?.assignedToId || d?.assignedTo?.id;
+    if (rawId) {
+      const matched = crmUsers.find((u) => u.id === rawId || String(u.id) === String(rawId));
+      if (matched?.name) return matched.name;
+    }
+    const rawEmail = d?.assignedToEmail || d?.assignedTo?.email;
+    if (rawEmail) {
+      const matched = crmUsers.find((u) => u.email?.toLowerCase() === rawEmail.toLowerCase());
+      if (matched?.name) return matched.name;
+    }
+
+    // 3. Fallback to Contact-level assignment
+    const contactDirect =
+      crmContact?.assignedTo?.name ||
+      (typeof crmContact?.assignedTo === 'string' ? crmContact.assignedTo : null) ||
+      formAssignedToName;
+
+    if (contactDirect && typeof contactDirect === 'string' && contactDirect.trim()) {
+      const trimmed = contactDirect.trim();
+      const matched = crmUsers.find(
+        (u) =>
+          u.id === trimmed ||
+          u.name?.toLowerCase() === trimmed.toLowerCase() ||
+          u.email?.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (matched?.name) return matched.name;
+      return trimmed;
+    }
+
+    return 'Não atribuído';
+  };
+
   const dealsToDisplay = useMemo(() => {
     const rawDeals = Array.isArray(pipeline?.deals) ? pipeline.deals : [];
     const seen = new Set<string>();
-    return rawDeals.filter((d: any) => {
+    return rawDeals.filter((d: any, idx: number) => {
       const prod = (d.product || d.produto || d.title || 'Oportunidade').trim().toLowerCase();
       const stg = (d.status || d.etapa || d.stage || '').trim().toLowerCase();
-      const key = `${prod}_${stg}`;
+      const key = d.id ? String(d.id) : `${prod}_${stg}_${idx}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -501,13 +560,30 @@ export default function CrmContactModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white cursor-pointer"
-            title="Fechar"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (contact) {
+                  setLoading(true);
+                  fetchCrmData(contact.phone, contact.id);
+                }
+              }}
+              disabled={loading}
+              className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              title="Sincronizar dados agora com o CRM"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Sincronizar CRM</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white cursor-pointer"
+              title="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -819,7 +895,7 @@ export default function CrmContactModal({
                             <div className="flex flex-wrap items-center justify-between text-[11px] text-monte-sereno pt-1.5 border-t border-monte-sereno/10 gap-2">
                               <span className="flex items-center gap-1 text-slate-700">
                                 <UserCheck className="w-3.5 h-3.5 text-monte-verde" />
-                                Responsável: <strong className="text-monte-azul">{d.assignedToName || d.responsavel || d.assignedTo?.name || 'Não atribuído'}</strong>
+                                Responsável: <strong className="text-monte-azul">{getDealAssignedName(d)}</strong>
                                 {d.assignedToEmail && <span className="text-slate-400 font-mono text-[10px]">({d.assignedToEmail})</span>}
                               </span>
                               {(d.dealDate || d.date) && (
@@ -929,7 +1005,7 @@ export default function CrmContactModal({
                   <span className="text-[11px] font-semibold text-monte-sereno block mb-1">Responsável no CRM</span>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-monte-azul truncate">
-                      {crmContact?.assignedTo?.name || formAssignedToName || 'Não atribuído'}
+                      {getDealAssignedName({}) !== 'Não atribuído' ? getDealAssignedName({}) : (crmContact?.assignedTo?.name || formAssignedToName || 'Não atribuído')}
                     </span>
                     <UserCheck className="w-4 h-4 text-monte-verde shrink-0" />
                   </div>
@@ -1014,7 +1090,7 @@ export default function CrmContactModal({
                             <div className="flex items-center gap-1.5">
                               <UserCheck className="w-3.5 h-3.5 text-monte-verde shrink-0" />
                               <span>
-                                Responsável: <strong className="text-monte-azul">{d.assignedToName || d.responsavel || d.assignedTo?.name || 'Não atribuído'}</strong>
+                                Responsável: <strong className="text-monte-azul">{getDealAssignedName(d)}</strong>
                                 {d.assignedToEmail && <span className="text-slate-400 font-mono text-[10px] ml-1">({d.assignedToEmail})</span>}
                               </span>
                             </div>

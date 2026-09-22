@@ -12,6 +12,9 @@ import { sessionManager } from '../whatsapp/sessionManager.js';
 import { prisma } from '../database/client.js';
 import { z } from 'zod';
 
+import { deleteLocalCrmContact } from '../services/crmLocalStore.js';
+import { logger } from '../utils/logger.js';
+
 const router = Router();
 
 
@@ -50,6 +53,40 @@ router.get('/:id/avatar', async (req, res) => {
     res.setHeader('Content-Type', 'image/svg+xml');
     res.setHeader('Cache-Control', 'public, max-age=86400');
     return res.status(200).send(DEFAULT_AVATAR_SVG);
+  }
+});
+
+// Webhook para receber eventos em tempo real disparados pelo CRM
+// (Ex: lead editado, lead excluído, oportunidade criada, oportunidade excluída)
+router.post('/crm-webhook', async (req, res) => {
+  try {
+    const { event, action, type, phone, contact, deal, data } = req.body || {};
+    const targetPhone = phone || contact?.phone || data?.phone || data?.contact?.phone || req.query.phone;
+    
+    logger.info(`Webhook recebido do CRM: event=${event || action || type}, phone=${targetPhone}`);
+
+    if (!targetPhone) {
+      return res.status(400).json({ error: 'Telefone não identificado no payload' });
+    }
+
+    const cleanPhone = String(targetPhone).replace(/\D/g, '');
+    const isDelete = (event && /delete|exclui|remover/i.test(event)) ||
+                     (action && /delete|exclui|remover/i.test(action)) ||
+                     (type && /delete|exclui|remover/i.test(type));
+
+    if (isDelete) {
+      deleteLocalCrmContact(cleanPhone);
+      logger.info(`Lead/Contato ${cleanPhone} removido do cache local via Webhook CRM`);
+      return res.json({ ok: true, deleted: true, phone: cleanPhone });
+    }
+
+    // Se for atualização ou qualquer outro evento, sincroniza diretamente com a base do CRM
+    const freshData = await lookupContactInCrm(cleanPhone);
+    logger.info(`Lead/Contato ${cleanPhone} sincronizado com sucesso via Webhook CRM`);
+    return res.json({ ok: true, synced: true, data: freshData });
+  } catch (err: any) {
+    logger.error('Erro ao processar crm-webhook:', err?.message || err);
+    return res.status(500).json({ error: err?.message || 'Falha ao processar webhook do CRM' });
   }
 });
 

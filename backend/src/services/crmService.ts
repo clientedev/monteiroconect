@@ -5,6 +5,8 @@ import {
   getLocalCrmContact,
   saveLocalCrmContact,
   addLocalCrmDeal,
+  syncLocalCrmDeals,
+  deleteLocalCrmContact,
   LocalCrmContactRecord,
 } from './crmLocalStore.js';
 
@@ -16,7 +18,9 @@ export interface CrmContactInfo {
   status?: string;
   anniversaryDate?: string;
   assignedTo?: {
+    id?: string;
     name?: string;
+    email?: string;
   };
 }
 
@@ -330,21 +334,26 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
 
     if (data && typeof data === 'object') {
       const isFound = Boolean(data.found);
-      const products = extractProductsFromCrm(data);
 
-      if (!isFound && local && (local.name || local.deals?.length || local.insurance)) {
-        return buildResponseFromLocal(cleanPhone, local);
+      // Se o CRM respondeu com sucesso que o contato não foi encontrado (ou foi excluído no CRM)
+      if (!isFound) {
+        deleteLocalCrmContact(cleanPhone);
+        return {
+          found: false,
+          query: { phone: cleanPhone },
+          products: [],
+        };
       }
 
-      // Mescla produtos do CRM com o cache local
+      // CRM é a autoridade máxima: produtos do CRM
+      const products = extractProductsFromCrm(data);
       const mergedProducts = Array.from(new Set([
         ...products,
-        ...(local?.produtos || []),
-        ...(local?.product ? [local.product] : []),
+        ...(data.contact?.product ? [data.contact.product] : []),
       ]));
 
-      // Mescla apólices e prêmios
-      const policies = Array.isArray(data.insurance?.policies) && data.insurance.policies.length > 0
+      // Mescla apólices e prêmios do CRM
+      const policies = Array.isArray(data.insurance?.policies)
         ? data.insurance.policies.map((p: any) => {
             const numVal = parseCurrency(p.premiumValue || p.premio || p.valor);
             const valFmt = p.premiumValueFormatted || formatCurrency(numVal);
@@ -354,16 +363,29 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
               premiumValueFormatted: valFmt || p.premiumValueFormatted,
             };
           })
-        : local?.insurance ? [{
-            product: local.insurance.product,
-            insurer: local.insurance.insurer,
-            policyNumber: local.insurance.policyNumber,
-            premiumValue: local.insurance.premiumValue,
-            premiumValueFormatted: local.insurance.premiumValueFormatted,
-            expirationDate: local.insurance.expirationDate,
-          }] : [];
+        : [];
 
-      // Mescla oportunidades do funil e valores
+      // Extração robusta do colaborador responsável do contato
+      const contactObj = data.contact || data;
+      const rawContactAssigned = contactObj.assignedTo ?? contactObj.responsavel ?? contactObj.consultor ?? contactObj.funcionario ?? contactObj.atendente ?? contactObj.user ?? contactObj.assignedUser ?? data.assignedTo ?? data.responsavel;
+      let contactAssignedName: string | undefined = undefined;
+      let contactAssignedEmail: string | undefined = contactObj.assignedToEmail ?? contactObj.responsavelEmail ?? contactObj.email;
+      let contactAssignedId: string | undefined = contactObj.assignedToId ?? contactObj.responsavelId ?? contactObj.userId;
+
+      if (typeof rawContactAssigned === 'string' && rawContactAssigned.trim()) {
+        contactAssignedName = rawContactAssigned.trim();
+      } else if (rawContactAssigned && typeof rawContactAssigned === 'object') {
+        contactAssignedName = rawContactAssigned.name || rawContactAssigned.nome || rawContactAssigned.username || rawContactAssigned.fullName;
+        contactAssignedEmail = contactAssignedEmail || rawContactAssigned.email || rawContactAssigned.mail;
+        contactAssignedId = contactAssignedId || String(rawContactAssigned.id || rawContactAssigned._id || '');
+      } else if (typeof rawContactAssigned === 'number') {
+        contactAssignedId = String(rawContactAssigned);
+      }
+      if (!contactAssignedName) {
+        contactAssignedName = contactObj.assignedToName || contactObj.responsavelNome || contactObj.consultorNome || contactObj.funcionarioNome;
+      }
+
+      // Oportunidades do funil vindas do CRM
       const crmDeals = Array.isArray(data.pipeline?.deals)
         ? data.pipeline.deals
         : Array.isArray(data.deals)
@@ -372,91 +394,91 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
         ? data.opportunities
         : [];
 
-      let mergedDeals = crmDeals.map((d: any) => {
+      let mergedDeals = crmDeals.map((d: any, idx: number) => {
         const numVal = parseCurrency(d.value || d.valor || d.dealValue);
         const valFmt = d.valueFormatted || formatCurrency(numVal);
-        const assignedName = d.assignedToName || d.responsavel || d.consultor || d.assignedTo?.name;
-        const assignedEmail = d.assignedToEmail || d.responsavelEmail || d.assignedTo?.email;
-        const assignedId = d.assignedToId || d.assignedTo?.id;
-        const assigned = assignedName ? {
-          name: assignedName,
-          email: assignedEmail,
-          id: assignedId,
+
+        const rawDealAssigned = d.assignedTo ?? d.responsavel ?? d.consultor ?? d.funcionario ?? d.atendente ?? d.user ?? d.assignedUser;
+        let dealAssignedName: string | undefined = undefined;
+        let dealAssignedEmail: string | undefined = d.assignedToEmail ?? d.responsavelEmail ?? d.consultorEmail;
+        let dealAssignedId: string | undefined = d.assignedToId ?? d.responsavelId ?? d.consultorId ?? d.userId;
+
+        if (typeof rawDealAssigned === 'string' && rawDealAssigned.trim()) {
+          dealAssignedName = rawDealAssigned.trim();
+        } else if (rawDealAssigned && typeof rawDealAssigned === 'object') {
+          dealAssignedName = rawDealAssigned.name || rawDealAssigned.nome || rawDealAssigned.username || rawDealAssigned.fullName;
+          dealAssignedEmail = dealAssignedEmail || rawDealAssigned.email || rawDealAssigned.mail;
+          dealAssignedId = dealAssignedId || String(rawDealAssigned.id || rawDealAssigned._id || '');
+        } else if (typeof rawDealAssigned === 'number') {
+          dealAssignedId = String(rawDealAssigned);
+        }
+
+        if (!dealAssignedName) {
+          dealAssignedName = d.assignedToName || d.responsavelNome || d.consultorNome || d.funcionarioNome;
+        }
+
+        // Se a oportunidade não tiver responsável direto, herda o responsável do contato no CRM
+        const finalAssignedName = dealAssignedName || contactAssignedName;
+        const finalAssignedEmail = dealAssignedEmail || contactAssignedEmail;
+        const finalAssignedId = dealAssignedId || contactAssignedId;
+
+        const assigned = finalAssignedName ? {
+          name: finalAssignedName,
+          email: finalAssignedEmail,
+          id: finalAssignedId,
         } : undefined;
 
         return {
-          ...d,
+          id: d.id || `${d.product || 'deal'}-${idx}`,
           product: d.product || d.produto || d.title || 'Oportunidade',
           value: numVal ?? d.value,
           valueFormatted: valFmt || d.valueFormatted,
           status: d.status || d.etapa || d.stage || 'Respondida',
           etapa: d.etapa || d.status || d.stage || 'Respondida',
           assignedTo: assigned,
-          assignedToName: assignedName,
-          assignedToEmail: assignedEmail,
-          assignedToId: assignedId,
+          assignedToName: finalAssignedName,
+          assignedToEmail: finalAssignedEmail,
+          assignedToId: finalAssignedId,
           dealDate: d.dealDate || d.date || d.dataRetorno,
           notes: d.notes || d.observacoes,
           responded: d.responded ?? true,
+          createdAt: d.createdAt || new Date().toISOString(),
         };
       });
 
-      // Se o CRM não retornou negócios no funil, usa os negócios salvos localmente
-      if (mergedDeals.length === 0 && local?.deals && local.deals.length > 0) {
-        mergedDeals = local.deals.map(d => ({
-          id: d.id,
-          product: d.product,
-          produto: d.produto || d.product,
-          title: d.title || d.product,
-          value: d.value,
-          valueFormatted: d.valueFormatted || (d.value ? formatCurrency(d.value) : undefined),
-          status: d.status || 'Respondida',
-          etapa: d.etapa || d.status || 'Respondida',
-          notes: d.notes,
-          assignedToName: d.assignedToName,
-          assignedToEmail: d.assignedToEmail,
-          assignedToId: d.assignedToId,
-          assignedTo: d.assignedToName ? {
-            name: d.assignedToName,
-            email: d.assignedToEmail,
-            id: d.assignedToId,
-          } : undefined,
-          dealDate: d.dealDate || d.date,
-          responded: d.responded ?? true,
-          createdAt: d.createdAt,
-        }));
-      }
-
-      // Deduplica negociações para nunca multiplicar na tela (mesmo produto e etapa)
-      const seenDealKeys = new Set<string>();
-      mergedDeals = mergedDeals.filter((d: any) => {
-        const prod = (d.product || d.produto || d.title || '').trim().toLowerCase();
-        const stg = (d.status || d.etapa || d.stage || '').trim().toLowerCase();
-        const key = `${prod}_${stg}`;
-        if (seenDealKeys.has(key)) return false;
-        seenDealKeys.add(key);
-        return true;
+      // Sincroniza o cache local com os dados oficiais do CRM para que exclusões e edições reflitam imediatamente
+      syncLocalCrmDeals(cleanPhone, mergedDeals);
+      saveLocalCrmContact(cleanPhone, {
+        name: data.contact?.name,
+        type: data.contact?.type,
+        email: data.contact?.email,
+        document: data.contact?.document,
+        status: data.contact?.status,
+        anniversaryDate: data.contact?.anniversaryDate,
+        assignedToName: contactAssignedName,
+        product: products[0] || undefined,
+        produtos: products,
       });
 
       return {
-        found: isFound || Boolean(local),
+        found: true,
         query: data.query || { phone: cleanPhone },
         contact: {
-          name: data.contact?.name || local?.name || '',
-          type: data.contact?.type || local?.type || 'PF',
-          email: data.contact?.email || local?.email,
-          document: data.contact?.document || local?.document,
-          status: data.contact?.status || local?.status || 'Ativo',
-          anniversaryDate: data.contact?.anniversaryDate || local?.anniversaryDate,
-          assignedTo: data.contact?.assignedTo || (local?.assignedToName ? { name: local.assignedToName } : undefined),
+          name: data.contact?.name || '',
+          type: data.contact?.type || 'PF',
+          email: data.contact?.email,
+          document: data.contact?.document,
+          status: data.contact?.status || 'Ativo',
+          anniversaryDate: data.contact?.anniversaryDate,
+          assignedTo: contactAssignedName ? { name: contactAssignedName, email: contactAssignedEmail } : undefined,
         },
         insurance: {
           activePoliciesCount: data.insurance?.activePoliciesCount ?? policies.length,
-          totalAnnualPremiumFormatted: data.insurance?.totalAnnualPremiumFormatted || (local?.insurance?.premiumValueFormatted) || 'R$ 0,00',
+          totalAnnualPremiumFormatted: data.insurance?.totalAnnualPremiumFormatted || 'R$ 0,00',
           policies,
         },
         pipeline: {
-          activeDealsCount: data.pipeline?.activeDealsCount ?? mergedDeals.length,
+          activeDealsCount: mergedDeals.length,
           deals: mergedDeals,
         },
         products: mergedProducts,

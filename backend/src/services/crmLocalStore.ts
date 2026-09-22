@@ -136,6 +136,22 @@ export function addLocalCrmDeal(cleanPhone: string, deal: LocalCrmDeal) {
 
   existing.updatedAt = new Date().toISOString();
   store[cleanPhone] = existing;
-
   saveStoreToDisk();
+}
+
+export function syncLocalCrmDeals(cleanPhone: string, deals: LocalCrmDeal[]) {
+  if (!cleanPhone) return;
+  const existing = store[cleanPhone] || { phone: cleanPhone, deals: [], updatedAt: new Date().toISOString() };
+  existing.deals = deals;
+  existing.updatedAt = new Date().toISOString();
+  store[cleanPhone] = existing;
+  saveStoreToDisk();
+}
+
+export function deleteLocalCrmContact(cleanPhone: string) {
+  if (!cleanPhone) return;
+  if (store[cleanPhone]) {
+    delete store[cleanPhone];
+    saveStoreToDisk();
+  }
 }
