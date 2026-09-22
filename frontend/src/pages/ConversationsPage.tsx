@@ -9,7 +9,7 @@ import {
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
   Maximize2, Minimize2, ExternalLink, Reply, Share2, Bell, BellOff, ArrowLeft,
-  Zap, MessageSquareQuote, FileText, Download, TrendingUp,
+  Zap, MessageSquareQuote, FileText, Download, TrendingUp, Shield,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -1881,6 +1881,21 @@ export default function ConversationsPage() {
                 >
                   <TrendingUp className="w-4 h-4" />
                   <span className="hidden sm:inline">Ver Oportunidades</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedContactForCrm({
+                    id: selectedConv.contactId,
+                    name: selectedConv.contactName,
+                    phone: selectedConv.contactPhone,
+                    conversationId: selectedConv.id,
+                    initialTab: 'policies',
+                  })}
+                  className="px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  title="Ver Apólices do Contato no CRM"
+                >
+                  <Shield className="w-4 h-4" />
+                  <span className="hidden sm:inline">Apólices</span>
                 </button>
                 {togglePopoutWindow && (
                   <button

@@ -11,6 +11,7 @@ import {
 } from './crmLocalStore.js';
 
 export interface CrmContactInfo {
+  id?: string | number;
   name: string;
   type?: string;
   email?: string;
@@ -25,12 +26,14 @@ export interface CrmContactInfo {
 }
 
 export interface CrmPolicyItem {
+  id?: string | number;
   insurer?: string;
   product?: string;
   policyNumber?: string;
   expirationDate?: string;
   premiumValue?: number;
   premiumValueFormatted?: string;
+  crmUrl?: string;
   [key: string]: any;
 }
 
@@ -81,6 +84,8 @@ export interface CrmPipelineInfo {
 export interface CrmLookupResponse {
   found: boolean;
   query?: { phone?: string };
+  crmBaseUrl?: string;
+  clientCrmUrl?: string;
   contact?: CrmContactInfo;
   insurance?: CrmInsuranceInfo;
   pipeline?: CrmPipelineInfo;
@@ -352,21 +357,31 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
         ...(data.contact?.product ? [data.contact.product] : []),
       ]));
 
+      // Identifica ID do cliente no CRM para redirecionamento direto (/admin/clientes/{id})
+      const contactObj = data.contact || data;
+      const clienteId = contactObj.id ?? data.id ?? data.clienteId ?? contactObj.clienteId ?? data.contactId;
+      const clientCrmUrl = clienteId ? `${env.crmBaseUrl}/admin/clientes/${clienteId}` : undefined;
+
       // Mescla apólices e prêmios do CRM
       const policies = Array.isArray(data.insurance?.policies)
         ? data.insurance.policies.map((p: any) => {
             const numVal = parseCurrency(p.premiumValue || p.premio || p.valor);
             const valFmt = p.premiumValueFormatted || formatCurrency(numVal);
             return {
-              ...p,
+              id: p.id || p.policyId || p.apoliceId,
+              insurer: p.insurer || p.seguradora || p.companhia,
+              product: p.product || p.ramo || p.produto,
+              policyNumber: p.policyNumber || p.numeroApolice || p.apolice,
+              expirationDate: p.expirationDate || p.dataVencimento || p.fimVigencia,
               premiumValue: numVal ?? p.premiumValue,
               premiumValueFormatted: valFmt || p.premiumValueFormatted,
+              crmUrl: clientCrmUrl,
+              ...p,
             };
           })
         : [];
 
       // Extração robusta do colaborador responsável do contato
-      const contactObj = data.contact || data;
       const rawContactAssigned = contactObj.assignedTo ?? contactObj.responsavel ?? contactObj.consultor ?? contactObj.funcionario ?? contactObj.atendente ?? contactObj.user ?? contactObj.assignedUser ?? data.assignedTo ?? data.responsavel;
       let contactAssignedName: string | undefined = undefined;
       let contactAssignedEmail: string | undefined = contactObj.assignedToEmail ?? contactObj.responsavelEmail ?? contactObj.email;
@@ -463,7 +478,10 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
       return {
         found: true,
         query: data.query || { phone: cleanPhone },
+        crmBaseUrl: env.crmBaseUrl,
+        clientCrmUrl,
         contact: {
+          id: clienteId ? String(clienteId) : undefined,
           name: data.contact?.name || '',
           type: data.contact?.type || 'PF',
           email: data.contact?.email,

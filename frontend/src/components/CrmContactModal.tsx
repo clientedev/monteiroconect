@@ -26,6 +26,7 @@ import {
   TrendingUp,
   Send,
   RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 
 interface CrmContactModalProps {
@@ -34,7 +35,7 @@ interface CrmContactModalProps {
     name: string | null;
     phone: string;
     conversationId?: string | null;
-    initialTab?: 'details' | 'opportunities' | 'create';
+    initialTab?: 'details' | 'opportunities' | 'policies' | 'create';
   } | null;
   onClose: () => void;
   onOpenConversation?: (contact: any) => void;
@@ -114,8 +115,8 @@ export default function CrmContactModal({
   const [crmData, setCrmData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Aba ativa: 'details' (Visualizar), 'opportunities' (Oportunidades) ou 'create' (Cadastrar/Editar)
-  const [activeTab, setActiveTab] = useState<'details' | 'opportunities' | 'create'>(contact?.initialTab || 'details');
+  // Aba ativa: 'details' (Visualizar), 'opportunities' (Oportunidades), 'policies' (Apólices) ou 'create' (Cadastrar/Editar)
+  const [activeTab, setActiveTab] = useState<'details' | 'opportunities' | 'policies' | 'create'>(contact?.initialTab || 'details');
 
   useEffect(() => {
     if (contact?.initialTab) {
@@ -461,6 +462,22 @@ export default function CrmContactModal({
   const insurance = crmData?.insurance;
   const pipeline = crmData?.pipeline;
 
+  const clienteId = crmContact?.id || crmData?.id || crmData?.clienteId || (crmData?.raw?.id) || (crmData?.raw?.clienteId) || (contact as any)?.crmId;
+  const crmBaseUrl = crmData?.crmBaseUrl || 'http://localhost:5000';
+  const clientCrmUrl = crmData?.clientCrmUrl || (clienteId ? `${crmBaseUrl.replace(/\/$/, '')}/admin/clientes/${clienteId}` : null);
+
+  const handleOpenCrmUrl = (url?: string | null) => {
+    const targetUrl = url || clientCrmUrl;
+    if (!targetUrl) return;
+    if (targetUrl.startsWith('http://') || targetUrl.startsWith('https://')) {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      const base = crmBaseUrl.replace(/\/$/, '');
+      const path = targetUrl.startsWith('/') ? targetUrl : `/${targetUrl}`;
+      window.open(`${base}${path}`, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   const getDealAssignedName = (d: any) => {
     // 1. Direct deal fields
     const direct =
@@ -626,6 +643,24 @@ export default function CrmContactModal({
 
           <button
             type="button"
+            onClick={() => setActiveTab('policies')}
+            className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+              activeTab === 'policies'
+                ? 'border-indigo-600 text-indigo-800 bg-white shadow-2xs'
+                : 'border-transparent text-monte-sereno hover:text-monte-azul'
+            }`}
+          >
+            <Shield className="w-4 h-4 text-indigo-600" />
+            <span>Apólices</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              (insurance?.policies?.length || 0) > 0 ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {insurance?.policies?.length || insurance?.activePoliciesCount || 0}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('create')}
             className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
               activeTab === 'create'
@@ -769,8 +804,21 @@ export default function CrmContactModal({
                     <h4 className="text-sm font-bold text-monte-azul flex items-center gap-2">
                       <Shield className="w-4 h-4 text-monte-verde" /> 🛡️ Apólices de Seguro Ativas
                     </h4>
-                    <div className="text-xs font-semibold px-2.5 py-0.5 bg-monte-verde/10 text-monte-verde rounded-full">
-                      {insurance?.activePoliciesCount || 0} ativas
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-semibold px-2.5 py-0.5 bg-monte-verde/10 text-monte-verde rounded-full">
+                        {insurance?.activePoliciesCount || insurance?.policies?.length || 0} ativas
+                      </div>
+                      {clientCrmUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCrmUrl(clientCrmUrl)}
+                          className="text-[11px] font-bold px-2.5 py-1 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                          title="Abrir Cadastro e Apólices do Cliente no CRM"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>Ver no CRM</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -799,15 +847,24 @@ export default function CrmContactModal({
                               Seguradora: <span className="font-medium text-monte-azul">{p.insurer || p.seguradora || '-'}</span>
                             </p>
                           </div>
-                          <div className="text-left sm:text-right">
+                          <div className="text-left sm:text-right flex flex-col items-start sm:items-end gap-1">
                             <p className="text-monte-sereno">
-                              Apólice Nº: <span className="font-mono text-monte-azul">{p.policyNumber || p.apolice || '-'}</span>
+                              Apólice Nº: <span className="font-mono text-monte-azul font-bold">{p.policyNumber || p.apolice || '-'}</span>
                             </p>
                             {p.expirationDate || p.vencimento ? (
                               <p className="text-monte-sereno">
                                 Vencimento: <span className="font-medium text-monte-azul">{p.expirationDate || p.vencimento}</span>
                               </p>
                             ) : null}
+                            {clientCrmUrl && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCrmUrl(p.crmUrl || clientCrmUrl)}
+                                className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <ExternalLink className="w-3 h-3" /> Ver no CRM
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1106,6 +1163,206 @@ export default function CrmContactModal({
                             <div className="p-2.5 rounded-xl bg-monte-areiaSecao/40 border border-monte-sereno/10 text-xs text-slate-700 italic">
                               {d.notes}
                             </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : activeTab === 'policies' ? (
+            /* Tab: Visão Completa de Apólices do Cliente & Redirecionamento ao CRM */
+            <div className="space-y-6">
+              {/* Banner com informações e botão de redirecionamento para o CRM */}
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950/5 via-monte-verde/10 to-monte-azul/5 border border-indigo-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-monte-azul text-white flex items-center justify-center font-bold shadow-sm">
+                    <Shield className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-monte-azul text-base">
+                        Apólices de Seguros do Cliente
+                      </h4>
+                      {clienteId && (
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-mono text-[11px] font-bold">
+                          ID: #{clienteId}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-monte-sereno mt-0.5">
+                      Contratos vigentes, seguradoras e coberturas de <strong className="text-monte-azul">{formName || contact.name || contact.phone}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                {clientCrmUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCrmUrl(clientCrmUrl)}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-monte-azul hover:from-indigo-700 hover:to-monte-azul text-white font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                    title={`Abrir página do cliente ${clientCrmUrl} no CRM`}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Abrir Cliente no CRM</span>
+                  </button>
+                ) : (
+                  <div className="text-xs text-monte-sereno italic bg-white/70 px-3 py-1.5 rounded-xl border border-slate-200">
+                    ID não vinculado ao CRM
+                  </div>
+                )}
+              </div>
+
+              {/* Métricas / Cards Rápidos */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl bg-white border border-monte-sereno/15 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-monte-sereno block mb-1">Apólices Ativas</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xl font-black text-indigo-700">
+                      {insurance?.policies?.length || insurance?.activePoliciesCount || 0}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold">
+                      {(insurance?.policies?.length || 0) > 0 ? 'Em vigor' : 'Sem apólice'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-white border border-monte-sereno/15 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-monte-sereno block mb-1">Total de Prêmios</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-base font-black text-monte-verde">
+                      {insurance?.totalAnnualPremiumFormatted || 'R$ 0,00'}
+                    </span>
+                    <DollarSign className="w-4 h-4 text-monte-verde" />
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-white border border-monte-sereno/15 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-monte-sereno block mb-1">Destino no CRM</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-monte-azul truncate" title={clientCrmUrl || 'Indisponível'}>
+                      {clienteId ? `/admin/clientes/${clienteId}` : 'Não cadastrado'}
+                    </span>
+                    <Shield className="w-4 h-4 text-indigo-500 shrink-0" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista Detalhada de Apólices */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-monte-sereno/10 pb-2">
+                  <h5 className="font-bold text-monte-azul text-xs uppercase tracking-wider flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-indigo-600" /> Lista de Apólices Cadastradas no CRM
+                  </h5>
+                  <span className="text-xs text-monte-sereno">
+                    Total: <strong className="text-monte-azul">{insurance?.policies?.length || 0}</strong>
+                  </span>
+                </div>
+
+                {!insurance?.policies || insurance.policies.length === 0 ? (
+                  <div className="py-10 px-4 text-center rounded-2xl bg-monte-areiaSecao/40 border border-dashed border-monte-sereno/25 space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                      <Shield className="w-6 h-6" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-bold text-monte-azul">
+                        Nenhuma apólice ativa encontrada para este cliente
+                      </p>
+                      <p className="text-xs text-monte-sereno max-w-md mx-auto">
+                        {clienteId
+                          ? `O cliente está registrado no CRM (ID #${clienteId}), porém ainda não possui nenhuma apólice ativa vinculada.`
+                          : 'Este contato ainda não possui cadastro ou apólices ativas no CRM da Monteiro Seguros.'}
+                      </p>
+                    </div>
+                    {clientCrmUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCrmUrl(clientCrmUrl)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-xs hover:bg-indigo-700 transition-colors cursor-pointer"
+                      >
+                        <ExternalLink className="w-4 h-4" /> Abrir Cliente no CRM para Cadastrar Apólice
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('create')}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-monte-verde text-white rounded-xl text-xs font-bold shadow-xs hover:opacity-95 transition-opacity cursor-pointer"
+                      >
+                        <UserPlus className="w-4 h-4" /> Cadastrar este Cliente no CRM
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {insurance.policies.map((p: any, idx: number) => {
+                      const policyCrmUrl = p.crmUrl || clientCrmUrl;
+                      return (
+                        <div
+                          key={p.id || idx}
+                          className="p-4 rounded-2xl bg-white border border-indigo-100 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all flex flex-col justify-between gap-4"
+                        >
+                          <div className="space-y-2.5">
+                            {/* Header do Card */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                                  <Shield className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <h6 className="font-bold text-sm text-monte-azul leading-snug">
+                                    {p.product || p.produto || 'Seguro'}
+                                  </h6>
+                                  <span className="text-[11px] font-medium text-slate-500">
+                                    {p.insurer || p.seguradora || 'Seguradora não informada'}
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                Ativa
+                              </span>
+                            </div>
+
+                            {/* Detalhes da Apólice em Grid */}
+                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
+                              <div className="space-y-0.5">
+                                <span className="text-[10px] uppercase font-semibold text-slate-400 block">Nº da Apólice</span>
+                                <span className="font-mono font-bold text-slate-800 text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 block truncate">
+                                  {p.policyNumber || p.apolice || '-'}
+                                </span>
+                              </div>
+
+                              <div className="space-y-0.5">
+                                <span className="text-[10px] uppercase font-semibold text-slate-400 block">Vencimento</span>
+                                <span className="font-medium text-slate-700 flex items-center gap-1 text-[11px]">
+                                  <Calendar className="w-3 h-3 text-slate-400" />
+                                  {p.expirationDate || p.vencimento || 'Não informado'}
+                                </span>
+                              </div>
+
+                              {p.premiumValue && (
+                                <div className="space-y-0.5 col-span-2">
+                                  <span className="text-[10px] uppercase font-semibold text-slate-400 block">Valor do Prêmio</span>
+                                  <span className="font-bold text-emerald-700 flex items-center gap-1">
+                                    <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                                    {p.premiumValue}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Ação de Redirecionamento Direto */}
+                          {policyCrmUrl && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCrmUrl(policyCrmUrl)}
+                              className="w-full py-2 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer group"
+                              title={`Acessar apólice no CRM em ${policyCrmUrl}`}
+                            >
+                              <span>Ver no CRM {clienteId ? `(#${clienteId})` : ''}</span>
+                              <ExternalLink className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                            </button>
                           )}
                         </div>
                       );
@@ -1572,6 +1829,16 @@ export default function CrmContactModal({
                 className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-monte-verde/10 text-monte-verde hover:bg-monte-verde hover:text-white transition-all text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <UserPlus className="w-4 h-4" /> Cadastrar Completo no CRM
+              </button>
+            )}
+            {clientCrmUrl && (activeTab === 'details' || activeTab === 'policies') && (
+              <button
+                type="button"
+                onClick={() => handleOpenCrmUrl(clientCrmUrl)}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white transition-all text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                title={`Abrir página do cliente no CRM`}
+              >
+                <ExternalLink className="w-4 h-4" /> Abrir no CRM {clienteId ? `(#${clienteId})` : ''}
               </button>
             )}
           </div>
