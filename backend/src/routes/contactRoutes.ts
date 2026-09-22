@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { listContacts, updateContact } from '../services/contactService.js';
-import { lookupContactInCrm, batchLookupContactsInCrm, createContactInCrm, createOpportunityInCrm } from '../services/crmService.js';
+import {
+  lookupContactInCrm,
+  batchLookupContactsInCrm,
+  createContactInCrm,
+  createOpportunityInCrm,
+  getCrmUsers,
+} from '../services/crmService.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { sessionManager } from '../whatsapp/sessionManager.js';
 import { prisma } from '../database/client.js';
@@ -134,13 +140,26 @@ router.post('/crm-deal', async (req, res, next) => {
       dealStatus: z.string().trim().optional(),
       dealDate: z.string().trim().optional(),
       notes: z.string().trim().optional(),
+      assignedToName: z.string().trim().optional(),
+      assignedToEmail: z.string().trim().optional(),
+      assignedToId: z.string().trim().optional(),
+      responded: z.boolean().optional(),
     }).parse(req.body);
 
     const result = await createOpportunityInCrm(body);
     if (!result.ok) {
-      return res.status(400).json({ error: result.error || 'Falha ao criar oportunidade no LEADS & Pipeline do CRM' });
+      return res.status(400).json({ error: result.error || 'Falha ao criar oportunidade no CRM' });
     }
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/crm-users', async (req, res, next) => {
+  try {
+    const users = await getCrmUsers();
+    res.json(users);
   } catch (err) {
     next(err);
   }

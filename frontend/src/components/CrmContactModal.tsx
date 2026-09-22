@@ -33,6 +33,7 @@ interface CrmContactModalProps {
     name: string | null;
     phone: string;
     conversationId?: string | null;
+    initialTab?: 'details' | 'opportunities' | 'create';
   } | null;
   onClose: () => void;
   onOpenConversation?: (contact: any) => void;
@@ -72,6 +73,7 @@ const PRODUCT_OPTIONS = [
 ];
 
 const PIPELINE_STAGE_OPTIONS = [
+  'Respondida',
   'Enviar Cotação',
   'Revisão Agendada',
   'Aguardando Retorno do Cliente',
@@ -111,8 +113,26 @@ export default function CrmContactModal({
   const [crmData, setCrmData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Aba ativa: 'details' (Visualizar) ou 'create' (Cadastrar)
-  const [activeTab, setActiveTab] = useState<'details' | 'create'>('details');
+  // Aba ativa: 'details' (Visualizar), 'opportunities' (Oportunidades) ou 'create' (Cadastrar/Editar)
+  const [activeTab, setActiveTab] = useState<'details' | 'opportunities' | 'create'>(contact?.initialTab || 'details');
+
+  useEffect(() => {
+    if (contact?.initialTab) {
+      setActiveTab(contact.initialTab);
+    }
+  }, [contact?.initialTab]);
+
+  // Lista de Funcionários/Consultores do CRM para responsáveis
+  const [crmUsers, setCrmUsers] = useState<Array<{ id: string; name: string; email?: string; role?: string }>>([]);
+  const [loadingCrmUsers, setLoadingCrmUsers] = useState(false);
+
+  useEffect(() => {
+    setLoadingCrmUsers(true);
+    contactApi.crmListUsers()
+      .then((users) => setCrmUsers(users || []))
+      .catch(() => setCrmUsers([]))
+      .finally(() => setLoadingCrmUsers(false));
+  }, []);
 
   // 1. Dados Pessoais / Cadastrais
   const [formName, setFormName] = useState('');
@@ -144,7 +164,7 @@ export default function CrmContactModal({
   // 4. Negócio no Funil de Vendas
   const [formDealProduct, setFormDealProduct] = useState('');
   const [formDealValue, setFormDealValue] = useState('');
-  const [formDealStatus, setFormDealStatus] = useState('Enviar Cotação');
+  const [formDealStatus, setFormDealStatus] = useState('Respondida');
   const [formNotes, setFormNotes] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
@@ -155,7 +175,10 @@ export default function CrmContactModal({
   const [showOpportunityModal, setShowOpportunityModal] = useState(false);
   const [oppProduct, setOppProduct] = useState('');
   const [oppValue, setOppValue] = useState('');
-  const [oppStatus, setOppStatus] = useState('Enviar Cotação');
+  const [oppStatus, setOppStatus] = useState('Respondida');
+  const [oppAssignedToName, setOppAssignedToName] = useState('');
+  const [oppAssignedToEmail, setOppAssignedToEmail] = useState('');
+  const [oppAssignedToId, setOppAssignedToId] = useState('');
   const [oppDate, setOppDate] = useState('');
   const [oppNotes, setOppNotes] = useState('');
   const [oppSubmitting, setOppSubmitting] = useState(false);
@@ -178,13 +201,17 @@ export default function CrmContactModal({
         name: formName || contact?.name || undefined,
         dealProduct: oppProduct.trim(),
         dealValue: oppValue.trim() || undefined,
-        dealStatus: oppStatus,
+        dealStatus: oppStatus || 'Respondida',
         dealDate: oppDate.trim() || undefined,
+        assignedToName: oppAssignedToName.trim() || undefined,
+        assignedToEmail: oppAssignedToEmail.trim() || undefined,
+        assignedToId: oppAssignedToId.trim() || undefined,
+        responded: true,
         notes: (oppNotes.trim() + (oppDate ? ` [Data de Agendamento: ${oppDate}]` : '')).trim() || undefined,
       });
 
       if (res.ok) {
-        setOppSuccess('Oportunidade criada com sucesso e enviada para o LEADS & Pipeline no CRM!');
+        setOppSuccess('Oportunidade registrada com sucesso como Respondida no CRM! Notificação de e-mail disparada ao responsável.');
         setTimeout(() => {
           if (contact) {
             fetchCrmData(contact.phone, contact.id);
@@ -192,7 +219,7 @@ export default function CrmContactModal({
           setShowOpportunityModal(false);
           setOppProduct('');
           setOppValue('');
-          setOppStatus('Enviar Cotação');
+          setOppStatus('Respondida');
           setOppDate('');
           setOppNotes('');
           setOppSuccess(null);
@@ -295,7 +322,9 @@ export default function CrmContactModal({
       .then((data) => {
         setCrmData(data);
         populateFormFromCrmData(data, contact);
-        if (data && data.found === true) {
+        if (contact?.initialTab) {
+          setActiveTab(contact.initialTab);
+        } else if (data && data.found === true) {
           setActiveTab('details');
         } else {
           setActiveTab('create');
@@ -307,7 +336,9 @@ export default function CrmContactModal({
           .then((data) => {
             setCrmData(data);
             populateFormFromCrmData(data, contact);
-            if (data && data.found === true) {
+            if (contact?.initialTab) {
+              setActiveTab(contact.initialTab);
+            } else if (data && data.found === true) {
               setActiveTab('details');
             } else {
               setActiveTab('create');
@@ -315,7 +346,11 @@ export default function CrmContactModal({
           })
           .catch(() => {
             setError(err?.message || 'Contato não localizado no CRM');
-            setActiveTab('create');
+            if (contact?.initialTab) {
+              setActiveTab(contact.initialTab);
+            } else {
+              setActiveTab('create');
+            }
           });
       })
       .finally(() => setLoading(false));
@@ -438,6 +473,16 @@ export default function CrmContactModal({
     });
   }, [pipeline?.deals]);
 
+  const totalDealsValue = useMemo(() => {
+    let total = 0;
+    for (const d of dealsToDisplay) {
+      if (typeof d.value === 'number' && !isNaN(d.value)) {
+        total += d.value;
+      }
+    }
+    return total > 0 ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total) : null;
+  }, [dealsToDisplay]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
       <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-monte-sereno/20">
@@ -466,11 +511,11 @@ export default function CrmContactModal({
         </div>
 
         {/* Tab Navigation */}
-        <div className="px-6 pt-3 bg-monte-areiaSecao/40 border-b border-monte-sereno/15 flex items-center gap-2">
+        <div className="px-6 pt-3 bg-monte-areiaSecao/40 border-b border-monte-sereno/15 flex items-center gap-2 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('details')}
-            className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
               activeTab === 'details'
                 ? 'border-monte-verde text-monte-verde bg-white shadow-2xs'
                 : 'border-transparent text-monte-sereno hover:text-monte-azul'
@@ -487,8 +532,26 @@ export default function CrmContactModal({
 
           <button
             type="button"
+            onClick={() => setActiveTab('opportunities')}
+            className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+              activeTab === 'opportunities'
+                ? 'border-amber-500 text-amber-800 bg-white shadow-2xs'
+                : 'border-transparent text-monte-sereno hover:text-monte-azul'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4 text-amber-600" />
+            <span>Oportunidades & Funil</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              dealsToDisplay.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {dealsToDisplay.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('create')}
-            className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            className={`px-4 py-2 text-xs font-bold rounded-t-xl border-b-2 transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
               activeTab === 'create'
                 ? 'border-monte-verde text-monte-verde bg-white shadow-2xs'
                 : 'border-transparent text-monte-sereno hover:text-monte-azul'
@@ -727,24 +790,52 @@ export default function CrmContactModal({
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {dealsToDisplay.map((d: any, idx: number) => (
-                        <div
-                          key={d.id || `${d.product}-${idx}`}
-                          className="p-3 bg-monte-areiaSecao/50 rounded-xl border border-monte-sereno/10 text-xs flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="font-bold text-monte-azul text-sm">
-                              {d.product || d.produto || d.title || 'Oportunidade'}
-                            </p>
-                            <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-monte-azul/10 text-monte-azul text-[11px]">
-                              {d.status || d.etapa || d.stage || 'Em andamento'}
-                            </span>
+                      {dealsToDisplay.map((d: any, idx: number) => {
+                        const isResponded = (d.status || d.etapa || '').toLowerCase().includes('respond') || d.responded;
+                        return (
+                          <div
+                            key={d.id || `${d.product}-${idx}`}
+                            className="p-3.5 bg-monte-areiaSecao/50 rounded-2xl border border-monte-sereno/15 text-xs space-y-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-monte-azul text-sm flex items-center gap-1.5">
+                                  <Briefcase className="w-4 h-4 text-monte-verde" />
+                                  {d.product || d.produto || d.title || 'Oportunidade'}
+                                </span>
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                                  isResponded
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : 'bg-monte-azul/10 text-monte-azul'
+                                }`}>
+                                  {isResponded && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                                  {d.status || d.etapa || d.stage || 'Respondida'}
+                                </span>
+                              </div>
+                              <div className="text-right font-bold text-monte-verde text-sm">
+                                {d.valueFormatted || (d.value ? `R$ ${d.value}` : '-')}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between text-[11px] text-monte-sereno pt-1.5 border-t border-monte-sereno/10 gap-2">
+                              <span className="flex items-center gap-1 text-slate-700">
+                                <UserCheck className="w-3.5 h-3.5 text-monte-verde" />
+                                Responsável: <strong className="text-monte-azul">{d.assignedToName || d.responsavel || d.assignedTo?.name || 'Não atribuído'}</strong>
+                                {d.assignedToEmail && <span className="text-slate-400 font-mono text-[10px]">({d.assignedToEmail})</span>}
+                              </span>
+                              {(d.dealDate || d.date) && (
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="w-3.5 h-3.5 text-monte-sereno" /> Retorno: <strong className="text-monte-azul">{d.dealDate || d.date}</strong>
+                                </span>
+                              )}
+                            </div>
+                            {d.notes && (
+                              <p className="text-[11px] text-slate-600 italic bg-white/70 p-2 rounded-lg border border-monte-sereno/10">
+                                {d.notes}
+                              </p>
+                            )}
                           </div>
-                          <div className="text-right font-bold text-monte-verde text-sm">
-                            {d.valueFormatted || (d.value ? `R$ ${d.value}` : '-')}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -779,6 +870,174 @@ export default function CrmContactModal({
                 </div>
               </div>
             )
+          ) : activeTab === 'opportunities' ? (
+            /* Tab: Visão Completa de Oportunidades & Funil de Vendas */
+            <div className="space-y-6">
+              {/* Header de Resumo com Métricas e Botão de Ação */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-emerald-50 to-monte-areiaSecao/50 border border-amber-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-700 flex items-center justify-center font-bold">
+                    <TrendingUp className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-monte-azul text-base">
+                      Oportunidades & Funil de Vendas
+                    </h4>
+                    <p className="text-xs text-monte-sereno">
+                      Negociações registradas para o contato <strong className="text-monte-azul">{formName || contact.name || contact.phone}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOppProduct(formProduct || 'Auto');
+                    setOppValue('');
+                    setOppStatus('Respondida');
+                    setOppAssignedToName(crmContact?.assignedTo?.name || formAssignedToName || (crmUsers[0]?.name || ''));
+                    setOppAssignedToEmail(crmUsers.find(u => u.name === (crmContact?.assignedTo?.name || formAssignedToName))?.email || crmUsers[0]?.email || '');
+                    setOppDate('');
+                    setOppNotes('');
+                    setOppError(null);
+                    setOppSuccess(null);
+                    setShowOpportunityModal(true);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-monte-verde to-emerald-700 text-white font-bold text-xs shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                >
+                  <PlusCircle className="w-4 h-4" /> Nova Oportunidade
+                </button>
+              </div>
+
+              {/* Cards de Métricas */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl bg-white border border-monte-sereno/15 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-monte-sereno block mb-1">Oportunidades no CRM</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xl font-black text-monte-azul">{dealsToDisplay.length}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">No Funil</span>
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-white border border-monte-sereno/15 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-monte-sereno block mb-1">Valor Total Negociado</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-lg font-black text-monte-verde">{totalDealsValue || 'R$ 0,00'}</span>
+                    <DollarSign className="w-4 h-4 text-monte-verde" />
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-white border border-monte-sereno/15 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-monte-sereno block mb-1">Responsável no CRM</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-monte-azul truncate">
+                      {crmContact?.assignedTo?.name || formAssignedToName || 'Não atribuído'}
+                    </span>
+                    <UserCheck className="w-4 h-4 text-monte-verde shrink-0" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de Oportunidades */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-monte-sereno/15 pb-2">
+                  <h5 className="font-bold text-xs uppercase tracking-wider text-monte-azul flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-monte-verde" /> Oportunidades do Contato ({dealsToDisplay.length})
+                  </h5>
+                </div>
+
+                {dealsToDisplay.length === 0 ? (
+                  <div className="p-8 bg-monte-areiaSecao/30 rounded-3xl border border-dashed border-monte-sereno/25 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+                      <TrendingUp className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-bold text-monte-azul">Nenhuma oportunidade ativa no funil</h5>
+                      <p className="text-xs text-monte-sereno max-w-sm mx-auto mt-1">
+                        Cadastre uma nova oportunidade informando o produto, valor estimado, responsável e agendamento.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOppProduct(formProduct || 'Auto');
+                        setOppValue('');
+                        setOppStatus('Respondida');
+                        setOppAssignedToName(crmContact?.assignedTo?.name || formAssignedToName || (crmUsers[0]?.name || ''));
+                        setOppAssignedToEmail(crmUsers.find(u => u.name === (crmContact?.assignedTo?.name || formAssignedToName))?.email || crmUsers[0]?.email || '');
+                        setOppDate('');
+                        setOppNotes('');
+                        setOppError(null);
+                        setOppSuccess(null);
+                        setShowOpportunityModal(true);
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-monte-verde text-white font-bold text-xs hover:bg-emerald-700 shadow-sm transition-all cursor-pointer"
+                    >
+                      <PlusCircle className="w-4 h-4" /> Criar Primeira Oportunidade
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3">
+                    {dealsToDisplay.map((d: any, idx: number) => {
+                      const isResponded = (d.status || d.etapa || '').toLowerCase().includes('respond') || d.responded;
+                      return (
+                        <div
+                          key={d.id || `${d.product}-${idx}`}
+                          className="p-4 bg-white rounded-2xl border border-monte-sereno/15 hover:border-monte-verde/40 shadow-xs transition-all space-y-3"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-monte-verde/10 text-monte-verde flex items-center justify-center font-bold">
+                                <Briefcase className="w-4.5 h-4.5" />
+                              </div>
+                              <div>
+                                <h6 className="font-bold text-sm text-monte-azul leading-snug">
+                                  {d.product || d.produto || d.title || 'Oportunidade'}
+                                </h6>
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold mt-0.5 ${
+                                  isResponded
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : 'bg-blue-100 text-blue-800'
+                                }`}>
+                                  {isResponded && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                                  {d.status || d.etapa || d.stage || 'Respondida'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-left sm:text-right">
+                              <span className="text-[10px] text-monte-sereno block">Valor Estimado:</span>
+                              <span className="font-extrabold text-base text-monte-verde">
+                                {d.valueFormatted || (d.value ? `R$ ${d.value}` : '-')}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-monte-sereno/10 text-xs text-monte-sereno">
+                            <div className="flex items-center gap-1.5">
+                              <UserCheck className="w-3.5 h-3.5 text-monte-verde shrink-0" />
+                              <span>
+                                Responsável: <strong className="text-monte-azul">{d.assignedToName || d.responsavel || d.assignedTo?.name || 'Não atribuído'}</strong>
+                                {d.assignedToEmail && <span className="text-slate-400 font-mono text-[10px] ml-1">({d.assignedToEmail})</span>}
+                              </span>
+                            </div>
+                            {(d.dealDate || d.date) && (
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-monte-sereno shrink-0" />
+                                <span>Retorno: <strong className="text-monte-azul">{d.dealDate || d.date}</strong></span>
+                              </div>
+                            )}
+                          </div>
+
+                          {d.notes && (
+                            <div className="p-2.5 rounded-xl bg-monte-areiaSecao/40 border border-monte-sereno/10 text-xs text-slate-700 italic">
+                              {d.notes}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
             /* Tab: Formulário Completo para Adicionar Contato no CRM */
             <div className="space-y-6">
@@ -887,21 +1146,9 @@ export default function CrmContactModal({
                       <label className="block text-monte-sereno font-semibold mb-1">Data de Aniversário / Nascimento</label>
                       <input
                         type="date"
-                        className="input-rect text-xs w-full cursor-pointer select-none"
+                        className="input-rect text-xs w-full cursor-pointer"
                         value={formAnniversaryDate}
                         onChange={(e) => setFormAnniversaryDate(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Backspace' || e.key === 'Delete') {
-                            setFormAnniversaryDate('');
-                          } else if (e.key !== 'Tab' && e.key !== 'Escape') {
-                            e.preventDefault();
-                          }
-                        }}
-                        onClick={(e) => {
-                          try {
-                            (e.currentTarget as any).showPicker?.();
-                          } catch {}
-                        }}
                       />
                     </div>
 
@@ -919,14 +1166,48 @@ export default function CrmContactModal({
                     </div>
 
                     <div>
-                      <label className="block text-monte-sereno font-semibold mb-1">Consultor Responsável</label>
-                      <input
-                        type="text"
-                        className="input-rect text-xs w-full"
-                        placeholder="Ex: Carlos Monteiro"
-                        value={formAssignedToName}
-                        onChange={(e) => setFormAssignedToName(e.target.value)}
-                      />
+                      <label className="block text-monte-sereno font-semibold mb-1 flex items-center justify-between">
+                        <span>Consultor Responsável</span>
+                        {crmUsers.length > 0 && (
+                          <span className="text-[10px] text-monte-sereno font-normal">
+                            {crmUsers.length} do CRM
+                          </span>
+                        )}
+                      </label>
+                      {crmUsers.length > 0 ? (
+                        <>
+                          <select
+                            className="input-rect text-xs w-full mb-1.5"
+                            value={formAssignedToName}
+                            onChange={(e) => setFormAssignedToName(e.target.value)}
+                          >
+                            <option value="">Selecione o Consultor / Responsável...</option>
+                            {crmUsers.map((u) => (
+                              <option key={u.id || u.name} value={u.name}>
+                                {u.name} {u.email ? `(${u.email})` : ''} {u.role ? `• ${u.role}` : ''}
+                              </option>
+                            ))}
+                            <option value="__custom__">Outro (digitar manualmente)...</option>
+                          </select>
+                          {(formAssignedToName === '__custom__' || (!crmUsers.some(u => u.name === formAssignedToName) && formAssignedToName !== '')) && (
+                            <input
+                              type="text"
+                              className="input-rect text-xs w-full"
+                              placeholder="Digite o nome do consultor..."
+                              value={formAssignedToName === '__custom__' ? '' : formAssignedToName}
+                              onChange={(e) => setFormAssignedToName(e.target.value)}
+                            />
+                          )}
+                        </>
+                      ) : (
+                        <input
+                          type="text"
+                          className="input-rect text-xs w-full"
+                          placeholder="Ex: Carlos Monteiro"
+                          value={formAssignedToName}
+                          onChange={(e) => setFormAssignedToName(e.target.value)}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1117,21 +1398,9 @@ export default function CrmContactModal({
                       <label className="block text-monte-sereno font-semibold mb-1">Data de Vencimento / Renovação</label>
                       <input
                         type="date"
-                        className="input-rect text-xs w-full cursor-pointer select-none"
+                        className="input-rect text-xs w-full cursor-pointer"
                         value={formExpirationDate}
                         onChange={(e) => setFormExpirationDate(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Backspace' || e.key === 'Delete') {
-                            setFormExpirationDate('');
-                          } else if (e.key !== 'Tab' && e.key !== 'Escape') {
-                            e.preventDefault();
-                          }
-                        }}
-                        onClick={(e) => {
-                          try {
-                            (e.currentTarget as any).showPicker?.();
-                          } catch {}
-                        }}
                       />
                     </div>
                   </div>
@@ -1371,28 +1640,63 @@ export default function CrmContactModal({
                 </div>
               </div>
 
+              {/* Responsável (Funcionário do CRM) */}
+              <div>
+                <label className="block text-xs font-bold text-monte-azul mb-1 flex items-center justify-between">
+                  <span>Responsável (Funcionário do CRM)</span>
+                  <span className="text-[10px] text-monte-sereno font-normal">
+                    {loadingCrmUsers ? 'Carregando equipe...' : `${crmUsers.length} disponíveis`}
+                  </span>
+                </label>
+                <select
+                  className="input-rect text-xs w-full mb-1.5"
+                  value={oppAssignedToName}
+                  onChange={(e) => {
+                    const selectedName = e.target.value;
+                    setOppAssignedToName(selectedName);
+                    const foundUser = crmUsers.find(u => u.name === selectedName);
+                    if (foundUser) {
+                      setOppAssignedToEmail(foundUser.email || '');
+                      setOppAssignedToId(foundUser.id || '');
+                    } else {
+                      setOppAssignedToEmail('');
+                      setOppAssignedToId('');
+                    }
+                  }}
+                >
+                  <option value="">Selecione o Responsável...</option>
+                  {crmUsers.map((u) => (
+                    <option key={u.id || u.name} value={u.name}>
+                      {u.name} {u.email ? `(${u.email})` : ''} {u.role ? `• ${u.role}` : ''}
+                    </option>
+                  ))}
+                  <option value="__custom__">Outro (digitar manualmente)...</option>
+                </select>
+                {(oppAssignedToName === '__custom__' || (!crmUsers.some(u => u.name === oppAssignedToName) && oppAssignedToName !== '')) && (
+                  <input
+                    type="text"
+                    className="input-rect text-xs w-full"
+                    placeholder="Digite o nome do responsável..."
+                    value={oppAssignedToName === '__custom__' ? '' : oppAssignedToName}
+                    onChange={(e) => setOppAssignedToName(e.target.value)}
+                  />
+                )}
+                <p className="text-[11px] text-emerald-700 mt-1 flex items-center gap-1 font-medium">
+                  <Mail className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  O CRM disparará um e-mail de notificação para o responsável com os dados da oportunidade.
+                </p>
+              </div>
+
               {/* Data de Agendamento / Retorno */}
               <div>
                 <label className="block text-xs font-bold text-monte-azul mb-1">
-                  Data de Agendamento / Retorno (Opcional)
+                  Data de Agendamento / Retorno (Opcional - digite ou escolha no calendário)
                 </label>
                 <input
                   type="date"
-                  className="input-rect text-xs w-full cursor-pointer select-none"
+                  className="input-rect text-xs w-full cursor-pointer"
                   value={oppDate}
                   onChange={(e) => setOppDate(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Backspace' || e.key === 'Delete') {
-                      setOppDate('');
-                    } else if (e.key !== 'Tab' && e.key !== 'Escape') {
-                      e.preventDefault();
-                    }
-                  }}
-                  onClick={(e) => {
-                    try {
-                      (e.currentTarget as any).showPicker?.();
-                    } catch {}
-                  }}
                 />
               </div>
 

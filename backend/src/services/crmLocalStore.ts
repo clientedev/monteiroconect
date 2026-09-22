@@ -12,7 +12,12 @@ export interface LocalCrmDeal {
   status?: string;
   etapa?: string;
   date?: string;
+  dealDate?: string;
   notes?: string;
+  assignedToName?: string;
+  assignedToEmail?: string;
+  assignedToId?: string;
+  responded?: boolean;
   createdAt: string;
 }
 

@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { prisma } from '../database/client.js';
 import {
   getLocalCrmContact,
   saveLocalCrmContact,
@@ -36,11 +37,36 @@ export interface CrmInsuranceInfo {
 }
 
 export interface CrmDealItem {
+  id?: string;
   product?: string;
+  produto?: string;
+  title?: string;
   valueFormatted?: string;
   value?: number;
   status?: string;
+  etapa?: string;
+  date?: string;
+  dealDate?: string;
+  notes?: string;
+  observacoes?: string;
+  assignedToName?: string;
+  assignedToEmail?: string;
+  assignedToId?: string;
+  assignedTo?: {
+    id?: string;
+    name?: string;
+    email?: string;
+  };
+  responded?: boolean;
+  createdAt?: string;
   [key: string]: any;
+}
+
+export interface CrmUserItem {
+  id: string;
+  name: string;
+  email?: string;
+  role?: string;
 }
 
 export interface CrmPipelineInfo {
@@ -189,12 +215,26 @@ export function normalizePhoneForCrm(phone: string): string {
  */
 function buildResponseFromLocal(cleanPhone: string, local: LocalCrmContactRecord): CrmLookupResponse {
   const deals = (local.deals || []).map(d => ({
+    id: d.id,
     product: d.product,
+    produto: d.produto || d.product,
     title: d.title || d.product,
     value: d.value,
     valueFormatted: d.valueFormatted || (d.value ? formatCurrency(d.value) : undefined),
-    status: d.status,
+    status: d.status || 'Respondida',
+    etapa: d.etapa || d.status || 'Respondida',
+    date: d.date || d.dealDate,
+    dealDate: d.dealDate || d.date,
     notes: d.notes,
+    assignedToName: d.assignedToName,
+    assignedToEmail: d.assignedToEmail,
+    assignedToId: d.assignedToId,
+    assignedTo: d.assignedToName ? {
+      name: d.assignedToName,
+      email: d.assignedToEmail,
+      id: d.assignedToId,
+    } : undefined,
+    responded: d.responded ?? true,
     createdAt: d.createdAt,
   }));
 
@@ -324,26 +364,65 @@ export async function lookupContactInCrm(rawPhone: string): Promise<CrmLookupRes
           }] : [];
 
       // Mescla oportunidades do funil e valores
-      const crmDeals = Array.isArray(data.pipeline?.deals) ? data.pipeline.deals : [];
+      const crmDeals = Array.isArray(data.pipeline?.deals)
+        ? data.pipeline.deals
+        : Array.isArray(data.deals)
+        ? data.deals
+        : Array.isArray(data.opportunities)
+        ? data.opportunities
+        : [];
+
       let mergedDeals = crmDeals.map((d: any) => {
-        const numVal = parseCurrency(d.value || d.valor);
+        const numVal = parseCurrency(d.value || d.valor || d.dealValue);
         const valFmt = d.valueFormatted || formatCurrency(numVal);
+        const assignedName = d.assignedToName || d.responsavel || d.consultor || d.assignedTo?.name;
+        const assignedEmail = d.assignedToEmail || d.responsavelEmail || d.assignedTo?.email;
+        const assignedId = d.assignedToId || d.assignedTo?.id;
+        const assigned = assignedName ? {
+          name: assignedName,
+          email: assignedEmail,
+          id: assignedId,
+        } : undefined;
+
         return {
           ...d,
+          product: d.product || d.produto || d.title || 'Oportunidade',
           value: numVal ?? d.value,
           valueFormatted: valFmt || d.valueFormatted,
+          status: d.status || d.etapa || d.stage || 'Respondida',
+          etapa: d.etapa || d.status || d.stage || 'Respondida',
+          assignedTo: assigned,
+          assignedToName: assignedName,
+          assignedToEmail: assignedEmail,
+          assignedToId: assignedId,
+          dealDate: d.dealDate || d.date || d.dataRetorno,
+          notes: d.notes || d.observacoes,
+          responded: d.responded ?? true,
         };
       });
 
       // Se o CRM não retornou negócios no funil, usa os negócios salvos localmente
       if (mergedDeals.length === 0 && local?.deals && local.deals.length > 0) {
         mergedDeals = local.deals.map(d => ({
+          id: d.id,
           product: d.product,
+          produto: d.produto || d.product,
           title: d.title || d.product,
           value: d.value,
           valueFormatted: d.valueFormatted || (d.value ? formatCurrency(d.value) : undefined),
-          status: d.status,
+          status: d.status || 'Respondida',
+          etapa: d.etapa || d.status || 'Respondida',
           notes: d.notes,
+          assignedToName: d.assignedToName,
+          assignedToEmail: d.assignedToEmail,
+          assignedToId: d.assignedToId,
+          assignedTo: d.assignedToName ? {
+            name: d.assignedToName,
+            email: d.assignedToEmail,
+            id: d.assignedToId,
+          } : undefined,
+          dealDate: d.dealDate || d.date,
+          responded: d.responded ?? true,
           createdAt: d.createdAt,
         }));
       }
@@ -717,6 +796,10 @@ export interface CreateOpportunityInput {
   dealStatus?: string;
   dealDate?: string;
   notes?: string;
+  assignedToName?: string;
+  assignedToEmail?: string;
+  assignedToId?: string;
+  responded?: boolean;
 }
 
 /**
@@ -735,6 +818,9 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
   const numDeal = parseCurrency(input.dealValue);
   const strDealFormatted = formatCurrency(numDeal) || (input.dealValue ? String(input.dealValue) : undefined);
 
+  // Status/Etapa da oportunidade: se não especificada, assume 'Respondida'
+  const statusVal = (input.dealStatus || 'Respondida').trim();
+
   // Consulta se o contato já existe para preservar dados cadastrais
   const existing = await lookupContactInCrm(cleanPhone).catch(() => ({ found: false } as CrmLookupResponse));
   const contactName = input.name || existing.contact?.name || 'Lead WhatsApp';
@@ -747,9 +833,14 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
       title: input.dealProduct,
       value: numDeal,
       valueFormatted: strDealFormatted,
-      status: input.dealStatus || 'Enviar Cotação',
-      etapa: input.dealStatus || 'Enviar Cotação',
+      status: statusVal,
+      etapa: statusVal,
       notes: (input.notes || '') + (input.dealDate ? ` [Data Retorno: ${input.dealDate}]` : ''),
+      dealDate: input.dealDate || undefined,
+      assignedToName: input.assignedToName || undefined,
+      assignedToEmail: input.assignedToEmail || undefined,
+      assignedToId: input.assignedToId || undefined,
+      responded: input.responded ?? true,
       createdAt: new Date().toISOString(),
     });
     if (contactName && (!existing.contact?.name || existing.contact.name === 'Lead WhatsApp')) {
@@ -759,13 +850,14 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
     logger.error('Erro ao salvar oportunidade no armazenamento local Whats:', err?.message);
   }
 
-  // 2. ENVIA PARA A API DO CRM EXTERNO
-  const crmUrl = `${env.crmBaseUrl}/api/v1/external/contacts`;
+  // 2. PREPARA DADOS E ENVIA PARA A API DO CRM EXTERNO
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
 
+  const cleanWithCountry = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
   try {
-    logger.info(`Criando Oportunidade no LEADS & Pipeline do CRM: phone=${cleanPhone}, produto=${input.dealProduct}, valor=${numDeal}`);
+    logger.info(`Criando Oportunidade no CRM: phone=${cleanPhone}, produto=${input.dealProduct}, valor=${numDeal}, status=${statusVal}, responsavel=${input.assignedToName || 'Não informado'}`);
 
     const opportunityData = {
       product: input.dealProduct,
@@ -778,9 +870,28 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
       valor: numDeal ?? input.dealValue ?? undefined,
       dealValue: numDeal ?? input.dealValue ?? undefined,
       valueFormatted: strDealFormatted,
-      status: input.dealStatus || 'Enviar Cotação',
-      etapa: input.dealStatus || 'Enviar Cotação',
-      stage: input.dealStatus || 'Enviar Cotação',
+      status: statusVal,
+      etapa: statusVal,
+      stage: statusVal,
+      responded: true,
+      respondida: true,
+      date: input.dealDate || undefined,
+      dealDate: input.dealDate || undefined,
+      dataRetorno: input.dealDate || undefined,
+      assignedTo: input.assignedToName ? {
+        id: input.assignedToId || undefined,
+        name: input.assignedToName,
+        email: input.assignedToEmail || undefined,
+      } : undefined,
+      assignedToName: input.assignedToName || undefined,
+      assignedToEmail: input.assignedToEmail || undefined,
+      assignedToId: input.assignedToId || undefined,
+      responsavel: input.assignedToName || undefined,
+      responsavelEmail: input.assignedToEmail || undefined,
+      consultor: input.assignedToName || undefined,
+      notifyResponsible: true,
+      dispararEmail: true,
+      notificarPorEmail: true,
       notes: (input.notes || '') + (input.dealDate ? ` [Data Retorno: ${input.dealDate}]` : '') || undefined,
       observacoes: (input.notes || '') + (input.dealDate ? ` [Data Retorno: ${input.dealDate}]` : '') || undefined,
     };
@@ -792,17 +903,33 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
       phone: cleanPhone,
       telefone: cleanPhone,
       whatsapp: cleanPhone,
+      phoneWithCountry: cleanWithCountry,
       type: existing.contact?.type || 'PF',
       tipo: existing.contact?.type || 'PF',
       email: existing.contact?.email || undefined,
       document: existing.contact?.document || undefined,
 
+      // Responsável
+      assignedTo: opportunityData.assignedTo,
+      assignedToName: input.assignedToName || undefined,
+      assignedToEmail: input.assignedToEmail || undefined,
+      assignedToId: input.assignedToId || undefined,
+      responsavel: input.assignedToName || undefined,
+      responsavelEmail: input.assignedToEmail || undefined,
+      consultor: input.assignedToName || undefined,
+      notifyResponsible: true,
+      dispararEmail: true,
+      notificarPorEmail: true,
+
       // Valores no root para compatibilidade máxima com qualquer leitor do CRM
       dealProduct: input.dealProduct,
       dealValue: numDeal ?? input.dealValue ?? undefined,
       dealValueFormatted: strDealFormatted,
+      dealStatus: statusVal,
       value: numDeal ?? input.dealValue ?? undefined,
       valor: numDeal ?? input.dealValue ?? undefined,
+      responded: true,
+      respondida: true,
 
       // Pipeline e sinônimos para compatibilidade total com LEADS & Pipeline do CRM
       pipeline: opportunityData,
@@ -817,7 +944,9 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
       observacoes: input.notes || undefined,
     };
 
-    const res = await fetch(crmUrl, {
+    // Rota 1: POST {CRM_BASE_URL}/api/v1/external/contacts
+    const crmContactsUrl = `${env.crmBaseUrl}/api/v1/external/contacts`;
+    let res = await fetch(crmContactsUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -827,6 +956,34 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
+
+    // Se a rota contacts responder com status de não suportado ou erro de validação/duplicidade, tenta rota dedicada de deals
+    if (!res.ok && (res.status === 404 || res.status === 405 || res.status === 409 || res.status === 422)) {
+      const crmDealsUrl = `${env.crmBaseUrl}/api/v1/external/deals`;
+      logger.info(`Tentando fallback para rota dedicada de deals no CRM: ${crmDealsUrl}`);
+      try {
+        const resDeals = await fetch(crmDealsUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-API-Key': env.crmApiKey,
+          },
+          body: JSON.stringify({
+            phone: cleanPhone,
+            whatsapp: cleanPhone,
+            ...opportunityData,
+          }),
+          signal: controller.signal,
+        });
+        if (resDeals.ok) {
+          const dataDeals = await resDeals.json().catch(() => ({}));
+          return { ok: true, data: dataDeals };
+        }
+      } catch {
+        // segue para reportar erro original da rota principal
+      }
+    }
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -847,7 +1004,6 @@ export async function createOpportunityInCrm(input: CreateOpportunityInput): Pro
   }
 }
 
-
 /**
  * Consulta a API do CRM para múltiplos telefones em lote.
  */
@@ -867,5 +1023,90 @@ export async function batchLookupContactsInCrm(phones: string[]): Promise<Record
   }
 
   return results;
+}
+
+/**
+ * Consulta lista de funcionários/consultores do CRM para atribuição como responsáveis.
+ * Tenta endpoints do CRM externo e complementa com atendentes ativos do WhatsApp Central como fallback.
+ */
+export async function getCrmUsers(): Promise<CrmUserItem[]> {
+  const usersMap = new Map<string, CrmUserItem>();
+
+  // 1. Tenta consultar a API do CRM externo
+  const endpoints = [
+    `${env.crmBaseUrl}/api/v1/external/users`,
+    `${env.crmBaseUrl}/api/v1/external/employees`,
+    `${env.crmBaseUrl}/api/v1/users`,
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4_000);
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'X-API-Key': env.crmApiKey,
+        },
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout));
+
+      if (res.ok) {
+        const json = await res.json() as any;
+        const list = Array.isArray(json)
+          ? json
+          : Array.isArray(json?.users)
+          ? json.users
+          : Array.isArray(json?.data)
+          ? json.data
+          : Array.isArray(json?.employees)
+          ? json.employees
+          : [];
+
+        if (list.length > 0) {
+          for (const u of list) {
+            const name = (u.name || u.nome || u.username || u.fullName || '').trim();
+            const id = String(u.id || u._id || name || Math.random());
+            const email = (u.email || u.mail || '').trim() || undefined;
+            const role = (u.role || u.funcao || u.cargo || '').trim() || undefined;
+            if (name) {
+              usersMap.set(name.toLowerCase(), { id, name, email, role });
+            }
+          }
+          if (usersMap.size > 0) {
+            logger.info(`Carregados ${usersMap.size} funcionários do CRM via ${url}`);
+            break;
+          }
+        }
+      }
+    } catch {
+      // continua para o próximo ou fallback
+    }
+  }
+
+  // 2. Fallback / Mescla com atendentes do sistema local
+  try {
+    const localUsers = await prisma.user.findMany({
+      where: { isActive: true },
+      select: { id: true, username: true, email: true, role: true },
+    });
+    for (const u of localUsers) {
+      const name = u.username.trim();
+      const key = name.toLowerCase();
+      if (!usersMap.has(key)) {
+        usersMap.set(key, {
+          id: u.id,
+          name,
+          email: u.email || undefined,
+          role: u.role || 'attendant',
+        });
+      }
+    }
+  } catch (err: any) {
+    logger.warn('Falha ao obter atendentes locais para lista de responsáveis:', err?.message);
+  }
+
+  return Array.from(usersMap.values());
 }
 

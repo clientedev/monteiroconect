@@ -196,8 +196,14 @@ export const contactApi = {
     dealStatus?: string;
     dealDate?: string;
     notes?: string;
+    assignedToName?: string;
+    assignedToEmail?: string;
+    assignedToId?: string;
+    responded?: boolean;
   }) =>
     api.post<{ ok: boolean; data?: any; error?: string }>('/contacts/crm-deal', data),
+  crmListUsers: () =>
+    api.get<Array<{ id: string; name: string; email?: string; role?: string }>>('/contacts/crm-users'),
 };
 
 
