@@ -130,16 +130,27 @@ router.get('/media/download', async (req, res, next) => {
   }
 });
 
+const recipientItemSchema = z.union([
+  z.string().min(1),
+  z.object({
+    phone: z.string().min(1),
+    name: z.string().optional(),
+    content: z.string().optional(),
+    variables: z.record(z.string()).optional(),
+  }),
+]);
+
 const broadcastSchema = z.object({
-  accountId: z.string().min(1),
-  recipients: z.array(z.string().min(1)).min(1).max(500),
+  accountId: z.string().optional(),
+  recipients: z.array(recipientItemSchema).min(1).max(500),
   content: z.string().optional().default(''),
+  messageTemplate: z.string().optional(),
   type: z.string().optional().default('text'),
   mediaUrl: z.string().optional(),
   mediaMimeType: z.string().max(200).optional(),
   mediaFileName: z.string().max(255).optional(),
-}).refine(v => v.content.length > 0 || !!v.mediaUrl, {
-  message: 'content ou mediaUrl é obrigatório',
+}).refine(v => (v.content && v.content.length > 0) || (v.messageTemplate && v.messageTemplate.length > 0) || !!v.mediaUrl, {
+  message: 'content, messageTemplate ou mediaUrl é obrigatório',
 });
 
 router.post('/broadcast', async (req: AuthRequest, res, next) => {

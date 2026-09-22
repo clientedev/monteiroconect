@@ -132,9 +132,10 @@ export async function sendWhatsAppMessage(
 
 export async function broadcastWhatsAppMessages(
   data: {
-    accountId: string;
-    recipients: string[];
-    content: string;
+    accountId?: string;
+    recipients: Array<string | { phone: string; name?: string; content?: string; variables?: Record<string, string> }>;
+    content?: string;
+    messageTemplate?: string;
     type?: string;
     mediaUrl?: string;
     mediaMimeType?: string;
@@ -142,16 +143,55 @@ export async function broadcastWhatsAppMessages(
   },
   user: SessionUser,
 ) {
-  await assertAccountAccess(user, data.accountId);
+  let targetAccountId = data.accountId;
 
+  if (!targetAccountId) {
+    const live = sessionManager.getAllSessions().find(s => s.status === 'CONNECTED');
+    if (live) {
+      targetAccountId = live.id;
+    } else {
+      const dbAccount = await prisma.whatsAppAccount.findFirst({
+        where: { status: 'CONNECTED' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (dbAccount) {
+        targetAccountId = dbAccount.id;
+      }
+    }
+  }
+
+  if (!targetAccountId) {
+    const anyAccount = await prisma.whatsAppAccount.findFirst({
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!anyAccount) {
+      throw new AppError('Nenhum canal de WhatsApp conectado no Monteiro Conecta.', 400);
+    }
+    targetAccountId = anyAccount.id;
+  }
+
+  await assertAccountAccess(user, targetAccountId);
+
+  const baseText = data.content || data.messageTemplate || '';
   const results: Array<{ to: string; ok: boolean; error?: string }> = [];
+
   for (let index = 0; index < data.recipients.length; index++) {
-    const to = data.recipients[index];
+    const item = data.recipients[index];
+    const to = typeof item === 'string' ? item : item.phone;
+    let messageText = (typeof item === 'object' && item.content) ? item.content : baseText;
+
+    if (typeof item === 'object' && item.variables && messageText) {
+      for (const [key, val] of Object.entries(item.variables)) {
+        const regex = new RegExp('\\{' + key + '\\}', 'gi');
+        messageText = messageText.replace(regex, String(val || ''));
+      }
+    }
+
     try {
       await sessionManager.sendMessage(
-        data.accountId,
+        targetAccountId,
         to,
-        data.content,
+        messageText,
         data.type || 'text',
         data.mediaUrl,
         data.mediaMimeType,
@@ -163,9 +203,9 @@ export async function broadcastWhatsAppMessages(
       results.push({ to, ok: false, error: err?.message || 'Falha ao enviar' });
     }
 
-    // Espaça os envios para reduzir bloqueios por rajada no WhatsApp.
+    // Espaça os envios para reduzir bloqueios por rajada no WhatsApp
     if (index < data.recipients.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
   }
 
