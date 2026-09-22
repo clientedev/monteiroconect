@@ -15,6 +15,15 @@ export interface AuthRequest extends Request {
 
 export function authMiddleware(req: AuthRequest, _res: Response, next: NextFunction): void {
   try {
+    const apiKey = req.headers['x-api-key'] || req.headers['X-API-Key'];
+    if (apiKey && apiKey === env.crmApiKey) {
+      req.user = {
+        id: 'crm_system',
+        username: 'CRM Monteiro',
+        role: 'admin',
+      };
+      return next();
+    }
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) {
       throw new AppError('Token não fornecido', 401);
