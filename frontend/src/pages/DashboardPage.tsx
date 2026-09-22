@@ -241,6 +241,35 @@ export default function DashboardPage() {
     }
   }, [moodStorageKey]);
 
+  // Monitora virada do dia para resetar automaticamente os sentimentos a cada novo dia
+  useEffect(() => {
+    const checkDay = () => {
+      const now = new Date();
+      const freshKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (freshKey !== todayKey) {
+        setSelectedMood(null);
+        dashboardApi.getMoods().then((res: any) => {
+          if (Array.isArray(res.data)) {
+            setTeamMoods(res.data);
+          }
+        }).catch(() => {});
+      }
+    };
+
+    const interval = setInterval(checkDay, 30000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkDay();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [todayKey]);
+
   // Sincroniza sentimentos da equipe via API e Socket em tempo real
   useEffect(() => {
     dashboardApi.getMoods().then((res: any) => {

@@ -15,26 +15,63 @@ export interface TeamMoodEntry {
   moodId: string;
   moodLabel: string;
   emoji: string;
+  date: string;
   updatedAt: string;
+}
+
+export function getSaoPauloDateKey(d = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
 }
 
 const teamMoodsMap = new Map<string, TeamMoodEntry>();
 
+// Retorna apenas os status do dia atual (reseta automaticamente a cada novo dia)
 export function getTeamMoods(): TeamMoodEntry[] {
-  return Array.from(teamMoodsMap.values()).sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
+  const today = getSaoPauloDateKey();
+  return Array.from(teamMoodsMap.values())
+    .filter((m) => m.date === today)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 let activeIoInstance: Server | null = null;
 
-export function recordUserMood(mood: TeamMoodEntry, ioServer?: Server) {
-  teamMoodsMap.set(mood.userId, mood);
+export function recordUserMood(mood: { userId: string; username: string; moodId: string; moodLabel: string; emoji: string; date?: string; updatedAt?: string }, ioServer?: Server) {
+  const today = getSaoPauloDateKey();
+  const fullMood: TeamMoodEntry = {
+    ...mood,
+    date: today,
+    updatedAt: new Date().toISOString(),
+  };
+  teamMoodsMap.set(mood.userId, fullMood);
   const server = ioServer || activeIoInstance;
   if (server) {
-    server.to('app').emit('team:mood:updated', mood);
+    server.to('app').emit('team:mood:updated', fullMood);
   }
 }
+
+// Verificação periódica: quando vira o dia (meia-noite), limpa status anteriores e notifica todos os logados
+let lastCheckedDate = getSaoPauloDateKey();
+setInterval(() => {
+  const currentDate = getSaoPauloDateKey();
+  if (currentDate !== lastCheckedDate) {
+    lastCheckedDate = currentDate;
+    // Remove status de dias anteriores
+    for (const [userId, entry] of teamMoodsMap.entries()) {
+      if (entry.date !== currentDate) {
+        teamMoodsMap.delete(userId);
+      }
+    }
+    if (activeIoInstance) {
+      activeIoInstance.to('app').emit('team:mood:init', []);
+    }
+    logger.info(`[Moods] Novo dia iniciado (${currentDate}). Sentimentos da equipe resetados para o novo dia.`);
+  }
+}, 30000);
 
 export function setupWebSocket(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
@@ -73,7 +110,7 @@ export function setupWebSocket(httpServer: HttpServer): Server {
     socket.on('user:mood:update', (data: { moodId: string; moodLabel: string; emoji: string }) => {
       const user = socket.data.user;
       if (!user) return;
-      const entry: TeamMoodEntry = {
+      const entry = {
         userId: String(user.id),
         username: user.username,
         moodId: data.moodId,
