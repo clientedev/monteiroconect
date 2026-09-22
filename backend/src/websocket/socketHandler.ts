@@ -8,6 +8,34 @@ import { sendPushForNewMessage } from '../services/pushNotificationService.js';
 import { logger } from '../utils/logger.js';
 import jwt from 'jsonwebtoken';
 
+
+export interface TeamMoodEntry {
+  userId: string;
+  username: string;
+  moodId: string;
+  moodLabel: string;
+  emoji: string;
+  updatedAt: string;
+}
+
+const teamMoodsMap = new Map<string, TeamMoodEntry>();
+
+export function getTeamMoods(): TeamMoodEntry[] {
+  return Array.from(teamMoodsMap.values()).sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+}
+
+let activeIoInstance: Server | null = null;
+
+export function recordUserMood(mood: TeamMoodEntry, ioServer?: Server) {
+  teamMoodsMap.set(mood.userId, mood);
+  const server = ioServer || activeIoInstance;
+  if (server) {
+    server.to('app').emit('team:mood:updated', mood);
+  }
+}
+
 export function setupWebSocket(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
@@ -17,6 +45,7 @@ export function setupWebSocket(httpServer: HttpServer): Server {
     },
     path: '/ws',
   });
+  activeIoInstance = io;
 
   // Authentication middleware
   io.use(async (socket, next) => {
@@ -36,6 +65,25 @@ export function setupWebSocket(httpServer: HttpServer): Server {
   io.on('connection', (socket) => {
     logger.info(`WebSocket conectado: ${socket.data.user?.username}`);
     socket.join('app');
+
+    // Envia lista atual de sentimentos da equipe
+    socket.emit('team:mood:init', getTeamMoods());
+
+    // Atualizacao de sentimento do usuario logado
+    socket.on('user:mood:update', (data: { moodId: string; moodLabel: string; emoji: string }) => {
+      const user = socket.data.user;
+      if (!user) return;
+      const entry: TeamMoodEntry = {
+        userId: String(user.id),
+        username: user.username,
+        moodId: data.moodId,
+        moodLabel: data.moodLabel || data.moodId,
+        emoji: data.emoji || '😊',
+        updatedAt: new Date().toISOString(),
+      };
+      recordUserMood(entry, io);
+    });
+
 
     socket.on('disconnect', () => {
       logger.info(`WebSocket desconectado: ${socket.data.user?.username}`);

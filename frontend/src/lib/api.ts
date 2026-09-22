@@ -238,6 +238,9 @@ export const tagApi = {
 // Dashboard
 export const dashboardApi = {
   stats: () => api.get<any>('/dashboard/stats'),
+  getMoods: () => api.get<any[]>('/dashboard/moods'),
+  updateMood: (data: { moodId: string; moodLabel: string; emoji: string }) =>
+    api.post<any>('/dashboard/moods', data),
 };
 
 // Logs
