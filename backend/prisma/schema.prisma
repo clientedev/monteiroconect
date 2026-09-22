@@ -23,6 +23,7 @@ model User {
   assignments ConversationAssignment[]
   whatsappAssignments WhatsAppAssignment[]
   pushSubscriptions PushSubscription[]
+  quickMessages QuickMessage[]
 
   @@index([username])
   @@index([role])
@@ -280,12 +281,15 @@ model BaileysAuthState {
 model QuickMessage {
   id        String   @id @default(cuid())
   title     String
-  shortcut  String   @unique
+  shortcut  String
   content   String   @db.Text
   category  String?
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([shortcut])
   @@index([title])
+  @@index([userId])
 }

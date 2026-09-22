@@ -57,6 +57,19 @@ class ApiClient {
     return res.json();
   }
 
+  async patch<T>(path: string, body?: unknown): Promise<T> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || 'Erro na requisição');
+    }
+    return res.json();
+  }
+
   async del<T>(path: string): Promise<T> {
     const res = await fetch(`${API_BASE}${path}`, {
       method: 'DELETE',
@@ -270,24 +283,35 @@ export interface QuickMessage {
   shortcut: string;
   content: string;
   category?: string | null;
+  userId?: string | null;
+  user?: {
+    id: string;
+    username: string;
+    role: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
 
 // Quick Messages (Mensagens Rápidas)
 export const quickMessageApi = {
-  list: (search?: string, category?: string) => {
+  list: (search?: string, category?: string, userId?: string) => {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (category) params.set('category', category);
+    if (userId) params.set('userId', userId);
     const qs = params.toString();
     return api.get<QuickMessage[]>(`/quick-messages${qs ? `?${qs}` : ''}`);
   },
   get: (id: string) => api.get<QuickMessage>(`/quick-messages/${id}`),
-  create: (data: { title: string; shortcut: string; content: string; category?: string | null }) =>
+  create: (data: { title: string; shortcut: string; content: string; category?: string | null; userId?: string | null }) =>
     api.post<QuickMessage>('/quick-messages', data),
-  update: (id: string, data: { title: string; shortcut: string; content: string; category?: string | null }) =>
+  update: (id: string, data: { title: string; shortcut: string; content: string; category?: string | null; userId?: string | null }) =>
     api.put<QuickMessage>(`/quick-messages/${id}`, data),
+  assign: (id: string, userId: string | null) =>
+    api.patch<QuickMessage>(`/quick-messages/${id}/assign`, { userId }),
+  clone: (id: string, targetUserId?: string) =>
+    api.post<QuickMessage>(`/quick-messages/${id}/clone`, { targetUserId }),
   delete: (id: string) => api.del<{ message: string; id: string }>(`/quick-messages/${id}`),
 };
 

@@ -711,15 +711,19 @@ export default function ConversationsPage() {
     return match[1].toLowerCase();
   }, [newMessage, dismissedSlash]);
 
-  // Mensagens rápidas correspondentes ao atalho digitado
   const matchingQuickMessages = useMemo(() => {
     if (slashQuery === null) return [];
-    if (!slashQuery) return quickMessages.slice(0, 7);
-    return quickMessages.filter(m =>
+    const filtered = quickMessages.filter(m =>
+      !slashQuery ||
       m.shortcut.toLowerCase().includes(slashQuery) ||
       m.title.toLowerCase().includes(slashQuery)
-    ).slice(0, 7);
-  }, [slashQuery, quickMessages]);
+    );
+    return filtered.sort((a, b) => {
+      const aScore = a.userId === user?.id ? 2 : !a.userId ? 1 : 0;
+      const bScore = b.userId === user?.id ? 2 : !b.userId ? 1 : 0;
+      return bScore - aScore;
+    }).slice(0, 7);
+  }, [slashQuery, quickMessages, user?.id]);
 
   // Mensagens rápidas filtradas dentro do catálogo (botão ⚡)
   const filteredQuickMenuMessages = useMemo(() => {
@@ -2100,11 +2104,18 @@ export default function ConversationsPage() {
                               {qm.content}
                             </p>
                           </div>
-                          {qm.category && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">
-                              {qm.category}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {qm.user?.username && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">
+                                👤 {qm.user.username}
+                              </span>
+                            )}
+                            {qm.category && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                                {qm.category}
+                              </span>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
@@ -2177,6 +2188,11 @@ export default function ConversationsPage() {
                             <span className="text-xs font-semibold text-slate-800 truncate flex-1 ml-1.5">
                               {qm.title}
                             </span>
+                            {qm.user?.username && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">
+                                👤 {qm.user.username}
+                              </span>
+                            )}
                             {qm.category && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
                                 {qm.category}

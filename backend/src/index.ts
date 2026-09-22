@@ -65,18 +65,25 @@ async function ensureMessageColumns(): Promise<void> {
         "shortcut" TEXT NOT NULL,
         "content" TEXT NOT NULL,
         "category" TEXT,
+        "userId" TEXT,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
     await prisma.$executeRawUnsafe(
-      'CREATE UNIQUE INDEX IF NOT EXISTS "QuickMessage_shortcut_key" ON "QuickMessage" ("shortcut")',
+      'ALTER TABLE "QuickMessage" ADD COLUMN IF NOT EXISTS "userId" TEXT;'
+    );
+    await prisma.$executeRawUnsafe(
+      'DROP INDEX IF EXISTS "QuickMessage_shortcut_key";'
     );
     await prisma.$executeRawUnsafe(
       'CREATE INDEX IF NOT EXISTS "QuickMessage_shortcut_idx" ON "QuickMessage" ("shortcut")',
     );
     await prisma.$executeRawUnsafe(
       'CREATE INDEX IF NOT EXISTS "QuickMessage_title_idx" ON "QuickMessage" ("title")',
+    );
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "QuickMessage_userId_idx" ON "QuickMessage" ("userId")',
     );
 
     // Sanitização retroativa de mensagens antigas gravadas com tags cruas
