@@ -118,12 +118,60 @@ interface TeamMood {
 }
 
 const MOOD_OPTIONS = [
-  { id: 'motivado', emoji: '🔥', label: 'Motivado(a)' },
-  { id: 'bem', emoji: '☀️', label: 'Bem & Disposto(a)' },
-  { id: 'na_luta', emoji: '☕', label: 'No Café' },
-  { id: 'tranquilo', emoji: '🧘', label: 'Tranquilo(a)' },
-  { id: 'correria', emoji: '⚡', label: 'Na Correria' },
-  { id: 'cansado', emoji: '🪫', label: 'Cansado(a)' },
+  {
+    id: 'motivado',
+    emoji: '🔥',
+    label: 'Motivado(a)',
+    desc: 'Com energia e foco total',
+    badgeClass: 'bg-amber-50/80 text-amber-800 border-amber-200 hover:border-amber-400 hover:bg-amber-100/70',
+    activeClass: 'bg-gradient-to-br from-amber-500 to-orange-600 text-white border-amber-500 shadow-md ring-2 ring-amber-400/40',
+    feedback: 'Sensacional! Que essa energia e entusiasmo contagiem cada cliente e atendimento hoje! 🔥',
+  },
+  {
+    id: 'bem',
+    emoji: '☀️',
+    label: 'Bem & Disposto(a)',
+    desc: 'Equilíbrio e positividade',
+    badgeClass: 'bg-sky-50/80 text-sky-800 border-sky-200 hover:border-sky-400 hover:bg-sky-100/70',
+    activeClass: 'bg-gradient-to-br from-sky-500 to-blue-600 text-white border-sky-500 shadow-md ring-2 ring-sky-400/40',
+    feedback: 'Maravilha! Tenha um expediente brilhante, leve e muito produtivo! ☀️',
+  },
+  {
+    id: 'na_luta',
+    emoji: '☕',
+    label: 'Focado(a) no Café',
+    desc: 'Na luta e determinado(a)',
+    badgeClass: 'bg-amber-50/80 text-amber-900 border-amber-300/80 hover:border-amber-400 hover:bg-amber-100/70',
+    activeClass: 'bg-gradient-to-br from-amber-700 to-amber-900 text-white border-amber-700 shadow-md ring-2 ring-amber-600/40',
+    feedback: 'Bora com tudo! Um café quentinho e muita determinação para superar cada desafio! ☕',
+  },
+  {
+    id: 'tranquilo',
+    emoji: '🧘',
+    label: 'Tranquilo(a)',
+    desc: 'Paciência e serenidade',
+    badgeClass: 'bg-teal-50/80 text-teal-800 border-teal-200 hover:border-teal-400 hover:bg-teal-100/70',
+    activeClass: 'bg-gradient-to-br from-monte-verde to-emerald-700 text-white border-monte-verde shadow-md ring-2 ring-emerald-400/40',
+    feedback: 'Paz e calma são o grande segredo para as melhores negociações e conexões com o cliente! 🧘',
+  },
+  {
+    id: 'correria',
+    emoji: '⚡',
+    label: 'Na Correria',
+    desc: 'Muitas demandas e propostas',
+    badgeClass: 'bg-purple-50/80 text-purple-800 border-purple-200 hover:border-purple-400 hover:bg-purple-100/70',
+    activeClass: 'bg-gradient-to-br from-purple-600 to-indigo-700 text-white border-purple-600 shadow-md ring-2 ring-purple-400/40',
+    feedback: 'Força no funil! Vá com calma, um cliente de cada vez, e conte sempre com o apoio da equipe! ⚡',
+  },
+  {
+    id: 'cansado',
+    emoji: '🪫',
+    label: 'Desafiador / Cansado(a)',
+    desc: 'Precisando de um respiro',
+    badgeClass: 'bg-rose-50/80 text-rose-800 border-rose-200 hover:border-rose-400 hover:bg-rose-100/70',
+    activeClass: 'bg-gradient-to-br from-rose-500 to-rose-700 text-white border-rose-500 shadow-md ring-2 ring-rose-400/40',
+    feedback: 'Respire fundo e faça pequenas pausas para beber água! Seu bem-estar é prioridade para todos nós. 💚',
+  },
 ];
 
 export default function DashboardPage() {
@@ -221,25 +269,63 @@ export default function DashboardPage() {
   const [quoteIndex, setQuoteIndex] = useState<number>(defaultQuoteIndex);
 
   // Check-in de Sentimento / Humor dos funcionários internos
-    const moodStorageKey = useMemo(() => {
-    return `monteiro_mood_${todayKey}_${user?.id || user?.username || 'colab'}`;
-  }, [todayKey, user?.id, user?.username]);
-
-  const [selectedMood, setSelectedMood] = useState<string | null>(null);
-  const [teamMoods, setTeamMoods] = useState<TeamMood[]>([]);
-
-  useEffect(() => {
+  // 1. Inicializa o humor direto do localStorage para persistência imediata mesmo com refresh/F5
+  const [selectedMood, setSelectedMood] = useState<string | null>(() => {
     try {
-      const saved = localStorage.getItem(moodStorageKey);
-      if (saved) {
-        setSelectedMood(saved);
-      } else {
-        setSelectedMood(null);
+      const now = new Date();
+      const currentDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const savedRaw = localStorage.getItem('monteiro_user_mood_today');
+      if (savedRaw) {
+        const parsed = JSON.parse(savedRaw);
+        if (parsed?.date === currentDay && parsed?.moodId) {
+          return parsed.moodId;
+        }
       }
     } catch {
-      // ignore
+      // fallback
     }
-  }, [moodStorageKey]);
+    return null;
+  });
+
+  const [teamMoods, setTeamMoods] = useState<TeamMood[]>([]);
+
+  // Sincroniza sentimentos da equipe via API e recupera o sentimento do usuário atual
+  const syncMoodsFromApi = useCallback(async () => {
+    try {
+      const res = await dashboardApi.getMoods();
+      const list: TeamMood[] = Array.isArray(res) ? res : (Array.isArray((res as any)?.data) ? (res as any).data : []);
+      setTeamMoods(list);
+
+      // Se temos o usuário autenticado, verifica se ele já registrou o humor hoje no backend
+      if (user && list.length > 0) {
+        const myEntry = list.find(
+          (m) => String(m.userId) === String(user.id) || m.username?.toLowerCase() === user.username?.toLowerCase()
+        );
+        if (myEntry?.moodId) {
+          setSelectedMood(myEntry.moodId);
+          try {
+            localStorage.setItem(
+              'monteiro_user_mood_today',
+              JSON.stringify({
+                date: todayKey,
+                moodId: myEntry.moodId,
+                userId: user.id,
+                username: user.username,
+              })
+            );
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar status de humor da equipe:', err);
+    }
+  }, [todayKey, user]);
+
+  useEffect(() => {
+    syncMoodsFromApi();
+  }, [syncMoodsFromApi]);
 
   // Monitora virada do dia para resetar automaticamente os sentimentos a cada novo dia
   useEffect(() => {
@@ -248,11 +334,8 @@ export default function DashboardPage() {
       const freshKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       if (freshKey !== todayKey) {
         setSelectedMood(null);
-        dashboardApi.getMoods().then((res: any) => {
-          if (Array.isArray(res.data)) {
-            setTeamMoods(res.data);
-          }
-        }).catch(() => {});
+        localStorage.removeItem('monteiro_user_mood_today');
+        syncMoodsFromApi();
       }
     };
 
@@ -268,21 +351,22 @@ export default function DashboardPage() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [todayKey]);
+  }, [todayKey, syncMoodsFromApi]);
 
-  // Sincroniza sentimentos da equipe via API e Socket em tempo real
+  // Sincroniza sentimentos da equipe via Socket em tempo real
   useEffect(() => {
-    dashboardApi.getMoods().then((res: any) => {
-      if (Array.isArray(res.data)) {
-        setTeamMoods(res.data);
-      }
-    }).catch(() => {});
-
     if (!socket) return;
 
     const handleInit = (moods: TeamMood[]) => {
-      if (Array.isArray(moods)) {
-        setTeamMoods(moods);
+      const list = Array.isArray(moods) ? moods : [];
+      setTeamMoods(list);
+      if (user) {
+        const myEntry = list.find(
+          (m) => String(m.userId) === String(user.id) || m.username?.toLowerCase() === user.username?.toLowerCase()
+        );
+        if (myEntry?.moodId) {
+          setSelectedMood(myEntry.moodId);
+        }
       }
     };
 
@@ -291,6 +375,9 @@ export default function DashboardPage() {
         const filtered = prev.filter((m) => m.userId !== updatedMood.userId);
         return [updatedMood, ...filtered];
       });
+      if (user && (String(updatedMood.userId) === String(user.id) || updatedMood.username?.toLowerCase() === user.username?.toLowerCase())) {
+        setSelectedMood(updatedMood.moodId);
+      }
     };
 
     socket.on('team:mood:init', handleInit);
@@ -300,15 +387,28 @@ export default function DashboardPage() {
       socket.off('team:mood:init', handleInit);
       socket.off('team:mood:updated', handleMoodUpdated);
     };
-  }, [socket]);
+  }, [socket, user]);
 
   const handleSelectMood = (moodId: string) => {
     const moodObj = MOOD_OPTIONS.find((m) => m.id === moodId);
-    if (!moodObj || !user) return;
+    if (!moodObj) return;
 
     setSelectedMood(moodId);
+
+    // Salva imediatamente no localStorage com persistência total para a data de hoje
     try {
-      localStorage.setItem(moodStorageKey, moodId);
+      localStorage.setItem(
+        'monteiro_user_mood_today',
+        JSON.stringify({
+          date: todayKey,
+          moodId,
+          userId: user?.id,
+          username: user?.username,
+          label: moodObj.label,
+          emoji: moodObj.emoji,
+          updatedAt: new Date().toISOString(),
+        })
+      );
     } catch {
       // ignore
     }
@@ -324,21 +424,24 @@ export default function DashboardPage() {
     }
     dashboardApi.updateMood(payload).catch(() => {});
 
-    const myEntry: TeamMood = {
-      userId: String(user.id),
-      username: user.username,
-      moodId,
-      moodLabel: moodObj.label,
-      emoji: moodObj.emoji,
-      updatedAt: new Date().toISOString(),
-    };
-    setTeamMoods((prev) => {
-      const filtered = prev.filter((m) => m.userId !== String(user.id));
-      return [myEntry, ...filtered];
-    });
+    if (user) {
+      const myEntry: TeamMood = {
+        userId: String(user.id),
+        username: user.username,
+        moodId,
+        moodLabel: moodObj.label,
+        emoji: moodObj.emoji,
+        updatedAt: new Date().toISOString(),
+      };
+      setTeamMoods((prev) => {
+        const filtered = prev.filter((m) => m.userId !== String(user.id));
+        return [myEntry, ...filtered];
+      });
+    }
   };
 
   const currentQuote = MOTIVATIONAL_QUOTES[quoteIndex % MOTIVATIONAL_QUOTES.length];
+  const activeMoodObj = MOOD_OPTIONS.find((m) => m.id === selectedMood);
 
   if (loading) return <LoadingSkeleton />;
 
@@ -456,40 +559,76 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 Frase Motivacional Diária & Check-in de Sentimento (Exclusivo Funcionários Internos) */}
+      {/* 🌟 Painel Inspiracional & Bem-Estar da Equipe (Exclusivo Funcionários Internos) */}
       {user && (
-        <div className="rounded-2xl bg-white border border-monte-sereno/15 shadow-2xs p-3.5 sm:p-4 space-y-2.5 transition-all">
-          {/* Linha Superior: Frase Inspiradora Minimalista */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-monte-verde/10 text-monte-verde text-[10px] font-bold shrink-0">
-                <Sparkles className="w-3 h-3" />
-                <span>Inspiração</span>
-              </span>
-              <p className="text-slate-600 truncate text-[11px] font-medium">
-                "{currentQuote.quote}" <span className="text-slate-400 font-normal">— {currentQuote.author}</span>
-              </p>
+        <div className="rounded-3xl bg-gradient-to-br from-white via-[#fcfbf9] to-[#f4f7f5] border border-monte-verde/20 shadow-md p-6 sm:p-7 space-y-6 relative overflow-hidden transition-all duration-300 hover:shadow-lg">
+          {/* Efeitos decorativos de luz suave */}
+          <div className="absolute top-0 right-0 w-72 h-72 bg-monte-verde/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-60 h-60 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
+
+          {/* PARTE 1: Frase Motivacional do Dia */}
+          <div className="relative z-10 space-y-3 pb-5 border-b border-monte-sereno/15">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-monte-verde/15 to-emerald-600/15 text-monte-verde text-xs font-black tracking-wide border border-monte-verde/25 shadow-2xs">
+                  <Sparkles className="w-3.5 h-3.5 text-monte-verde animate-pulse" />
+                  <span>INSPIRAÇÃO DO DIA</span>
+                </span>
+                <span className="text-xs font-semibold text-monte-azul/80 bg-monte-azul/5 border border-monte-azul/10 px-3 py-0.5 rounded-full">
+                  💡 {currentQuote.tag}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setQuoteIndex((prev) => (prev + 1) % MOTIVATIONAL_QUOTES.length)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-monte-azul/70 hover:text-monte-verde bg-white hover:bg-monte-verde/10 border border-monte-sereno/20 hover:border-monte-verde/40 px-3 py-1.5 rounded-xl shadow-2xs transition-all cursor-pointer self-start sm:self-auto hover:scale-[1.02] active:scale-[0.98]"
+                title="Sortear outra frase motivacional"
+              >
+                <RotateCw className="w-3.5 h-3.5 text-monte-verde" />
+                <span>Outra frase</span>
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setQuoteIndex((prev) => (prev + 1) % MOTIVATIONAL_QUOTES.length)}
-              className="text-[11px] text-slate-400 hover:text-monte-azul font-medium flex items-center gap-1 shrink-0 self-end sm:self-auto transition-colors cursor-pointer"
-              title="Sortear outra frase"
-            >
-              <RotateCw className="w-3 h-3" />
-              <span>Outra frase</span>
-            </button>
+
+            <div className="flex items-start gap-4 pt-1">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-monte-verde to-monte-azul text-white flex items-center justify-center shrink-0 shadow-md">
+                <Quote className="w-6 h-6 text-white" />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <blockquote className="text-sm sm:text-base font-semibold text-slate-800 leading-relaxed italic">
+                  “{currentQuote.quote}”
+                </blockquote>
+                <p className="text-xs font-extrabold text-monte-verde flex items-center gap-2">
+                  <span className="w-4 h-0.5 bg-monte-verde inline-block rounded-full" />
+                  {currentQuote.author}
+                </p>
+              </div>
+            </div>
           </div>
 
-          {/* Linha Central: Como você está se sentindo hoje? (Seletor Minimalista) */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-monte-azul">
-              <Smile className="w-3.5 h-3.5 text-monte-verde" />
-              <span>Como você está hoje, <span className="text-monte-verde">{user.username}</span>?</span>
+          {/* PARTE 2: Como você está se sentindo hoje? */}
+          <div className="relative z-10 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Smile className="w-5 h-5 text-monte-verde" />
+                  <h3 className="text-sm sm:text-base font-black text-monte-azul">
+                    Como você está se sentindo hoje, <span className="text-monte-verde">{user.username}</span>?
+                  </h3>
+                </div>
+                <p className="text-xs text-monte-sereno mt-0.5">
+                  Check-in diário de energia e humor da nossa equipe
+                </p>
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 bg-white border border-slate-200/80 px-3 py-1 rounded-full shadow-2xs self-start sm:self-auto">
+                <Lock className="w-3 h-3 text-slate-400" />
+                <span>Espaço Interno da Equipe Monteiro</span>
+              </div>
             </div>
 
-            {/* Pílulas Minimalistas de Sentimento */}
-            <div className="flex flex-wrap items-center gap-1.5">
+            {/* Grid dos Cards de Sentimento */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {MOOD_OPTIONS.map((mood) => {
                 const isSelected = selectedMood === mood.id;
                 return (
@@ -497,53 +636,99 @@ export default function DashboardPage() {
                     key={mood.id}
                     type="button"
                     onClick={() => handleSelectMood(mood.id)}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                    className={`p-3.5 rounded-2xl border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between gap-2 group relative overflow-hidden ${
                       isSelected
-                        ? 'bg-monte-verde text-white border-monte-verde shadow-xs'
-                        : 'bg-slate-50 hover:bg-slate-100/80 text-slate-600 border-slate-200/70 hover:border-slate-300'
+                        ? `${mood.activeClass} shadow-md scale-[1.03]`
+                        : `${mood.badgeClass} bg-white hover:bg-slate-50/80 hover:-translate-y-0.5 hover:shadow-xs`
                     }`}
                   >
-                    <span>{mood.emoji}</span>
-                    <span className="text-[11px]">{mood.label}</span>
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-2xl sm:text-3xl group-hover:scale-110 transition-transform duration-200">
+                        {mood.emoji}
+                      </span>
+                      {isSelected ? (
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                      ) : (
+                        <div className="w-2 h-2 rounded-full bg-slate-200 group-hover:bg-slate-300" />
+                      )}
+                    </div>
+                    <div>
+                      <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-white font-extrabold' : 'text-slate-800'}`}>
+                        {mood.label}
+                      </p>
+                      <p className={`text-[10px] mt-0.5 leading-tight font-medium ${isSelected ? 'text-white/90' : 'text-slate-500'}`}>
+                        {mood.desc}
+                      </p>
+                    </div>
                   </button>
                 );
               })}
             </div>
-          </div>
 
-          {/* Linha Inferior: Status da Equipe (Em tempo real para todos logados verem de forma minimalista) */}
-          <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
-              <Users className="w-3 h-3 text-monte-verde" />
-              Status da equipe:
-            </span>
-
-            {teamMoods.length === 0 ? (
-              <span className="text-[11px] text-slate-400 italic">
-                Nenhum status compartilhado hoje ainda. Clique acima para registrar o seu.
-              </span>
-            ) : (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {teamMoods.map((tm) => {
-                  const isMe = tm.userId === String(user.id);
-                  return (
-                    <span
-                      key={tm.userId}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] border transition-all ${
-                        isMe
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
-                          : 'bg-slate-50 text-slate-700 border-slate-200/80'
-                      }`}
-                    >
-                      <span className="font-semibold">{isMe ? `${tm.username} (Você)` : tm.username}</span>
-                      <span className="text-slate-300">-</span>
-                      <span>{tm.emoji}</span>
-                      <span>{tm.moodLabel}</span>
-                    </span>
-                  );
-                })}
+            {/* Banner Positivo de Feedback Quando Selecionado */}
+            {activeMoodObj && (
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/60 to-white border border-emerald-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl p-2 rounded-xl bg-white shadow-2xs border border-emerald-100 shrink-0">
+                    {activeMoodObj.emoji}
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-emerald-900">
+                        Seu sentimento de hoje: <strong className="text-emerald-700">{activeMoodObj.label}</strong>
+                      </span>
+                    </div>
+                    <p className="text-xs font-medium text-emerald-800/90 mt-0.5">
+                      {activeMoodObj.feedback}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-200 px-3 py-1 rounded-full flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Salvo para hoje</span>
+                  </span>
+                </div>
               </div>
             )}
+
+            {/* Status Compartilhado da Equipe Hoje */}
+            <div className="pt-3 border-t border-monte-sereno/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-extrabold text-monte-azul/80 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                  <Users className="w-3.5 h-3.5 text-monte-verde" />
+                  <span>Equipe hoje ({teamMoods.length}):</span>
+                </span>
+
+                {teamMoods.length === 0 ? (
+                  <span className="text-[11px] text-slate-400 italic">
+                    Nenhum colega registrou ainda hoje. Seja o primeiro a inspirar o time!
+                  </span>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {teamMoods.map((tm) => {
+                      const isMe = user && (tm.userId === String(user.id) || tm.username?.toLowerCase() === user.username?.toLowerCase());
+                      return (
+                        <span
+                          key={tm.userId}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs border shadow-2xs transition-all ${
+                            isMe
+                              ? 'bg-gradient-to-r from-monte-verde/15 to-emerald-600/15 text-monte-verde border-monte-verde/30 font-bold'
+                              : 'bg-white text-slate-700 border-slate-200/90 font-medium'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                          <span>{isMe ? `${tm.username} (Você)` : tm.username}</span>
+                          <span className="text-slate-300">|</span>
+                          <span className="text-sm">{tm.emoji}</span>
+                          <span className="text-[11px] font-semibold">{tm.moodLabel}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
