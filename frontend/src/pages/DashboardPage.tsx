@@ -6,7 +6,7 @@ import {
   Smartphone, MessageSquare, Mail, TrendingUp, ArrowRight,
   ShieldCheck, AlertCircle, Clock, Zap, CheckCircle2,
   ExternalLink, Sparkles, UserCheck, MessageSquareQuote,
-  Activity, RefreshCw
+  Activity, RefreshCw, Quote, Smile, Lock, RotateCw, Heart,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -44,6 +44,126 @@ interface Stats {
   assignedConversations?: any[];
   assignedCount?: number;
 }
+
+const MOTIVATIONAL_QUOTES = [
+  {
+    quote: "A excelência não é um ato isolado, mas um hábito construído a cada mensagem e atenção dada ao cliente.",
+    author: "Monteiro Seguros",
+    tag: "Excelência & Cuidado",
+  },
+  {
+    quote: "O segredo do sucesso no atendimento é ouvir com empatia, responder com agilidade e cuidar de verdade.",
+    author: "Filosofia Monteiro",
+    tag: "Empatia no Atendimento",
+  },
+  {
+    quote: "Grandes dias começam com pequenas atitudes: um sorriso na voz, uma resposta rápida e o desejo genuíno de ajudar.",
+    author: "Inspiração Diária",
+    tag: "Energia Positiva",
+  },
+  {
+    quote: "Proteger o que as pessoas têm de mais valioso é o nosso maior propósito. Faça a diferença hoje!",
+    author: "Cultura Monteiro",
+    tag: "Propósito & Segurança",
+  },
+  {
+    quote: "O sucesso é a soma de pequenos esforços repetidos com carinho e disciplina dia após dia.",
+    author: "Robert Collier",
+    tag: "Constância & Foco",
+  },
+  {
+    quote: "Trabalho em equipe é a união de forças que transforma metas desafiadoras em conquistas compartilhadas.",
+    author: "Equipe Monteiro",
+    tag: "União & Colaboração",
+  },
+  {
+    quote: "A confiança é a maior apólice que um cliente pode ter. Conquiste-a em cada detalhe do seu atendimento.",
+    author: "Monteiro Conecta",
+    tag: "Confiança & Relacionamento",
+  },
+  {
+    quote: "Não espere o dia ser perfeito para fazer o seu melhor. Crie oportunidades extraordinárias a cada conversa.",
+    author: "Inspiração Diária",
+    tag: "Atitude Vencedora",
+  },
+  {
+    quote: "A melhor maneira de começar o dia é com foco, gratidão e a certeza de que seu trabalho impacta vidas.",
+    author: "Monteiro Seguros",
+    tag: "Foco & Gratidão",
+  },
+  {
+    quote: "Cada cliente atendido hoje é uma família que confia na nossa proteção. Dê o seu melhor!",
+    author: "Filosofia Monteiro",
+    tag: "Compromisso",
+  },
+  {
+    quote: "A persistência aliada à gentileza abre portas que a pressa costuma fechar. Tenha um dia incrível!",
+    author: "Inspiração Diária",
+    tag: "Gentileza & Persistência",
+  },
+  {
+    quote: "Você é parte fundamental do sucesso da Monteiro Seguros. Que seu dia seja produtivo, leve e vitorioso!",
+    author: "Cultura Monteiro",
+    tag: "Reconhecimento & Força",
+  },
+];
+
+const MOOD_OPTIONS = [
+  {
+    id: 'motivado',
+    emoji: '🚀',
+    label: 'Motivado(a)',
+    desc: 'Com energia e foco total',
+    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100 hover:border-emerald-300',
+    activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/40',
+    feedback: 'Sensacional! Que essa energia contagie cada atendimento e negociação hoje! 🚀',
+  },
+  {
+    id: 'bem',
+    emoji: '😊',
+    label: 'Bem & Disposto(a)',
+    desc: 'Equilíbrio e positividade',
+    badgeClass: 'bg-sky-50 text-sky-800 border-sky-200/80 hover:bg-sky-100 hover:border-sky-300',
+    activeClass: 'bg-sky-600 text-white border-sky-600 shadow-md ring-2 ring-sky-400/40',
+    feedback: 'Maravilha! Tenha um expediente brilhante, leve e muito produtivo! ✨',
+  },
+  {
+    id: 'na_luta',
+    emoji: '☕',
+    label: 'Focado(a) no Café',
+    desc: 'Na luta e determinado(a)',
+    badgeClass: 'bg-amber-50 text-amber-800 border-amber-200/80 hover:bg-amber-100 hover:border-amber-300',
+    activeClass: 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-400/40',
+    feedback: 'Bora com tudo! Um café quentinho e muita determinação para vencer todas as metas! ☕',
+  },
+  {
+    id: 'tranquilo',
+    emoji: '🧘',
+    label: 'Tranquilo(a)',
+    desc: 'Paciência e serenidade',
+    badgeClass: 'bg-teal-50 text-teal-800 border-teal-200/80 hover:bg-teal-100 hover:border-teal-300',
+    activeClass: 'bg-teal-600 text-white border-teal-600 shadow-md ring-2 ring-teal-400/40',
+    feedback: 'Paz e calma são o segredo das melhores conversas e acordos com os clientes! 🧘',
+  },
+  {
+    id: 'correria',
+    emoji: '⚡',
+    label: 'Na Correria',
+    desc: 'Muitas demandas e propostas',
+    badgeClass: 'bg-purple-50 text-purple-800 border-purple-200/80 hover:bg-purple-100 hover:border-purple-300',
+    activeClass: 'bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-400/40',
+    feedback: 'Força no funil! Vá com calma, um cliente por vez, e conte sempre com o apoio da equipe! ⚡',
+  },
+  {
+    id: 'cansado',
+    emoji: '😴',
+    label: 'Desafiador / Cansado(a)',
+    desc: 'Precisando de um respiro',
+    badgeClass: 'bg-rose-50 text-rose-800 border-rose-200/80 hover:bg-rose-100 hover:border-rose-300',
+    activeClass: 'bg-rose-600 text-white border-rose-600 shadow-md ring-2 ring-rose-400/40',
+    feedback: 'Respire fundo e faça pausas para se hidratar! Sua saúde e bem-estar são essenciais para todos nós. 💚',
+  },
+];
 
 export default function DashboardPage() {
   const { socket } = useSocket();
@@ -120,6 +240,56 @@ export default function DashboardPage() {
       year: 'numeric',
     }).format(new Date());
   }, []);
+
+  // 🌟 Chave do dia atual (YYYY-MM-DD)
+  const todayKey = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  // Frase do dia calculada com base no dia do ano
+  const defaultQuoteIndex = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), 0, 0);
+    const diff = now.getTime() - start.getTime();
+    const oneDay = 1000 * 60 * 60 * 24;
+    const dayOfYear = Math.floor(diff / oneDay);
+    return Math.abs(dayOfYear) % MOTIVATIONAL_QUOTES.length;
+  }, []);
+
+  const [quoteIndex, setQuoteIndex] = useState<number>(defaultQuoteIndex);
+
+  // Check-in de Sentimento / Humor dos funcionários internos
+  const moodStorageKey = useMemo(() => {
+    return `monteiro_mood_${todayKey}_${user?.id || user?.username || 'colab'}`;
+  }, [todayKey, user?.id, user?.username]);
+
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(moodStorageKey);
+      if (saved) {
+        setSelectedMood(saved);
+      } else {
+        setSelectedMood(null);
+      }
+    } catch {
+      // ignore
+    }
+  }, [moodStorageKey]);
+
+  const handleSelectMood = (moodId: string) => {
+    setSelectedMood(moodId);
+    try {
+      localStorage.setItem(moodStorageKey, moodId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const currentQuote = MOTIVATIONAL_QUOTES[quoteIndex % MOTIVATIONAL_QUOTES.length];
+  const activeMoodObj = MOOD_OPTIONS.find((m) => m.id === selectedMood);
 
   if (loading) return <LoadingSkeleton />;
 
@@ -236,6 +406,118 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* 🌟 Frase Motivacional Diária & Check-in de Sentimento (Exclusivo Funcionários Internos) */}
+      {user && (
+        <div className="rounded-3xl bg-white border border-monte-sereno/15 shadow-2xs overflow-hidden transition-all hover:border-monte-verde/30">
+          {/* Parte 1: Frase Motivacional Diária */}
+          <div className="p-5 sm:p-6 bg-gradient-to-r from-monte-verde/5 via-monte-azul/5 to-white border-b border-monte-sereno/10">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-monte-verde/15 text-monte-verde text-xs font-bold border border-monte-verde/20">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Inspiração do Dia</span>
+                </span>
+                <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full hidden sm:inline-block">
+                  {currentQuote.tag}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setQuoteIndex((prev) => (prev + 1) % MOTIVATIONAL_QUOTES.length)}
+                className="text-xs text-monte-sereno hover:text-monte-azul font-semibold flex items-center gap-1.5 self-start sm:self-auto px-2.5 py-1 rounded-xl hover:bg-monte-areiaSecao/60 transition-colors cursor-pointer"
+                title="Sortear outra frase motivacional"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Outra frase</span>
+              </button>
+            </div>
+
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-monte-verde to-monte-azul text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                <Quote className="w-5 h-5" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <blockquote className="text-sm sm:text-base font-medium text-slate-800 italic leading-relaxed">
+                  "{currentQuote.quote}"
+                </blockquote>
+                <p className="text-xs font-bold text-monte-azul flex items-center gap-1.5">
+                  <span className="w-3 h-0.5 bg-monte-verde inline-block rounded-full" />
+                  {currentQuote.author}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Parte 2: Como está se sentindo hoje? (Exclusivo Equipe Interna) */}
+          <div className="p-5 sm:p-6 bg-white space-y-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Smile className="w-4 h-4 text-monte-azul" />
+                <h3 className="text-xs sm:text-sm font-bold text-monte-azul">
+                  Como você está se sentindo hoje, <span className="text-monte-verde">{user.username}</span>?
+                </h3>
+              </div>
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 bg-slate-50 border border-slate-200/60 px-2.5 py-1 rounded-full self-start sm:self-auto">
+                <Lock className="w-3 h-3 text-slate-400" />
+                <span>Exclusivo para a equipe interna</span>
+              </div>
+            </div>
+
+            {/* Opções de Sentimento */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+              {MOOD_OPTIONS.map((mood) => {
+                const isSelected = selectedMood === mood.id;
+                return (
+                  <button
+                    key={mood.id}
+                    type="button"
+                    onClick={() => handleSelectMood(mood.id)}
+                    className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 group ${
+                      isSelected
+                        ? mood.activeClass
+                        : `${mood.badgeClass} border`
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-2xl group-hover:scale-110 transition-transform">
+                        {mood.emoji}
+                      </span>
+                      {isSelected && (
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                      )}
+                    </div>
+                    <div>
+                      <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+                        {mood.label}
+                      </p>
+                      <p className={`text-[10px] mt-0.5 leading-tight ${isSelected ? 'text-white/85' : 'text-slate-500'}`}>
+                        {mood.desc}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Feedback / Mensagem Positiva ao Selecionar */}
+            {activeMoodObj && (
+              <div className="p-3 rounded-2xl bg-monte-areiaSecao/50 border border-monte-sereno/15 flex items-center justify-between gap-3 text-xs animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{activeMoodObj.emoji}</span>
+                  <p className="font-semibold text-slate-700">
+                    {activeMoodObj.feedback}
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold text-monte-verde uppercase tracking-wider bg-monte-verde/10 px-2.5 py-1 rounded-full shrink-0">
+                  ✓ Registrado
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards em Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
