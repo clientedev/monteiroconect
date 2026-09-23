@@ -231,6 +231,30 @@ export default function Layout() {
     };
   }, [socket, loadUnreadCount]);
 
+  // Escuta mensagens de clique em push nativo vindas do Service Worker quando o app está aberto
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'PUSH_OPEN_CONVERSATION' && event.data.conversationId) {
+        navigate('/conversations', {
+          state: {
+            conversationId: event.data.conversationId,
+            accountId: event.data.accountId,
+            fromNotification: true,
+            fromPush: true,
+            openTimestamp: Date.now(),
+          },
+        });
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+    };
+  }, [navigate]);
+
   const handleLogout = () => {
     disconnectSocket();
     logout();
@@ -242,7 +266,7 @@ export default function Layout() {
     const convId = contact.conversations?.[0]?.id || contact.conversationId;
     if (convId) {
       navigate('/conversations', {
-        state: { conversationId: convId, accountId: contact.whatsappId || contact.whatsapp?.id },
+        state: { conversationId: convId, accountId: contact.whatsappId || contact.whatsapp?.id, openTimestamp: Date.now() },
       });
     } else {
       navigate('/contacts', {
@@ -254,7 +278,7 @@ export default function Layout() {
   const handleOpenConversation = (conv: any) => {
     setShowSearch(false);
     navigate('/conversations', {
-      state: { conversationId: conv.id, accountId: conv.whatsappId || conv.whatsapp?.id },
+      state: { conversationId: conv.id, accountId: conv.whatsappId || conv.whatsapp?.id, openTimestamp: Date.now() },
     });
   };
 
@@ -264,6 +288,7 @@ export default function Layout() {
       state: {
         conversationId: msg.conversationId || msg.conversation?.id,
         accountId: msg.conversation?.whatsappId || msg.conversation?.whatsapp?.id,
+        openTimestamp: Date.now(),
       },
     });
   };
@@ -271,7 +296,7 @@ export default function Layout() {
   const openConversation = (conv: any) => {
     setShowNotif(false);
     navigate('/conversations', {
-      state: { conversationId: conv.id, accountId: conv.whatsapp?.id },
+      state: { conversationId: conv.id, accountId: conv.whatsapp?.id, openTimestamp: Date.now() },
     });
   };
 

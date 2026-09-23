@@ -780,7 +780,7 @@ export default function ConversationsPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesTopRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const pendingConvId = useRef<string | null>(null);
+  const lastHandledNavKeyRef = useRef<string | null>(null);
   const selectedConvRef = useRef<ConvItem | null>(null);
   const selectedAccountIdRef = useRef<string>('');
   const messageRequestId = useRef(0);
@@ -991,26 +991,6 @@ export default function ConversationsPage() {
       setSyncing(false);
     }
   }, [selectedAccountId]);
-
-  // Pré-seleção vinda do sino de notificações (location.state)
-  useEffect(() => {
-    const st: any = location.state;
-    if (st?.accountId && st.accountId !== selectedAccountId) {
-      setSelectedAccountId(st.accountId);
-    }
-    if (st?.conversationId) {
-      pendingConvId.current = st.conversationId;
-    }
-  }, [location.state]);
-
-  // Quando a lista carrega, abre a conversa pendente
-  useEffect(() => {
-    if (pendingConvId.current && conversations.length) {
-      const conv = conversations.find(c => c.id === pendingConvId.current);
-      pendingConvId.current = null;
-      if (conv) handleSelectConv(conv);
-    }
-  }, [conversations]);
 
   // Enter socket rooms & auto-rejoin
   useEffect(() => {
@@ -1262,12 +1242,43 @@ export default function ConversationsPage() {
     }
   };
 
+  const cleanNavParams = useCallback(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const hadConvId = searchParams.has('convId');
+    if (hadConvId) {
+      searchParams.delete('convId');
+    }
+    const newSearch = searchParams.toString() ? `?${searchParams.toString()}` : '';
+
+    const stateObj = (location.state as any) || {};
+    if (stateObj.conversationId || stateObj.fromNotification || stateObj.openTimestamp || hadConvId) {
+      const cleanedState = { ...stateObj };
+      delete cleanedState.conversationId;
+      delete cleanedState.fromNotification;
+      delete cleanedState.openTimestamp;
+      navigate(`${location.pathname}${newSearch}`, {
+        replace: true,
+        state: cleanedState,
+      });
+    }
+  }, [location.pathname, location.search, location.state, navigate]);
+
   const handleBackToConversations = () => {
     if (selectedConv) {
       setSelectedConv(null);
       setIsMobileChatOpen?.(false);
       setMessages(new Map());
       setShowContactDetails(false);
+
+      const currentTarget =
+        (location.state as any)?.conversationId ||
+        new URLSearchParams(location.search).get('convId');
+      if (currentTarget) {
+        const currentTimestamp = (location.state as any)?.openTimestamp || '';
+        lastHandledNavKeyRef.current = `${location.key}:${currentTarget}:${currentTimestamp}`;
+      }
+
+      cleanNavParams();
     } else if ((location.state as any)?.from) {
       navigate((location.state as any).from);
     }
@@ -1285,24 +1296,43 @@ export default function ConversationsPage() {
     loadMessages(conv.id, 1);
   };
 
-  // Redireciona e abre a conversa quando chega de um clique em notificação (push nativo ou in-app)
+  // Redireciona e abre a conversa quando chega de um clique em busca ou notificação
   useEffect(() => {
     const targetConvId =
       (location.state as any)?.conversationId ||
       new URLSearchParams(location.search).get('convId');
+    const targetAccountId = (location.state as any)?.accountId;
+    const openTimestamp = (location.state as any)?.openTimestamp || '';
 
     if (!targetConvId) return;
-    if (selectedConv?.id === targetConvId) return;
 
-    const found = conversations.find(c => c.id === targetConvId);
-    if (found) {
-      handleSelectConv(found);
+    const navIntentKey = `${location.key}:${targetConvId}:${openTimestamp}`;
+    if (lastHandledNavKeyRef.current === navIntentKey) {
       return;
     }
 
-    // Se ainda não estiver na lista (por exemplo outra conta), busca individualmente
+    if (targetAccountId && targetAccountId !== selectedAccountIdRef.current) {
+      setSelectedAccountId(targetAccountId);
+    }
+
+    if (selectedConv?.id === targetConvId) {
+      lastHandledNavKeyRef.current = navIntentKey;
+      cleanNavParams();
+      return;
+    }
+
+    const found = conversations.find(c => c.id === targetConvId);
+    if (found) {
+      lastHandledNavKeyRef.current = navIntentKey;
+      handleSelectConv(found);
+      cleanNavParams();
+      return;
+    }
+
+    let active = true;
     conversationApi.get(targetConvId).then((res: any) => {
-      if (!res) return;
+      if (!active || !res) return;
+      lastHandledNavKeyRef.current = navIntentKey;
       const item: ConvItem = {
         id: res.id,
         contactId: res.contactId,
@@ -1318,12 +1348,17 @@ export default function ConversationsPage() {
         aiEnabled: res.aiEnabled,
         isMuted: res.isMuted,
       };
-      if (res.whatsappId && selectedAccountId !== ALL_ACCOUNTS && selectedAccountId !== res.whatsappId) {
+      if (res.whatsappId && selectedAccountIdRef.current !== ALL_ACCOUNTS && selectedAccountIdRef.current !== res.whatsappId) {
         setSelectedAccountId(res.whatsappId);
       }
       handleSelectConv(item);
+      cleanNavParams();
     }).catch(() => {});
-  }, [location.state, location.search, conversations, selectedConv?.id, selectedAccountId]);
+
+    return () => {
+      active = false;
+    };
+  }, [location.key, location.state, location.search, conversations, selectedConv?.id, cleanNavParams]);
 
   const updateConversationTags = (conversationId: string, nextTags: ConversationTag[]) => {
     setConversations(prev => prev.map(conv =>

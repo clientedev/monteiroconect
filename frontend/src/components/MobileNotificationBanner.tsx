@@ -14,7 +14,7 @@ export default function MobileNotificationBanner() {
     dismissBanner();
     if (conversationId) {
       navigate('/conversations', {
-        state: { conversationId, accountId, fromNotification: true },
+        state: { conversationId, accountId, fromNotification: true, openTimestamp: Date.now() },
       });
     } else {
       navigate('/conversations');

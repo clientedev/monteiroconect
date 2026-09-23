@@ -1,5 +1,5 @@
 // Service Worker do Monteiro Conecta PWA com suporte a Web Push nativo
-const CACHE_NAME = 'monteiro-conecta-v2';
+const CACHE_NAME = 'monteiro-conecta-v3';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -103,13 +103,22 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Se já houver uma janela aberta do PWA, foca nela e navega
+      // Se já houver uma janela aberta do PWA, foca nela e envia mensagem para abrir via SPA
       for (const client of clientList) {
         if ('focus' in client) {
+          client.focus();
+          if (data.conversationId && 'postMessage' in client) {
+            client.postMessage({
+              type: 'PUSH_OPEN_CONVERSATION',
+              conversationId: data.conversationId,
+              accountId: data.accountId,
+            });
+            return;
+          }
           if ('navigate' in client) {
             client.navigate(targetUrl);
           }
-          return client.focus();
+          return;
         }
       }
       // Se o app estiver completamente fechado, abre uma nova janela
