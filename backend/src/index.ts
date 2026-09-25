@@ -113,22 +113,24 @@ async function ensureMessageColumns(): Promise<void> {
       'CREATE INDEX IF NOT EXISTS "MessageArchive_syncedToDrive_idx" ON "MessageArchive" ("syncedToDrive")',
     );
 
-    // Sanitização retroativa de mensagens antigas gravadas com tags cruas
-    try {
-      await prisma.$executeRawUnsafe(`
-        UPDATE "Message" SET content = '🎭 Figurinha' WHERE ("mediaType" = 'sticker' OR type = 'sticker') AND (content = '' OR content IS NULL OR content = '[messageContextInfo]' OR content = '[unknown]');
-        UPDATE "Message" SET content = '🔒 [Mensagem protegida por criptografia]' WHERE content = '[secretEncryptedMessage]';
-        UPDATE "Message" SET content = '📋 [Mensagem interativa]' WHERE content = '[templateMessage]';
-        UPDATE "Message" SET content = 'Mensagem de sistema' WHERE content = '[messageContextInfo]' OR content = '[unknown]';
-        UPDATE "Conversation" SET "lastMessage" = '🎭 Figurinha' WHERE "lastMessage" IN ('[sticker]', '[messageContextInfo]', '[unknown]');
-        UPDATE "Conversation" SET "lastMessage" = '📷 Imagem' WHERE "lastMessage" = '[image]';
-        UPDATE "Conversation" SET "lastMessage" = '🎵 Áudio' WHERE "lastMessage" = '[audio]';
-        UPDATE "Conversation" SET "lastMessage" = '🎥 Vídeo' WHERE "lastMessage" = '[video]';
-        UPDATE "Conversation" SET "lastMessage" = '📄 Documento' WHERE "lastMessage" = '[document]';
-        UPDATE "Conversation" SET "lastMessage" = '📍 Localização' WHERE "lastMessage" = '[location]';
-        UPDATE "Conversation" SET "lastMessage" = '👤 Contato' WHERE "lastMessage" = '[contact]';
-      `);
-    } catch {}
+    // Sanitização retroativa em background (não bloqueia o boot)
+    setTimeout(async () => {
+      try {
+        await prisma.$executeRawUnsafe(`
+          UPDATE "Message" SET content = '🎭 Figurinha' WHERE ("mediaType" = 'sticker' OR type = 'sticker') AND (content = '' OR content IS NULL OR content = '[messageContextInfo]' OR content = '[unknown]');
+          UPDATE "Message" SET content = '🔒 [Mensagem protegida por criptografia]' WHERE content = '[secretEncryptedMessage]';
+          UPDATE "Message" SET content = '📋 [Mensagem interativa]' WHERE content = '[templateMessage]';
+          UPDATE "Message" SET content = 'Mensagem de sistema' WHERE content = '[messageContextInfo]' OR content = '[unknown]';
+          UPDATE "Conversation" SET "lastMessage" = '🎭 Figurinha' WHERE "lastMessage" IN ('[sticker]', '[messageContextInfo]', '[unknown]');
+          UPDATE "Conversation" SET "lastMessage" = '📷 Imagem' WHERE "lastMessage" = '[image]';
+          UPDATE "Conversation" SET "lastMessage" = '🎵 Áudio' WHERE "lastMessage" = '[audio]';
+          UPDATE "Conversation" SET "lastMessage" = '🎥 Vídeo' WHERE "lastMessage" = '[video]';
+          UPDATE "Conversation" SET "lastMessage" = '📄 Documento' WHERE "lastMessage" = '[document]';
+          UPDATE "Conversation" SET "lastMessage" = '📍 Localização' WHERE "lastMessage" = '[location]';
+          UPDATE "Conversation" SET "lastMessage" = '👤 Contato' WHERE "lastMessage" = '[contact]';
+        `);
+      } catch {}
+    }, 15000);
 
     logger.info('Schema de mensagens e mensagens rápidas verificado (deduplicação, índice waMsgId e QuickMessage ativos).');
   } catch (err: any) {
@@ -322,9 +324,6 @@ async function bootstrap() {
     logger.info(`WebSocket disponível em ws://localhost:${env.port}/ws`);
   });
 
-  // Sincroniza banco em background (não bloqueia o event loop)
-  await syncDatabaseInBackground();
-
   try {
     await prisma.$connect();
     await ensureAdminExists();
@@ -340,20 +339,21 @@ async function bootstrap() {
     logger.error('Erro ao inicializar sessões WhatsApp:', err);
   }
 
-  // Rotina automática de alívio do banco de dados (Railway Postgres)
+  // Sincroniza schema e executa alívio do banco em background (não bloqueia healthcheck do Railway)
+  syncDatabaseInBackground()
+    .then(async () => {
+      if (env.archiveAutoEnabled) {
+        logger.info('Iniciando alívio inicial do PostgreSQL...');
+        await archiveService.relieveDatabase();
+      }
+    })
+    .catch((err) => {
+      logger.warn('Aviso na sincronização do schema em background:', err);
+    });
+
+  // Rotina periódica de alívio do banco de dados (Railway Postgres)
   if (env.archiveAutoEnabled) {
     const intervalMs = Math.max(1, env.archiveAutoIntervalHours) * 60 * 60 * 1000;
-    // Executa alívio imediato 5 segundos após o boot (garante alívio imediato no deploy do Railway)
-    setTimeout(async () => {
-      try {
-        logger.info('Iniciando alívio imediato inicial do PostgreSQL no Railway...');
-        await archiveService.relieveDatabase();
-      } catch (e) {
-        logger.warn('Erro na rotina de alívio inicial do banco:', e);
-      }
-    }, 5000);
-
-    // E a cada N horas
     setInterval(async () => {
       try {
         logger.info('Rotina periódica de alívio do PostgreSQL em execução...');
