@@ -347,6 +347,22 @@ class ArchiveService {
         logger.warn('Aviso ao purgar notificações antigas:', notifErr);
       }
 
+      // 2.1. Purga chaves antigas de sincronização de app state do Baileys (> 14 dias), mantendo creds
+      try {
+        const baileysCutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+        const baileysRes = await prisma.baileysAuthState.deleteMany({
+          where: {
+            dataId: { not: 'creds' },
+            updatedAt: { lt: baileysCutoff },
+          },
+        });
+        if (baileysRes.count > 0) {
+          logger.info(`Limpeza de chaves de sessão antigas do Baileys: ${baileysRes.count} purgadas.`);
+        }
+      } catch (bErr) {
+        logger.warn('Aviso na limpeza do BaileysAuthState:', bErr);
+      }
+
       // 3. Localiza conversas que possuem mais de keepCount mensagens
       const conversationsWithManyMessages = await prisma.conversation.findMany({
         select: {
@@ -363,6 +379,7 @@ class ArchiveService {
       });
 
       for (const c of conversationsWithManyMessages) {
+        // Conversas ativas com mais de keepCount mensagens
         if (c._count.messages > keepCount) {
           try {
             const res = await this.archiveConversation(c.id, keepCount);
@@ -374,6 +391,35 @@ class ArchiveService {
             logger.error(`Erro ao aliviar conversa ${c.id}:`, convErr);
           }
         }
+      }
+
+      // 3.1. Conversas inativas há mais de 15 dias com mais de 20 mensagens: arquiva mantendo as 20 mais recentes
+      try {
+        const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+        const inactiveConversations = await prisma.conversation.findMany({
+          where: {
+            lastMessageAt: { lt: fifteenDaysAgo },
+            messages: { some: {} },
+          },
+          select: {
+            id: true,
+            _count: { select: { messages: true } },
+          },
+        });
+
+        for (const ic of inactiveConversations) {
+          if (ic._count.messages > 20) {
+            try {
+              const res = await this.archiveConversation(ic.id, 20);
+              if (res) {
+                archivedConversations++;
+                archivedMessages += res.archivedCount;
+              }
+            } catch {}
+          }
+        }
+      } catch (inactErr) {
+        logger.warn('Aviso ao processar conversas inativas:', inactErr);
       }
 
       // 4. Sincroniza pendências com o Google Drive

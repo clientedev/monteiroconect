@@ -87,6 +87,15 @@ class GoogleDriveService {
         fields: 'id, name, capabilities',
       });
 
+      if (folder.data.capabilities && folder.data.capabilities.canAddChildren === false) {
+        return {
+          success: false,
+          folderName: folder.data.name,
+          email: this.serviceAccountEmail || undefined,
+          error: `A conta ${this.serviceAccountEmail} tem acesso à pasta, mas está como LEITOR. Ela precisa de permissão de EDITOR para poder salvar os backups.`,
+        };
+      }
+
       return {
         success: true,
         folderName: folder.data.name,
