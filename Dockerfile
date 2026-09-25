@@ -38,7 +38,7 @@ COPY --from=backend-builder /app/backend/package.json ./
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 # Diretórios de runtime
-RUN mkdir -p /app/backend/sessions /app/backend/uploads /app/backend/logs
+RUN mkdir -p /app/backend/sessions /app/backend/uploads /app/backend/logs /app/backend/archive_cache
 
 EXPOSE 3001
 

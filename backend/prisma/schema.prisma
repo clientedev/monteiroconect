@@ -114,6 +114,7 @@ model Conversation {
   messages      Message[]
   tags          ConversationTag[]
   assignments   ConversationAssignment[]
+  archives      MessageArchive[]
 
   @@unique([contactId, whatsappId])
   @@index([whatsappId])
@@ -292,4 +293,23 @@ model QuickMessage {
   @@index([shortcut])
   @@index([title])
   @@index([userId])
+}
+
+model MessageArchive {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  whatsappId     String
+  driveFileId    String?
+  fileName       String
+  messageCount   Int          @default(0)
+  firstTimestamp DateTime?
+  lastTimestamp  DateTime?
+  fileSize       Int          @default(0)
+  syncedToDrive  Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([whatsappId])
+  @@index([syncedToDrive])
 }

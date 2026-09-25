@@ -35,4 +35,13 @@ export const env = {
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:contato@monteiroconecta.com.br',
   crmBaseUrl: (process.env.CRM_BASE_URL || 'https://seu-dominio.com').replace(/\/+$/, ''),
   crmApiKey: process.env.CRM_API_KEY || 'ms_live_8a7c289eda9bd623177b50c7e489df3b',
+  // Google Drive & Backup / Archive
+  googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '1kTk-ANgqNWa9ff25l4_FK-7LrjnKpJb_',
+  googleServiceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
+  googleServiceAccountKeyPath: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || '',
+  archiveKeepMessagesPerConv: parseInt(process.env.ARCHIVE_KEEP_MESSAGES_PER_CONV || '100', 10),
+  archiveLocalPath: process.env.ARCHIVE_LOCAL_PATH || './archive_cache',
+  archiveAutoEnabled: process.env.ARCHIVE_AUTO_ENABLED !== 'false',
+  archiveAutoIntervalHours: parseInt(process.env.ARCHIVE_AUTO_INTERVAL_HOURS || '6', 10),
+  archiveLogRetentionDays: parseInt(process.env.ARCHIVE_LOG_RETENTION_DAYS || '7', 10),
 } as const;

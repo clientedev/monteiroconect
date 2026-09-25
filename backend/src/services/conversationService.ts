@@ -2,6 +2,7 @@ import { prisma } from '../database/client.js';
 import { AppError } from '../utils/errors.js';
 import { assertAccountAccess, SessionUser } from './accessService.js';
 import { sendPushForAssignment } from './pushNotificationService.js';
+import { archiveService } from './archiveService.js';
 
 function publicContactName(name: string | null, phone: string): string | null {
   const value = name?.trim() || '';
@@ -262,11 +263,23 @@ export async function getConversationMessages(
 
   const where = { conversationId: { in: targetConvIds } };
 
-  // As duas consultas são independentes. Não bloqueia a entrega do histórico
-  // aguardando a contagem total ou a atualização de badges.
-  const [total, messages] = await Promise.all([
+  // Verifica se há mensagens arquivadas para esta conversa
+  const [totalDb, archiveAgg] = await Promise.all([
     prisma.message.count({ where }),
-    prisma.message.findMany({
+    prisma.messageArchive.aggregate({
+      where: { conversationId: { in: targetConvIds } },
+      _sum: { messageCount: true },
+    }),
+  ]);
+
+  const totalArchived = archiveAgg._sum.messageCount || 0;
+  const total = totalDb + totalArchived;
+
+  let messages: any[] = [];
+
+  if (skip + limit <= totalDb) {
+    // Todas as mensagens solicitadas estão no Postgres (caso mais frequente)
+    messages = await prisma.message.findMany({
       where,
       orderBy: [
         { timestamp: { sort: 'desc', nulls: 'last' } },
@@ -275,8 +288,54 @@ export async function getConversationMessages(
       ],
       skip,
       take: limit,
-    }),
-  ]);
+    });
+  } else if (skip >= totalDb) {
+    // Todas as mensagens solicitadas estão nos arquivos (Google Drive / Cache)
+    const archiveSkip = skip - totalDb;
+    let archivedMsgs: any[] = [];
+    for (const convId of targetConvIds) {
+      const convArchived = await archiveService.getArchivedMessages(convId);
+      archivedMsgs.push(...convArchived);
+    }
+
+    // Garante ordenação cronológica decrescente
+    archivedMsgs.sort((a, b) => {
+      const timeA = new Date(a.timestamp || a.createdAt).getTime();
+      const timeB = new Date(b.timestamp || b.createdAt).getTime();
+      return timeB - timeA;
+    });
+
+    messages = archivedMsgs.slice(archiveSkip, archiveSkip + limit);
+  } else {
+    // Intersecção: parte das mensagens está no Postgres e parte no Arquivo
+    const dbTake = totalDb - skip;
+    const dbMessages = await prisma.message.findMany({
+      where,
+      orderBy: [
+        { timestamp: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      skip,
+      take: dbTake,
+    });
+
+    const archiveNeeded = limit - dbTake;
+    let archivedMsgs: any[] = [];
+    for (const convId of targetConvIds) {
+      const convArchived = await archiveService.getArchivedMessages(convId);
+      archivedMsgs.push(...convArchived);
+    }
+
+    archivedMsgs.sort((a, b) => {
+      const timeA = new Date(a.timestamp || a.createdAt).getTime();
+      const timeB = new Date(b.timestamp || b.createdAt).getTime();
+      return timeB - timeA;
+    });
+
+    const archiveSlice = archivedMsgs.slice(0, archiveNeeded);
+    messages = [...dbMessages, ...archiveSlice];
+  }
 
   return { total, page, limit, messages: messages.reverse() };
 }

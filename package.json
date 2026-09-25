@@ -15,7 +15,8 @@
     "db:seed": "tsx backend/prisma/seed.ts",
     "db:push": "prisma db push --schema backend/prisma/schema.prisma",
     "start": "npm run start --prefix backend",
-    "install:all": "npm install --prefix backend && npm install --prefix frontend"
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "archive:relieve": "npm run archive:relieve --prefix backend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

@@ -25,6 +25,8 @@ import uploadRoutes from './routes/uploadRoutes.js';
 import chatbotRoutes from './routes/chatbotRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import quickMessageRoutes from './routes/quickMessageRoutes.js';
+import archiveRoutes from './routes/archiveRoutes.js';
+import { archiveService } from './services/archiveService.js';
 
 async function ensureMessageColumns(): Promise<void> {
   // O banco do Railway pode ter sido criado antes da inclusão de campos de
@@ -84,6 +86,31 @@ async function ensureMessageColumns(): Promise<void> {
     );
     await prisma.$executeRawUnsafe(
       'CREATE INDEX IF NOT EXISTS "QuickMessage_userId_idx" ON "QuickMessage" ("userId")',
+    );
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "MessageArchive" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "conversationId" TEXT NOT NULL,
+        "whatsappId" TEXT NOT NULL,
+        "driveFileId" TEXT,
+        "fileName" TEXT NOT NULL,
+        "messageCount" INTEGER NOT NULL DEFAULT 0,
+        "firstTimestamp" TIMESTAMP(3),
+        "lastTimestamp" TIMESTAMP(3),
+        "fileSize" INTEGER NOT NULL DEFAULT 0,
+        "syncedToDrive" BOOLEAN NOT NULL DEFAULT false,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "MessageArchive_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `);
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "MessageArchive_conversationId_idx" ON "MessageArchive" ("conversationId")',
+    );
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "MessageArchive_whatsappId_idx" ON "MessageArchive" ("whatsappId")',
+    );
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "MessageArchive_syncedToDrive_idx" ON "MessageArchive" ("syncedToDrive")',
     );
 
     // Sanitização retroativa de mensagens antigas gravadas com tags cruas
@@ -268,6 +295,7 @@ async function bootstrap() {
   app.use('/api/chatbots', chatbotRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/quick-messages', quickMessageRoutes);
+  app.use('/api/archive', archiveRoutes);
 
   // Serve frontend buildado (produção — mesma origem, sem CORS)
   const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
@@ -310,6 +338,30 @@ async function bootstrap() {
     await sessionManager.initialize();
   } catch (err) {
     logger.error('Erro ao inicializar sessões WhatsApp:', err);
+  }
+
+  // Rotina automática de alívio do banco de dados (Railway Postgres)
+  if (env.archiveAutoEnabled) {
+    const intervalMs = Math.max(1, env.archiveAutoIntervalHours) * 60 * 60 * 1000;
+    // Executa alívio imediato 5 segundos após o boot (garante alívio imediato no deploy do Railway)
+    setTimeout(async () => {
+      try {
+        logger.info('Iniciando alívio imediato inicial do PostgreSQL no Railway...');
+        await archiveService.relieveDatabase();
+      } catch (e) {
+        logger.warn('Erro na rotina de alívio inicial do banco:', e);
+      }
+    }, 5000);
+
+    // E a cada N horas
+    setInterval(async () => {
+      try {
+        logger.info('Rotina periódica de alívio do PostgreSQL em execução...');
+        await archiveService.relieveDatabase();
+      } catch (e) {
+        logger.warn('Erro na rotina de alívio automático do banco:', e);
+      }
+    }, intervalMs);
   }
 
   // Graceful shutdown
