@@ -149,7 +149,7 @@ async function syncDatabaseInBackground(): Promise<void> {
   logger.info('Sincronizando schema com banco de dados (prisma db push)...');
   await ensureMessageColumns();
 
-  await new Promise<void>((resolve, reject) => {
+  await new Promise<void>((resolve) => {
     const child = exec(
       // Nunca aceite perda de dados automaticamente ao iniciar o servidor.
       // Alterações destrutivas devem ser revisadas e executadas manualmente.
@@ -157,8 +157,9 @@ async function syncDatabaseInBackground(): Promise<void> {
       { timeout: 120_000 },
       (err, stdout, stderr) => {
         if (err) {
-          logger.error(`prisma db push falhou: ${stderr || err.message}`);
-          reject(err);
+          logger.warn(`prisma db push não pôde sincronizar automaticamente (schema mantido): ${stderr || err.message}`);
+          // Resolvemos para não interromper rotinas subsequentes (ensureMessageColumns já garantiu as tabelas necessárias)
+          resolve();
         } else {
           logger.info(`Schema sincronizado: ${stdout?.trim()}`);
           resolve();
