@@ -5,6 +5,23 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
+function cleanDriveFolderId(raw?: string): string {
+  const fallback = '1kTk-ANgqNWa9ff25l4_FK-7LrjnKpJb_';
+  if (!raw || raw.trim().length === 0) return fallback;
+  let str = raw.trim();
+  const match = str.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  const matchId = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1]) {
+    return matchId[1];
+  }
+  str = str.split('?')[0].split('&')[0];
+  str = str.replace(/^https?:\/\/[^/]+\//, '').replace(/\/+$/, '');
+  return str || fallback;
+}
+
 export const env = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -36,7 +53,7 @@ export const env = {
   crmBaseUrl: (process.env.CRM_BASE_URL || 'https://seu-dominio.com').replace(/\/+$/, ''),
   crmApiKey: process.env.CRM_API_KEY || 'ms_live_8a7c289eda9bd623177b50c7e489df3b',
   // Google Drive & Backup / Archive
-  googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '1kTk-ANgqNWa9ff25l4_FK-7LrjnKpJb_',
+  googleDriveFolderId: cleanDriveFolderId(process.env.GOOGLE_DRIVE_FOLDER_ID),
   googleServiceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
   googleServiceAccountKeyPath: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || '',
   archiveKeepMessagesPerConv: parseInt(process.env.ARCHIVE_KEEP_MESSAGES_PER_CONV || '100', 10),

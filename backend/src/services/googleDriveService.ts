@@ -110,6 +110,22 @@ class GoogleDriveService {
     return this.lastInitError;
   }
 
+  public getCleanFolderId(customId?: string): string {
+    const raw = customId || env.googleDriveFolderId || '1kTk-ANgqNWa9ff25l4_FK-7LrjnKpJb_';
+    let str = raw.trim();
+    const match = str.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+    const matchId = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchId && matchId[1]) {
+      return matchId[1];
+    }
+    str = str.split('?')[0].split('&')[0];
+    str = str.replace(/^https?:\/\/[^/]+\//, '').replace(/\/+$/, '');
+    return str || '1kTk-ANgqNWa9ff25l4_FK-7LrjnKpJb_';
+  }
+
   /**
    * Helper com timeout estrito garantido via Promise.race
    */
@@ -153,9 +169,11 @@ class GoogleDriveService {
       return res;
     }
 
+    const targetFolderId = this.getCleanFolderId();
+
     try {
       const folderPromise = this.driveClient.files.get({
-        fileId: env.googleDriveFolderId,
+        fileId: targetFolderId,
         fields: 'id, name, capabilities',
         supportsAllDrives: true,
       });
@@ -185,7 +203,7 @@ class GoogleDriveService {
       let friendlyError = rawMsg;
 
       if (rawMsg.includes('File not found') || rawMsg.includes('404')) {
-        friendlyError = `A pasta "${env.googleDriveFolderId}" não foi encontrada para a conta ${this.serviceAccountEmail}. Abra a pasta no Google Drive, clique em Compartilhar e adicione o e-mail "${this.serviceAccountEmail}" como EDITOR.`;
+        friendlyError = `A pasta "${this.getCleanFolderId()}" não foi encontrada para a conta ${this.serviceAccountEmail}. Abra a pasta no Google Drive, clique em Compartilhar e adicione o e-mail "${this.serviceAccountEmail}" como EDITOR.`;
       } else if (rawMsg.includes('The caller does not have permission') || rawMsg.includes('403')) {
         friendlyError = `Permissão negada (403). Adicione a conta de serviço "${this.serviceAccountEmail}" na pasta do Google Drive como EDITOR.`;
       } else if (rawMsg.includes('Tempo limite')) {
@@ -218,7 +236,7 @@ class GoogleDriveService {
     }
 
     try {
-      const folderId = opts.folderId || env.googleDriveFolderId;
+      const folderId = this.getCleanFolderId(opts.folderId);
       const media = {
         mimeType: opts.mimeType || 'application/gzip',
         body: Readable.from(opts.content),
