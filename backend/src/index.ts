@@ -340,13 +340,10 @@ async function bootstrap() {
     logger.error('Erro ao inicializar sessões WhatsApp:', err);
   }
 
-  // Sincroniza schema e executa alívio do banco em background (não bloqueia healthcheck do Railway)
+  // Sincroniza schema em background (não bloqueia healthcheck do Railway)
   syncDatabaseInBackground()
-    .then(async () => {
-      if (env.archiveAutoEnabled) {
-        logger.info('Iniciando alívio inicial do PostgreSQL...');
-        await archiveService.relieveDatabase();
-      }
+    .then(() => {
+      logger.info('Sincronização de schema em background concluída com sucesso.');
     })
     .catch((err) => {
       logger.warn('Aviso na sincronização do schema em background:', err);

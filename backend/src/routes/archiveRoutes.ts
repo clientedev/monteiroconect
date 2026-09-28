@@ -74,4 +74,12 @@ router.post('/sync', async (req, res, next) => {
   }
 });
 
+/**
+ * Reseta o lock de execução se a rotina tiver ficado presa
+ */
+router.post('/reset-lock', (req, res) => {
+  const result = archiveService.resetLock();
+  res.json(result);
+});
+
 export default router;

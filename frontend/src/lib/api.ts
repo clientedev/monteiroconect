@@ -364,6 +364,7 @@ export const archiveApi = {
   backupAndRelieve: (params?: { retentionDays?: number; keepCount?: number; logRetentionDays?: number; preserveRecentPerConv?: number }) =>
     api.post<ArchiveRelieveResult>('/archive/backup-and-relieve', params),
   syncPending: () => api.post<{ success: boolean; syncedCount: number }>('/archive/sync'),
+  resetLock: () => api.post<{ success: boolean; message: string }>('/archive/reset-lock'),
 };
 
 

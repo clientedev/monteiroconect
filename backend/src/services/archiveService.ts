@@ -16,6 +16,7 @@ class ArchiveService {
   private memoryCache = new Map<string, CachedArchive>();
   private maxMemoryCacheEntries = 100;
   private isRelieving = false;
+  private relievingStartedAt = 0;
 
   constructor() {
     this.localDir = path.resolve(env.archiveLocalPath);
@@ -172,7 +173,13 @@ class ArchiveService {
     conversationId: string,
     cutoffDate: Date,
     keepRecentMin: number = 1,
-  ): Promise<{ conversationId: string; archivedCount: number; driveFileId?: string } | null> {
+  ): Promise<{
+    conversationId: string;
+    archivedCount: number;
+    driveFileId?: string;
+    syncedToDrive?: boolean;
+    uploadError?: string;
+  } | null> {
     try {
       const conv = await prisma.conversation.findUnique({
         where: { id: conversationId },
@@ -240,6 +247,7 @@ class ArchiveService {
       // Upload para Google Drive se configurado
       let driveFileId: string | null = null;
       let syncedToDrive = false;
+      let uploadError: string | undefined;
 
       if (googleDriveService.isConfigured()) {
         try {
@@ -252,9 +260,12 @@ class ArchiveService {
             driveFileId = uploadRes.fileId;
             syncedToDrive = true;
           }
-        } catch (uploadErr) {
-          logger.warn(`Falha ao enviar backup da conversa ${conversationId} para o Drive. Mantido localmente:`, uploadErr);
+        } catch (uploadErr: any) {
+          uploadError = uploadErr?.message || String(uploadErr);
+          logger.warn(`Falha ao enviar backup da conversa ${conversationId} para o Drive. Mantido localmente:`, uploadError);
         }
+      } else {
+        uploadError = googleDriveService.getInitError() || 'Google Drive não configurado no Railway';
       }
 
       // Registra no índice de arquivos e remove do Postgres
@@ -292,6 +303,8 @@ class ArchiveService {
         conversationId,
         archivedCount: messagesToArchive.length,
         driveFileId: driveFileId || undefined,
+        syncedToDrive,
+        uploadError,
       };
     } catch (err: any) {
       logger.error(`Erro ao arquivar mensagens antigas da conversa ${conversationId}:`, err?.message || err);
@@ -436,6 +449,13 @@ class ArchiveService {
     const retentionDays = opts?.retentionDays ?? 5;
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
+    // Se o processo estiver travado há mais de 2 minutos, reseta automaticamente
+    if (this.isRelieving && (Date.now() - this.relievingStartedAt > 120000)) {
+      logger.warn('Lock de backup/alívio anterior expirou (> 2min). Destravando automaticamente...');
+      this.isRelieving = false;
+      this.relievingStartedAt = 0;
+    }
+
     if (this.isRelieving) {
       return {
         success: false,
@@ -447,11 +467,13 @@ class ArchiveService {
         purgedNotifications: 0,
         syncedToDrive: 0,
         driveConfigured: googleDriveService.isConfigured(),
-        error: 'Uma rotina de backup e alívio do banco de dados já está em execução.',
+        driveStatus: await googleDriveService.testConnection(),
+        error: 'Uma rotina de backup e alívio do banco de dados já está em execução. Você pode clicar em "Destravar Processo" para liberá-la imediatamente.',
       };
     }
 
     this.isRelieving = true;
+    this.relievingStartedAt = Date.now();
     const logRetentionDays = opts?.logRetentionDays ?? retentionDays;
     const preserveRecentPerConv = opts?.preserveRecentPerConv ?? 1;
 
@@ -460,6 +482,7 @@ class ArchiveService {
     let purgedLogs = 0;
     let purgedNotifications = 0;
     let syncedToDrive = 0;
+    const driveUploadErrors: string[] = [];
 
     try {
       logger.info(`Iniciando backup para Google Drive & alívio do Postgres (Preservando dados de ${retentionDays} dias, cutoff: ${cutoffDate.toISOString()})...`);
@@ -534,9 +557,13 @@ class ArchiveService {
           if (res && res.archivedCount > 0) {
             archivedConversations++;
             archivedMessages += res.archivedCount;
+            if (res.uploadError) {
+              driveUploadErrors.push(res.uploadError);
+            }
           }
-        } catch (convErr) {
+        } catch (convErr: any) {
           logger.error(`Erro ao arquivar mensagens da conversa ${c.id}:`, convErr);
+          driveUploadErrors.push(convErr?.message || String(convErr));
         }
       }
 
@@ -595,8 +622,9 @@ class ArchiveService {
             mimeType: 'application/gzip',
             content: summaryGzip,
           });
-        } catch (sumErr) {
+        } catch (sumErr: any) {
           logger.warn('Aviso ao salvar arquivo resumo de metadados no Drive:', sumErr);
+          driveUploadErrors.push(`Metadados Drive: ${sumErr?.message || sumErr}`);
         }
       }
 
@@ -607,6 +635,15 @@ class ArchiveService {
       const driveTest = await googleDriveService.testConnection();
 
       logger.info(`Backup para Drive & Alívio concluído: ${archivedMessages} mensagens arquivadas em ${archivedConversations} conversas, ${purgedLogs} logs purgados. Dados dos últimos ${retentionDays} dias mantidos no Postgres.`);
+
+      let generalError: string | undefined;
+      if (!googleDriveService.isConfigured()) {
+        generalError = `Aviso: Google Drive não está configurado no Railway (${googleDriveService.getInitError() || 'GOOGLE_SERVICE_ACCOUNT_JSON ausente'}). Os arquivos foram compactados no servidor local, mas NÃO entraram no Drive.`;
+      } else if (!driveTest.success) {
+        generalError = `Atenção no Google Drive: ${driveTest.error}`;
+      } else if (driveUploadErrors.length > 0) {
+        generalError = `Aviso no envio de arquivos ao Drive: ${driveUploadErrors[0]}`;
+      }
 
       return {
         success: true,
@@ -619,6 +656,7 @@ class ArchiveService {
         syncedToDrive,
         driveConfigured: googleDriveService.isConfigured(),
         driveStatus: driveTest,
+        error: generalError,
       };
     } catch (err: any) {
       logger.error('Erro geral durante rotina de backup/alívio do PostgreSQL:', err);
@@ -637,7 +675,18 @@ class ArchiveService {
       };
     } finally {
       this.isRelieving = false;
+      this.relievingStartedAt = 0;
     }
+  }
+
+  /**
+   * Reseta o lock de execução caso tenha ficado preso
+   */
+  public resetLock(): { success: boolean; message: string } {
+    this.isRelieving = false;
+    this.relievingStartedAt = 0;
+    logger.info('Lock de alívio do banco de dados resetado manualmente.');
+    return { success: true, message: 'Rotina de backup destravada com sucesso. Você já pode executar o backup.' };
   }
 
   /**

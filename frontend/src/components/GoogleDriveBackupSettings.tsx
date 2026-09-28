@@ -81,6 +81,27 @@ export default function GoogleDriveBackupSettings() {
     }
   };
 
+  const [isResettingLock, setIsResettingLock] = useState(false);
+
+  const handleResetLock = async () => {
+    try {
+      setIsResettingLock(true);
+      const res = await archiveApi.resetLock();
+      setFeedbackMessage({
+        type: 'success',
+        text: res.message || 'Processo destravado com sucesso! Agora você já pode iniciar o backup.',
+      });
+      await fetchStats();
+    } catch (err: any) {
+      setFeedbackMessage({
+        type: 'error',
+        text: err?.message || 'Erro ao destravar o processo.',
+      });
+    } finally {
+      setIsResettingLock(false);
+    }
+  };
+
   const handleExecuteBackup = async () => {
     try {
       setIsProcessing(true);
@@ -95,10 +116,18 @@ export default function GoogleDriveBackupSettings() {
       setLastResult(result);
 
       if (result.success) {
-        setFeedbackMessage({
-          type: 'success',
-          text: `Backup concluído com sucesso! ${result.archivedMessages.toLocaleString('pt-BR')} mensagens enviadas para o Google Drive e liberadas do Postgres. Dados dos últimos ${retentionDays} dias mantidos no banco.`,
-        });
+        if (result.error) {
+          // Concluiu a parte do banco mas com aviso no Drive
+          setFeedbackMessage({
+            type: 'error',
+            text: result.error,
+          });
+        } else {
+          setFeedbackMessage({
+            type: 'success',
+            text: `Backup concluído com sucesso! ${result.archivedMessages.toLocaleString('pt-BR')} mensagens enviadas para o Google Drive e liberadas do Postgres. Dados dos últimos ${retentionDays} dias mantidos no banco.`,
+          });
+        }
       } else {
         setFeedbackMessage({
           type: 'error',
@@ -194,27 +223,43 @@ export default function GoogleDriveBackupSettings() {
         <div className="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
       </div>
 
-      {/* Alerta de Feedback */}
+      {/* Alerta de Feedback com Ação de Destravar */}
       {feedbackMessage && (
         <div
-          className={`p-4 rounded-xl text-sm font-medium flex items-start gap-3 border ${
+          className={`p-4 rounded-xl text-sm font-medium flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border ${
             feedbackMessage.type === 'success'
               ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-              : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+              : 'bg-rose-950/50 border-rose-500/50 text-rose-200'
           }`}
         >
-          {feedbackMessage.type === 'success' ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-          ) : (
-            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-          )}
-          <div className="flex-1">{feedbackMessage.text}</div>
-          <button
-            onClick={() => setFeedbackMessage(null)}
-            className="text-slate-400 hover:text-white text-xs underline"
-          >
-            Fechar
-          </button>
+          <div className="flex items-start gap-3 flex-1">
+            {feedbackMessage.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1 leading-relaxed">{feedbackMessage.text}</div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            {feedbackMessage.type === 'error' && (feedbackMessage.text.includes('execução') || feedbackMessage.text.includes('Destravar')) && (
+              <button
+                type="button"
+                onClick={handleResetLock}
+                disabled={isResettingLock}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isResettingLock ? 'animate-spin' : ''}`} />
+                <span>{isResettingLock ? 'Destravando...' : 'Destravar Processo'}</span>
+              </button>
+            )}
+            <button
+              onClick={() => setFeedbackMessage(null)}
+              className="text-slate-400 hover:text-white text-xs underline px-2 py-1"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
       )}
 
