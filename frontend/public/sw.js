@@ -1,12 +1,22 @@
 // Service Worker do Monteiro Conecta PWA com suporte a Web Push nativo
-const CACHE_NAME = 'monteiro-conecta-v3';
+const CACHE_NAME = 'monteiro-conecta-v4';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((name) => {
+          if (name !== CACHE_NAME) {
+            return caches.delete(name);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
 let userSettings = {
@@ -46,8 +56,9 @@ function isTimeWithinSchedule(schedule) {
   }
 }
 
-// Intercepta requisições estáticas leves sem bloquear APIs/sockets
+// Intercepta requisições de forma segura garantindo que event.respondWith SEMPRE retorne uma Response válida
 self.addEventListener('fetch', (event) => {
+  // Ignora chamadas de API, WebSockets e métodos não-GET
   if (
     event.request.method !== 'GET' ||
     event.request.url.includes('/api/') ||
@@ -56,8 +67,36 @@ self.addEventListener('fetch', (event) => {
   ) {
     return;
   }
+
+  // Navegação SPA (ex: /settings, /conversations, /dashboard)
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          const indexHtml = await caches.match('/index.html');
+          if (indexHtml) return indexHtml;
+          return fetch('/index.html').catch(() => {
+            return new Response(
+              '<!DOCTYPE html><html><body><h3>Monteiro Conecta Offline</h3><p>Verifique sua conexao com a internet.</p></body></html>',
+              { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+            );
+          });
+        })
+    );
+    return;
+  }
+
+  // Recursos estáticos (imagens, scripts, css)
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request)
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        // NUNCA retorne undefined para o respondWith: garante uma Response válida de erro
+        return new Response('', { status: 404, statusText: 'Resource Not Found' });
+      })
   );
 });
 
