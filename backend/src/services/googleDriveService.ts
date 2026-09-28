@@ -74,13 +74,20 @@ class GoogleDriveService {
         }
 
         this.serviceAccountEmail = credentials.client_email || null;
-        const auth = new google.auth.GoogleAuth({
+        const authOptions: any = {
           credentials,
           scopes: [
             'https://www.googleapis.com/auth/drive.file',
             'https://www.googleapis.com/auth/drive',
           ],
-        });
+        };
+
+        if (env.googleDriveImpersonateUser && env.googleDriveImpersonateUser.trim().length > 0) {
+          authOptions.clientOptions = { subject: env.googleDriveImpersonateUser.trim() };
+          logger.info(`Google Drive com delegação/impersonação de usuário: ${env.googleDriveImpersonateUser.trim()}`);
+        }
+
+        const auth = new google.auth.GoogleAuth(authOptions);
 
         this.driveClient = google.drive({ version: 'v3', auth });
         this.initialized = true;
@@ -262,8 +269,10 @@ class GoogleDriveService {
     } catch (err: any) {
       const rawMsg = err?.response?.data?.error?.message || err?.message || String(err);
       let friendlyMsg = rawMsg;
-      if (rawMsg.includes('File not found') || rawMsg.includes('404')) {
-        friendlyMsg = `Pasta ${env.googleDriveFolderId} não encontrada ou sem acesso. Compartilhe a pasta com ${this.serviceAccountEmail} como Editor.`;
+      if (rawMsg.includes('storage quota') || rawMsg.includes('Service Accounts do not have storage quota')) {
+        friendlyMsg = 'A Conta de Serviço tem cota zero no Meu Drive pessoal do Google. Crie um "Drive Compartilhado" (Shared Drive) no Google Drive, adicione a conta como Administrador de Conteúdo e use o ID dele, ou defina a variável GOOGLE_DRIVE_IMPERSONATE_USER no Railway.';
+      } else if (rawMsg.includes('File not found') || rawMsg.includes('404')) {
+        friendlyMsg = `Pasta ${this.getCleanFolderId()} não encontrada ou sem acesso. Compartilhe a pasta com ${this.serviceAccountEmail} como Editor.`;
       } else if (rawMsg.includes('403') || rawMsg.includes('permission')) {
         friendlyMsg = `Sem permissão de gravação na pasta. Compartilhe a pasta com ${this.serviceAccountEmail} como Editor.`;
       }

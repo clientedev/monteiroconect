@@ -56,6 +56,7 @@ export const env = {
   googleDriveFolderId: cleanDriveFolderId(process.env.GOOGLE_DRIVE_FOLDER_ID),
   googleServiceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
   googleServiceAccountKeyPath: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || '',
+  googleDriveImpersonateUser: process.env.GOOGLE_DRIVE_IMPERSONATE_USER || '',
   archiveKeepMessagesPerConv: parseInt(process.env.ARCHIVE_KEEP_MESSAGES_PER_CONV || '100', 10),
   archiveLocalPath: process.env.ARCHIVE_LOCAL_PATH || './archive_cache',
   archiveAutoEnabled: process.env.ARCHIVE_AUTO_ENABLED !== 'false',
