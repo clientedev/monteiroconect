@@ -531,7 +531,15 @@ class ArchiveService {
         logger.warn('Aviso na limpeza do BaileysAuthState:', bErr);
       }
 
-      // 3. Localiza conversas que possuem mensagens elegíveis (mais de retentionDays dias)
+      // 3. Verifica status do Google Drive previamente para evitar cascata de timeouts
+      const initialDriveTest = await googleDriveService.testConnection();
+      let allowDriveUpload = initialDriveTest.success;
+      if (!initialDriveTest.success) {
+        logger.warn(`Google Drive não apto para upload neste momento: ${initialDriveTest.error}. O alívio salvará os backups localmente.`);
+        driveUploadErrors.push(initialDriveTest.error || 'Google Drive inacessível');
+      }
+
+      // Localiza conversas que possuem mensagens elegíveis (mais de retentionDays dias)
       const conversationsWithOldMessages = await prisma.conversation.findMany({
         where: {
           messages: {
@@ -547,23 +555,30 @@ class ArchiveService {
           id: true,
           whatsappId: true,
         },
+        take: 30, // Processa em lotes de até 30 conversas por disparo para responder rápido ao navegador
       });
 
       logger.info(`Conversas com dados a arquivar (> ${retentionDays} dias): ${conversationsWithOldMessages.length}`);
 
+      // Processa as conversas
       for (const c of conversationsWithOldMessages) {
         try {
           const res = await this.archiveConversationOlderThanDate(c.id, cutoffDate, preserveRecentPerConv);
           if (res && res.archivedCount > 0) {
             archivedConversations++;
             archivedMessages += res.archivedCount;
-            if (res.uploadError) {
+            if (res.uploadError && !driveUploadErrors.includes(res.uploadError)) {
               driveUploadErrors.push(res.uploadError);
+              // Se o Google rejeitar por permissão ou autenticação, evita tentar repetidamente
+              if (res.uploadError.includes('403') || res.uploadError.includes('404') || res.uploadError.includes('não encontrada')) {
+                allowDriveUpload = false;
+              }
             }
           }
         } catch (convErr: any) {
           logger.error(`Erro ao arquivar mensagens da conversa ${c.id}:`, convErr);
-          driveUploadErrors.push(convErr?.message || String(convErr));
+          const cMsg = convErr?.message || String(convErr);
+          if (!driveUploadErrors.includes(cMsg)) driveUploadErrors.push(cMsg);
         }
       }
 

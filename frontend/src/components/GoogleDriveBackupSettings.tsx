@@ -316,6 +316,21 @@ export default function GoogleDriveBackupSettings() {
               </span>
               <span className="text-xs text-slate-400 block mt-0.5">Google Cloud Service Account</span>
             </div>
+            {(stats?.driveAccountEmail || testResult?.email) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const email = stats?.driveAccountEmail || testResult?.email || '';
+                  if (email) {
+                    navigator.clipboard.writeText(email);
+                    setFeedbackMessage({ type: 'success', text: `E-mail da conta copiado: ${email}` });
+                  }
+                }}
+                className="mt-2 text-[11px] text-emerald-400 hover:text-emerald-300 underline flex items-center gap-1 font-medium"
+              >
+                Copiar e-mail da conta de serviço
+              </button>
+            )}
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-700/50">
               <span className="text-xs text-slate-400">Arquivos Pendentes:</span>
               <span className="text-xs font-semibold text-amber-300">
@@ -324,6 +339,40 @@ export default function GoogleDriveBackupSettings() {
             </div>
           </div>
         </div>
+
+        {/* Guia importante de compartilhamento caso a pasta dê erro de permissão */}
+        {!isDriveOk && (
+          <div className="mt-4 p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs sm:text-sm text-amber-200/90 leading-relaxed space-y-1">
+              <strong className="text-white block font-semibold">Como liberar a pasta para receber os backups:</strong>
+              <p>
+                Mesmo que a pasta esteja pública para visualização, a API do Google exige que a conta de serviço tenha permissão direta de gravação.
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-slate-300 pt-1">
+                <li>
+                  Abra sua pasta no Google Drive:{' '}
+                  <a
+                    href="https://drive.google.com/drive/folders/1kTk-ANgqNWa9ff25l4_FK-7LrjnKpJb_"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-emerald-400 underline inline-flex items-center gap-1"
+                  >
+                    Abrir Pasta do Backup <ExternalLink className="w-3 h-3 inline" />
+                  </a>
+                </li>
+                <li>Clique no botão <strong>Compartilhar</strong> no canto superior direito.</li>
+                <li>
+                  Adicione o e-mail da Conta de Serviço:{' '}
+                  <strong className="font-mono text-white bg-slate-800 px-1 py-0.5 rounded text-xs select-all">
+                    {stats?.driveAccountEmail || testResult?.email || 'seu-service-account@...iam.gserviceaccount.com'}
+                  </strong>
+                </li>
+                <li>Mude a permissão de &quot;Leitor&quot; para <strong>&quot;Editor&quot;</strong> e salve.</li>
+              </ol>
+            </div>
+          </div>
+        )}
 
         {stats?.unsyncedArchives && stats.unsyncedArchives > 0 ? (
           <div className="mt-4 p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 flex items-center justify-between">

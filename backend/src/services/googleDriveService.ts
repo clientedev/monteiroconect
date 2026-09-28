@@ -10,6 +10,7 @@ class GoogleDriveService {
   private serviceAccountEmail: string | null = null;
   private initialized = false;
   private lastInitError: string | null = null;
+  private lastTestResult: { success: boolean; folderName?: string; email?: string; error?: string; timestamp: number } | null = null;
 
   constructor() {
     this.init();
@@ -24,7 +25,7 @@ class GoogleDriveService {
       if (env.googleServiceAccountJson && env.googleServiceAccountJson.trim().length > 0) {
         let jsonStr = env.googleServiceAccountJson.trim();
 
-        // Remove aspas externas se o Railway ou .env tiver envolvido em aspas
+        // Remove aspas externas se o Railway tiver envolvido o valor em aspas
         if (
           (jsonStr.startsWith('"') && jsonStr.endsWith('"')) ||
           (jsonStr.startsWith("'") && jsonStr.endsWith("'"))
@@ -110,52 +111,99 @@ class GoogleDriveService {
   }
 
   /**
-   * Testa a conexão e verifica acesso à pasta do Google Drive
+   * Helper com timeout estrito garantido via Promise.race
    */
-  public async testConnection(): Promise<{ success: boolean; folderName?: string; email?: string; error?: string }> {
-    if (!this.isConfigured()) {
-      return {
-        success: false,
-        error: this.lastInitError || 'Credenciais de Service Account não configuradas (defina GOOGLE_SERVICE_ACCOUNT_JSON nas variáveis de ambiente).',
-      };
-    }
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`Tempo limite excedido (${timeoutMs / 1000}s) durante: ${operationName}`));
+      }, timeoutMs);
+    });
 
     try {
-      const folder = await this.driveClient.files.get(
-        {
-          fileId: env.googleDriveFolderId,
-          fields: 'id, name, capabilities',
-          supportsAllDrives: true,
-        },
-        { timeout: 15000 }
-      );
-
-      if (folder.data.capabilities && folder.data.capabilities.canAddChildren === false) {
-        return {
-          success: false,
-          folderName: folder.data.name,
-          email: this.serviceAccountEmail || undefined,
-          error: `A conta ${this.serviceAccountEmail} tem acesso à pasta "${folder.data.name}", mas com permissão de LEITOR. Compartilhe a pasta com ela como EDITOR para permitir o envio dos backups.`,
-        };
-      }
-
-      return {
-        success: true,
-        folderName: folder.data.name,
-        email: this.serviceAccountEmail || undefined,
-      };
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || String(err);
-      return {
-        success: false,
-        email: this.serviceAccountEmail || undefined,
-        error: `Falha ao acessar pasta no Google Drive (${env.googleDriveFolderId}): ${msg}. Certifique-se de compartilhar a pasta com ${this.serviceAccountEmail || 'a conta de serviço'} como Editor.`,
-      };
+      const result = await Promise.race([promise, timeoutPromise]);
+      clearTimeout(timer!);
+      return result;
+    } catch (err) {
+      clearTimeout(timer!);
+      throw err;
     }
   }
 
   /**
-   * Faz upload de arquivo para a pasta do Google Drive
+   * Testa a conexão e verifica acesso à pasta do Google Drive (com cache de 20s e timeout de 6s)
+   */
+  public async testConnection(forceRefresh = false): Promise<{ success: boolean; folderName?: string; email?: string; error?: string }> {
+    if (!forceRefresh && this.lastTestResult && (Date.now() - this.lastTestResult.timestamp < 20000)) {
+      return {
+        success: this.lastTestResult.success,
+        folderName: this.lastTestResult.folderName,
+        email: this.lastTestResult.email,
+        error: this.lastTestResult.error,
+      };
+    }
+
+    if (!this.isConfigured()) {
+      const res = {
+        success: false,
+        error: this.lastInitError || 'Credenciais de Service Account não configuradas (defina GOOGLE_SERVICE_ACCOUNT_JSON nas variáveis de ambiente).',
+      };
+      this.lastTestResult = { ...res, timestamp: Date.now() };
+      return res;
+    }
+
+    try {
+      const folderPromise = this.driveClient.files.get({
+        fileId: env.googleDriveFolderId,
+        fields: 'id, name, capabilities',
+        supportsAllDrives: true,
+      });
+
+      const folder: any = await this.withTimeout(folderPromise, 6000, 'Verificar pasta no Google Drive');
+
+      if (folder.data.capabilities && folder.data.capabilities.canAddChildren === false) {
+        const res = {
+          success: false,
+          folderName: folder.data.name,
+          email: this.serviceAccountEmail || undefined,
+          error: `A conta ${this.serviceAccountEmail} tem acesso à pasta "${folder.data.name}", mas apenas como LEITOR. No Google Drive, clique em Compartilhar e mude para EDITOR.`,
+        };
+        this.lastTestResult = { ...res, timestamp: Date.now() };
+        return res;
+      }
+
+      const res = {
+        success: true,
+        folderName: folder.data.name,
+        email: this.serviceAccountEmail || undefined,
+      };
+      this.lastTestResult = { ...res, timestamp: Date.now() };
+      return res;
+    } catch (err: any) {
+      const rawMsg = err?.response?.data?.error?.message || err?.message || String(err);
+      let friendlyError = rawMsg;
+
+      if (rawMsg.includes('File not found') || rawMsg.includes('404')) {
+        friendlyError = `A pasta "${env.googleDriveFolderId}" não foi encontrada para a conta ${this.serviceAccountEmail}. Abra a pasta no Google Drive, clique em Compartilhar e adicione o e-mail "${this.serviceAccountEmail}" como EDITOR.`;
+      } else if (rawMsg.includes('The caller does not have permission') || rawMsg.includes('403')) {
+        friendlyError = `Permissão negada (403). Adicione a conta de serviço "${this.serviceAccountEmail}" na pasta do Google Drive como EDITOR.`;
+      } else if (rawMsg.includes('Tempo limite')) {
+        friendlyError = `Tempo limite ao conectar com a API do Google (6s). Verifique sua chave de serviço ou conexão de rede.`;
+      }
+
+      const res = {
+        success: false,
+        email: this.serviceAccountEmail || undefined,
+        error: friendlyError,
+      };
+      this.lastTestResult = { ...res, timestamp: Date.now() };
+      return res;
+    }
+  }
+
+  /**
+   * Faz upload de arquivo para a pasta do Google Drive (com timeout estrito de 12s)
    */
   public async uploadFile(opts: {
     name: string;
@@ -176,18 +224,17 @@ class GoogleDriveService {
         body: Readable.from(opts.content),
       };
 
-      const res = await this.driveClient.files.create(
-        {
-          requestBody: {
-            name: opts.name,
-            parents: [folderId],
-          },
-          media,
-          fields: 'id, name, size',
-          supportsAllDrives: true,
+      const createPromise = this.driveClient.files.create({
+        requestBody: {
+          name: opts.name,
+          parents: [folderId],
         },
-        { timeout: 35000 }
-      );
+        media,
+        fields: 'id, name, size',
+        supportsAllDrives: true,
+      });
+
+      const res: any = await this.withTimeout(createPromise, 12000, `Upload de ${opts.name}`);
 
       logger.info(`Arquivo enviado para o Google Drive: ${opts.name} (ID: ${res.data.id})`);
       return {
@@ -195,9 +242,15 @@ class GoogleDriveService {
         name: res.data.name,
       };
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || String(err);
-      logger.error(`Erro ao fazer upload para Google Drive (${opts.name}): ${msg}`);
-      throw new Error(`Erro ao enviar arquivo para o Google Drive: ${msg}`);
+      const rawMsg = err?.response?.data?.error?.message || err?.message || String(err);
+      let friendlyMsg = rawMsg;
+      if (rawMsg.includes('File not found') || rawMsg.includes('404')) {
+        friendlyMsg = `Pasta ${env.googleDriveFolderId} não encontrada ou sem acesso. Compartilhe a pasta com ${this.serviceAccountEmail} como Editor.`;
+      } else if (rawMsg.includes('403') || rawMsg.includes('permission')) {
+        friendlyMsg = `Sem permissão de gravação na pasta. Compartilhe a pasta com ${this.serviceAccountEmail} como Editor.`;
+      }
+      logger.error(`Erro ao fazer upload para Google Drive (${opts.name}): ${friendlyMsg}`);
+      throw new Error(friendlyMsg);
     }
   }
 
@@ -210,11 +263,12 @@ class GoogleDriveService {
     }
 
     try {
-      const res = await this.driveClient.files.get(
+      const dlPromise = this.driveClient.files.get(
         { fileId, alt: 'media', supportsAllDrives: true },
-        { responseType: 'arraybuffer', timeout: 30000 }
+        { responseType: 'arraybuffer' }
       );
 
+      const res: any = await this.withTimeout(dlPromise, 15000, `Download do arquivo ${fileId}`);
       return Buffer.from(res.data);
     } catch (err: any) {
       logger.error(`Erro ao baixar arquivo do Google Drive (${fileId}):`, err?.message || err);
@@ -228,10 +282,8 @@ class GoogleDriveService {
   public async deleteFile(fileId: string): Promise<boolean> {
     if (!this.isConfigured()) return false;
     try {
-      await this.driveClient.files.delete(
-        { fileId, supportsAllDrives: true },
-        { timeout: 15000 }
-      );
+      const delPromise = this.driveClient.files.delete({ fileId, supportsAllDrives: true });
+      await this.withTimeout(delPromise, 8000, `Exclusão do arquivo ${fileId}`);
       return true;
     } catch (err: any) {
       logger.warn(`Erro ao excluir arquivo no Google Drive (${fileId}):`, err?.message || err);
