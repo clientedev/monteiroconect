@@ -43,14 +43,16 @@ router.post('/test-drive', async (req, res, next) => {
 });
 
 const relieveSchema = z.object({
+  retentionDays: z.number().int().min(1).max(365).optional().default(5),
   keepCount: z.number().int().min(10).max(500).optional(),
   logRetentionDays: z.number().int().min(1).max(90).optional(),
+  preserveRecentPerConv: z.number().int().min(0).max(50).optional().default(1),
 });
 
 /**
- * Dispara manualmente a rotina de alívio do PostgreSQL
+ * Dispara manualmente a rotina de backup no Google Drive e alívio do PostgreSQL
  */
-router.post('/relieve', async (req, res, next) => {
+router.post(['/relieve', '/backup-and-relieve'], async (req, res, next) => {
   try {
     const params = relieveSchema.parse(req.body || {});
     const result = await archiveService.relieveDatabase(params);

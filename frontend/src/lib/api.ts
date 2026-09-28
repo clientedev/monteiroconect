@@ -318,3 +318,52 @@ export const quickMessageApi = {
   delete: (id: string) => api.del<{ message: string; id: string }>(`/quick-messages/${id}`),
 };
 
+// Archive & Google Drive Backup
+export interface ArchiveStats {
+  totalArchives: number;
+  totalArchivedMessages: number;
+  totalCompressedBytes: number;
+  unsyncedArchives: number;
+  activeMessagesInDb: number;
+  eligibleForArchive: number;
+  recentMessagesRetained: number;
+  retentionDaysDefault: number;
+  driveConfigured: boolean;
+  driveAccountEmail?: string | null;
+  driveStatus?: {
+    success: boolean;
+    folderName?: string;
+    email?: string;
+    error?: string;
+  };
+  keepLimitPerConv?: number;
+}
+
+export interface ArchiveRelieveResult {
+  success: boolean;
+  retentionDays: number;
+  cutoffDate: string;
+  archivedConversations: number;
+  archivedMessages: number;
+  purgedLogs: number;
+  purgedNotifications: number;
+  syncedToDrive: number;
+  driveConfigured: boolean;
+  driveStatus?: {
+    success: boolean;
+    folderName?: string;
+    email?: string;
+    error?: string;
+  };
+  error?: string;
+}
+
+export const archiveApi = {
+  getStatus: () => api.get<ArchiveStats>('/archive/status'),
+  testDrive: () => api.post<{ success: boolean; folderName?: string; email?: string; error?: string }>('/archive/test-drive'),
+  backupAndRelieve: (params?: { retentionDays?: number; keepCount?: number; logRetentionDays?: number; preserveRecentPerConv?: number }) =>
+    api.post<ArchiveRelieveResult>('/archive/backup-and-relieve', params),
+  syncPending: () => api.post<{ success: boolean; syncedCount: number }>('/archive/sync'),
+};
+
+
