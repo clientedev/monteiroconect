@@ -1,64 +1,70 @@
 import React, { useState } from 'react';
-import { Cloud, Bell } from 'lucide-react';
+import { Bell, Database, Shield } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import MobileNotificationSettings from '../components/MobileNotificationSettings';
 import GoogleDriveBackupSettings from '../components/GoogleDriveBackupSettings';
 
-type SettingsTab = 'backup' | 'notifications';
+type SettingsTab = 'notifications' | 'backup';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('backup');
+  // Notificações abre SEMPRE como primeira aba padrão ao entrar
+  const [activeTab, setActiveTab] = useState<SettingsTab>('notifications');
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-800/80">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
-            Configurações do Sistema
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+            <Bell className="w-6 h-6 text-monte-verde" />
+            Configurações de Notificações
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Gerencie backups no Google Drive, alívio e otimização do PostgreSQL e preferências de notificações.
+            Personalize toques, alertas sonoros e notificações push para dispositivos móveis e desktop.
           </p>
         </div>
 
-        {/* Tabs switcher */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('backup')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-              activeTab === 'backup'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Cloud className="w-4 h-4" />
-            <span>Backup Google Drive</span>
-          </button>
+        {/* Abas discretas - Backup fica reservado e mais discreto */}
+        {isAdmin && (
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/90 border border-slate-800 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('notifications')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                activeTab === 'notifications'
+                  ? 'bg-monte-verde text-slate-900 font-semibold shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>Notificações</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('notifications')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-              activeTab === 'notifications'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Bell className="w-4 h-4" />
-            <span>Notificações & Sons</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('backup')}
+              title="Área restrita a administradores"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                activeTab === 'backup'
+                  ? 'bg-slate-700/80 text-white font-semibold shadow-sm border border-slate-600/50'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-slate-400" />
+              <span>Backup Drive</span>
+              <span className="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">Admin</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Conteúdo da Aba Ativa */}
-      {activeTab === 'backup' ? (
-        <GoogleDriveBackupSettings />
+      {/* Conteúdo: Notificações abre primeiro */}
+      {activeTab === 'notifications' ? (
+        <MobileNotificationSettings />
       ) : (
-        <div className="space-y-6">
-          <h2 className="section-title">Configuração de Notificações</h2>
-          <MobileNotificationSettings />
-        </div>
+        isAdmin && <GoogleDriveBackupSettings />
       )}
     </div>
   );
