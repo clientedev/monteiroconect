@@ -9,7 +9,7 @@ import {
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
   Maximize2, Minimize2, ExternalLink, Reply, Share2, Bell, BellOff, ArrowLeft,
-  Zap, MessageSquareQuote, FileText, Download, TrendingUp, Shield,
+  Zap, MessageSquareQuote, FileText, Download, TrendingUp, Shield, Smartphone,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
 
@@ -954,6 +954,33 @@ export default function ConversationsPage() {
         container.scrollTop = container.scrollHeight - prevScrollHeight;
       }
     });
+  };
+
+  const [fetchingWaHistory, setFetchingWaHistory] = useState(false);
+  const [waHistoryNotice, setWaHistoryNotice] = useState<string | null>(null);
+
+  const handleFetchWhatsAppHistory = async () => {
+    if (!selectedConv || fetchingWaHistory) return;
+    try {
+      setFetchingWaHistory(true);
+      setWaHistoryNotice('Solicitando histórico ao WhatsApp conectado...');
+      const res = await conversationApi.fetchHistory(selectedConv.id);
+      if (res.success) {
+        setWaHistoryNotice('Histórico solicitado! As mensagens aparecerão em instantes.');
+        setTimeout(() => {
+          loadMessages(selectedConv.id, 1, true);
+          setWaHistoryNotice(null);
+        }, 2000);
+      } else {
+        setWaHistoryNotice(res.message || 'Histórico indisponível no WhatsApp');
+        setTimeout(() => setWaHistoryNotice(null), 4000);
+      }
+    } catch {
+      setWaHistoryNotice('Erro ao solicitar histórico ao WhatsApp');
+      setTimeout(() => setWaHistoryNotice(null), 4000);
+    } finally {
+      setFetchingWaHistory(false);
+    }
   };
 
   useEffect(() => { loadAccounts(); }, []);
@@ -2067,7 +2094,7 @@ export default function ConversationsPage() {
              >
               {/* FIX 6.2: Botão "carregar mais" no topo */}
               <div ref={messagesTopRef} />
-              {hasMoreHistory && (
+              {hasMoreHistory ? (
                 <div className="flex justify-center mb-2">
                   <button
                     onClick={loadMoreMessages}
@@ -2080,7 +2107,29 @@ export default function ConversationsPage() {
                     {loadingMore ? 'Carregando...' : `Ver mensagens anteriores (${msgTotal - messages.size} restantes)`}
                   </button>
                 </div>
-              )}
+              ) : isConnected && msgs.length > 0 ? (
+                <div className="flex flex-col items-center gap-1 mb-2">
+                  <button
+                    type="button"
+                    onClick={handleFetchWhatsAppHistory}
+                    disabled={fetchingWaHistory}
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-800 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-300/80 rounded-full px-3.5 py-1.5 transition-all shadow-xs disabled:opacity-50"
+                    title="Puxar mensagens mais antigas diretamente do WhatsApp conectado"
+                  >
+                    {fetchingWaHistory ? (
+                      <div className="w-3 h-3 border-2 border-emerald-700 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Smartphone className="w-3.5 h-3.5 text-emerald-700" />
+                    )}
+                    <span>{fetchingWaHistory ? 'Puxando do WhatsApp...' : 'Buscar mensagens mais antigas no WhatsApp'}</span>
+                  </button>
+                  {waHistoryNotice && (
+                    <span className="text-[10px] text-emerald-700 font-medium animate-fade-in">
+                      {waHistoryNotice}
+                    </span>
+                  )}
+                </div>
+              ) : null}
 
               {msgs.map((msg) => (
                 <ChatMessageItem

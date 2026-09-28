@@ -3078,6 +3078,66 @@ class WhatsAppSessionManager extends EventEmitter {
     return { status: session.status, qrCode: session.qrCode };
   }
 
+  /**
+   * Puxa histórico anterior de uma conversa diretamente do WhatsApp conectado via Baileys.
+   * O WhatsApp oficial no celular funciona como o backup definitivo de histórico,
+   * sem precisar inflar o PostgreSQL.
+   */
+  async fetchOlderMessagesFromWhatsApp(conversationId: string, count = 50): Promise<{ success: boolean; message: string }> {
+    const conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { contact: true },
+    });
+    if (!conv || !conv.contact) {
+      return { success: false, message: 'Conversa não encontrada' };
+    }
+
+    const session = this.sessions.get(conv.whatsappId);
+    if (!session?.socket || session.status !== 'CONNECTED') {
+      return { success: false, message: 'WhatsApp não está conectado no momento' };
+    }
+
+    // Busca a mensagem mais antiga registrada no banco para essa conversa
+    const oldest = await prisma.message.findFirst({
+      where: { conversationId },
+      orderBy: [
+        { timestamp: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'asc' },
+      ],
+    });
+
+    if (!oldest || !oldest.waMsgId) {
+      return { success: false, message: 'Nenhuma mensagem de referência encontrada para puxar histórico anterior' };
+    }
+
+    const jid = conv.contact.phone.includes('@')
+      ? conv.contact.phone
+      : `${conv.contact.phone}@s.whatsapp.net`;
+
+    const oldestKey = {
+      remoteJid: jid,
+      id: oldest.waMsgId,
+      fromMe: oldest.isFromMe,
+    };
+
+    const oldestTimestamp = oldest.timestamp
+      ? oldest.timestamp.getTime()
+      : oldest.createdAt.getTime();
+
+    try {
+      if (typeof (session.socket as any).fetchMessageHistory === 'function') {
+        logger.info(`Solicitando ${count} mensagens anteriores do WhatsApp para ${jid}...`);
+        await (session.socket as any).fetchMessageHistory(count, oldestKey, oldestTimestamp);
+        return { success: true, message: 'Histórico solicitado com sucesso ao WhatsApp' };
+      } else {
+        return { success: false, message: 'Função de histórico não suportada por este socket' };
+      }
+    } catch (err: any) {
+      logger.warn(`Erro ao solicitar histórico ao WhatsApp para ${jid}:`, err?.message || err);
+      return { success: false, message: err?.message || 'Falha ao buscar histórico no WhatsApp' };
+    }
+  }
+
   private async sessionExists(accountId: string): Promise<boolean> {
     const count = await prisma.baileysAuthState.count({ where: { whatsappId: accountId } });
     return count > 0;

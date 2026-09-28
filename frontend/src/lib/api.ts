@@ -147,6 +147,7 @@ export const conversationApi = {
   setMuted: (id: string, muted: boolean) =>
     api.put<{ id: string; isMuted: boolean }>(`/conversations/${id}/mute`, { muted }),
   markRead: (id: string) => api.post(`/conversations/${id}/read`),
+  fetchHistory: (id: string) => api.post<{ success: boolean; message: string }>(`/conversations/${id}/fetch-history`),
   send: (
     accountId: string,
     to: string,
@@ -318,28 +319,17 @@ export const quickMessageApi = {
   delete: (id: string) => api.del<{ message: string; id: string }>(`/quick-messages/${id}`),
 };
 
-// Archive & Google Drive Backup
-export interface ArchiveStats {
-  totalArchives: number;
-  totalArchivedMessages: number;
-  totalCompressedBytes: number;
-  unsyncedArchives: number;
+// Armazenamento & Economia do Postgres (com WhatsApp como Backup)
+export interface StorageStats {
   activeMessagesInDb: number;
   eligibleForArchive: number;
   recentMessagesRetained: number;
+  totalConversations: number;
+  totalContacts: number;
   retentionDaysDefault: number;
-  driveConfigured: boolean;
-  driveAccountEmail?: string | null;
-  driveStatus?: {
-    success: boolean;
-    folderName?: string;
-    email?: string;
-    error?: string;
-  };
-  keepLimitPerConv?: number;
 }
 
-export interface ArchiveRelieveResult {
+export interface StorageCleanResult {
   success: boolean;
   retentionDays: number;
   cutoffDate: string;
@@ -347,22 +337,25 @@ export interface ArchiveRelieveResult {
   archivedMessages: number;
   purgedLogs: number;
   purgedNotifications: number;
-  syncedToDrive: number;
-  driveConfigured: boolean;
-  driveStatus?: {
-    success: boolean;
-    folderName?: string;
-    email?: string;
-    error?: string;
-  };
+  activeMessagesRemaining: number;
   error?: string;
 }
 
+export const storageApi = {
+  getStatus: () => api.get<StorageStats>('/archive/status'),
+  cleanStorage: (params?: { retentionDays?: number; preserveRecentPerConv?: number }) =>
+    api.post<StorageCleanResult>('/archive/clean', params),
+  resetLock: () => api.post<{ success: boolean; message: string }>('/archive/reset-lock'),
+};
+
+// Compatibilidade
+export type ArchiveStats = StorageStats;
+export type ArchiveRelieveResult = StorageCleanResult;
 export const archiveApi = {
-  getStatus: () => api.get<ArchiveStats>('/archive/status'),
-  testDrive: () => api.post<{ success: boolean; folderName?: string; email?: string; error?: string }>('/archive/test-drive'),
-  backupAndRelieve: (params?: { retentionDays?: number; keepCount?: number; logRetentionDays?: number; preserveRecentPerConv?: number }) =>
-    api.post<ArchiveRelieveResult>('/archive/backup-and-relieve', params),
+  getStatus: () => api.get<StorageStats>('/archive/status'),
+  cleanStorage: (params?: { retentionDays?: number }) => api.post<StorageCleanResult>('/archive/clean', params),
+  backupAndRelieve: (params?: any) => api.post<StorageCleanResult>('/archive/clean', params),
+  testDrive: () => api.post<{ success: boolean; message: string }>('/archive/test-drive'),
   syncPending: () => api.post<{ success: boolean; syncedCount: number }>('/archive/sync'),
   resetLock: () => api.post<{ success: boolean; message: string }>('/archive/reset-lock'),
 };

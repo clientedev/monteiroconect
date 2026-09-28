@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Bell, Database, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import MobileNotificationSettings from '../components/MobileNotificationSettings';
-import GoogleDriveBackupSettings from '../components/GoogleDriveBackupSettings';
+import DatabaseStorageSettings from '../components/DatabaseStorageSettings';
 
-type SettingsTab = 'notifications' | 'backup';
+type SettingsTab = 'notifications' | 'storage';
 
 export default function SettingsPage() {
   // Notificações abre SEMPRE como primeira aba padrão ao entrar
@@ -19,14 +19,14 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
             <Bell className="w-6 h-6 text-monte-verde" />
-            Configurações de Notificações
+            Configurações
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Personalize toques, alertas sonoros e notificações push para dispositivos móveis e desktop.
+            Personalize notificações push e gerencie o armazenamento leve do banco de dados.
           </p>
         </div>
 
-        {/* Abas discretas - Backup fica reservado e mais discreto */}
+        {/* Abas discretas - Armazenamento fica reservado para admin */}
         {isAdmin && (
           <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/90 border border-slate-800 self-start sm:self-auto">
             <button
@@ -44,16 +44,16 @@ export default function SettingsPage() {
 
             <button
               type="button"
-              onClick={() => setActiveTab('backup')}
+              onClick={() => setActiveTab('storage')}
               title="Área restrita a administradores"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                activeTab === 'backup'
+                activeTab === 'storage'
                   ? 'bg-slate-700/80 text-white font-semibold shadow-sm border border-slate-600/50'
                   : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
               }`}
             >
               <Database className="w-3.5 h-3.5 text-slate-400" />
-              <span>Backup Drive</span>
+              <span>Armazenamento & Postgres</span>
               <span className="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">Admin</span>
             </button>
           </div>
@@ -64,7 +64,7 @@ export default function SettingsPage() {
       {activeTab === 'notifications' ? (
         <MobileNotificationSettings />
       ) : (
-        isAdmin && <GoogleDriveBackupSettings />
+        isAdmin && <DatabaseStorageSettings />
       )}
     </div>
   );

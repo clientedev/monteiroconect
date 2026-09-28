@@ -35,7 +35,7 @@ export const env = {
   reconnectMaxDelay: parseInt(process.env.RECONNECT_MAX_DELAY || '60000', 10),
   historyMessageLimit: parseInt(process.env.HISTORY_MESSAGE_LIMIT || '0', 10),
   // 0 = sem limite. Use variável de ambiente para restringir se necessário.
-  historySyncDays: parseInt(process.env.HISTORY_SYNC_DAYS || '365', 10),
+  historySyncDays: parseInt(process.env.HISTORY_SYNC_DAYS || '5', 10),
   uploadPath: process.env.UPLOAD_PATH || './uploads',
   maxUploadSize: process.env.MAX_UPLOAD_SIZE || '50MB',
   logLevel: process.env.LOG_LEVEL || 'info',

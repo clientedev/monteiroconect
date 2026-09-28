@@ -1,14 +1,13 @@
 import { Router } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { archiveService } from '../services/archiveService.js';
-import { googleDriveService } from '../services/googleDriveService.js';
 import { AppError } from '../utils/errors.js';
 import { z } from 'zod';
 
 const router = Router();
 router.use(authMiddleware);
 
-// Apenas administradores podem gerenciar backups e alívio do banco de dados
+// Apenas administradores podem gerenciar alívio e otimização do banco de dados
 const adminOnly = (req: AuthRequest, res: any, next: any) => {
   if (req.user?.role !== 'admin') {
     return next(new AppError('Acesso restrito a administradores', 403));
@@ -19,7 +18,7 @@ const adminOnly = (req: AuthRequest, res: any, next: any) => {
 router.use(adminOnly);
 
 /**
- * Consulta status do arquivo, estatísticas e conexão com Google Drive
+ * Consulta métricas e status de armazenamento do PostgreSQL
  */
 router.get('/status', async (req, res, next) => {
   try {
@@ -30,32 +29,19 @@ router.get('/status', async (req, res, next) => {
   }
 });
 
-/**
- * Executa o teste de conexão com a pasta do Google Drive
- */
-router.post('/test-drive', async (req, res, next) => {
-  try {
-    const result = await googleDriveService.testConnection();
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
-
-const relieveSchema = z.object({
+const cleanSchema = z.object({
   retentionDays: z.number().int().min(1).max(365).optional().default(5),
-  keepCount: z.number().int().min(10).max(500).optional(),
-  logRetentionDays: z.number().int().min(1).max(90).optional(),
   preserveRecentPerConv: z.number().int().min(0).max(50).optional().default(1),
+  logRetentionDays: z.number().int().min(1).max(90).optional(),
 });
 
 /**
- * Dispara manualmente a rotina de backup no Google Drive e alívio do PostgreSQL
+ * Executa a rotina de economia de espaço do PostgreSQL (preservando últimos 5 dias)
  */
-router.post(['/relieve', '/backup-and-relieve'], async (req, res, next) => {
+router.post(['/clean', '/relieve', '/backup-and-relieve'], async (req, res, next) => {
   try {
-    const params = relieveSchema.parse(req.body || {});
-    const result = await archiveService.relieveDatabase(params);
+    const params = cleanSchema.parse(req.body || {});
+    const result = await archiveService.cleanOldMessages(params);
     res.json(result);
   } catch (err) {
     next(err);
@@ -63,15 +49,17 @@ router.post(['/relieve', '/backup-and-relieve'], async (req, res, next) => {
 });
 
 /**
- * Sincroniza arquivos pendentes com o Google Drive
+ * Endpoints de compatibilidade (sem Google Drive)
  */
-router.post('/sync', async (req, res, next) => {
-  try {
-    const synced = await archiveService.syncPendingToDrive();
-    res.json({ success: true, syncedCount: synced });
-  } catch (err) {
-    next(err);
-  }
+router.post('/test-drive', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Google Drive desativado. O WhatsApp oficial conectado é o backup definitivo.',
+  });
+});
+
+router.post('/sync', (req, res) => {
+  res.json({ success: true, syncedCount: 0 });
 });
 
 /**

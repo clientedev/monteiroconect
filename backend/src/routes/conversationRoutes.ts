@@ -227,6 +227,16 @@ router.get('/:id/messages', async (req, res, next) => {
   }
 });
 
+// Puxa histórico anterior de mensagens diretamente do WhatsApp conectado (Baileys)
+router.post('/:id/fetch-history', async (req, res, next) => {
+  try {
+    const result = await sessionManager.fetchOlderMessagesFromWhatsApp(req.params.id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Mark as read
 router.post('/:id/read', async (req, res, next) => {
   try {
