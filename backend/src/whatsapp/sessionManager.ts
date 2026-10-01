@@ -1419,9 +1419,21 @@ class WhatsAppSessionManager extends EventEmitter {
       mediaType = 'reaction';
     } else if (messageType === 'secretEncryptedMessage') {
       content = '🔒 [Mensagem protegida por criptografia]';
+      mediaType = 'system';
     } else if (messageType === 'protocolMessage') {
+      mediaType = 'system';
       if (msgObj?.type === 0 || msgObj?.type === 'REVOKE') {
         content = '🚫 Esta mensagem foi apagada';
+      } else if (msgObj?.type === 3 || msgObj?.type === 'EPHEMERAL_SETTING') {
+        const exp = Number(msgObj.ephemeralExpiration);
+        if (exp === 0) content = '⏱️ As mensagens temporárias foram desativadas.';
+        else if (exp === 86400) content = '⏱️ As mensagens temporárias foram ativadas (24 horas).';
+        else if (exp === 604800) content = '⏱️ As mensagens temporárias foram ativadas (7 dias).';
+        else if (exp === 7776000) content = '⏱️ As mensagens temporárias foram ativadas (90 dias).';
+        else if (exp > 0) content = `⏱️ As mensagens temporárias foram ativadas (${Math.round(exp / 86400)} dias).`;
+        else content = '⏱️ A configuração de mensagens temporárias foi alterada nesta conversa.';
+      } else if (msg.messageStubType) {
+        content = this.formatStubMessage(msg.messageStubType, msg.messageStubParameters as string[]);
       } else {
         content = 'Mensagem de serviço do WhatsApp';
       }
@@ -1429,29 +1441,259 @@ class WhatsAppSessionManager extends EventEmitter {
       // Fallback para notificações de sistema / chamadas / stubs quando não há mensagem de texto
       const stub = msg.messageStubType as any;
       if (stub) {
-        if (stub === 1 || String(stub).includes('REVOKE')) {
-          content = '🚫 Esta mensagem foi apagada';
-        } else if (
-          stub === 37 ||
-          stub === 38 ||
-          stub === 39 ||
-          stub === 40 ||
-          String(stub).includes('CALL_MISSED')
-        ) {
-          content = '📞 Chamada de voz ou vídeo perdida';
-        } else if (String(stub).includes('GROUP_PARTICIPANT')) {
-          content = '👥 Notificação de grupo';
-        } else if (stub === 68 || String(stub).includes('CIPHERTEXT')) {
-          content = '⏳ Aguardando mensagem (sincronizando com WhatsApp)...';
-        } else {
-          content = 'ℹ️ Notificação do WhatsApp';
-        }
+        content = this.formatStubMessage(stub, msg.messageStubParameters as string[]);
+        mediaType = 'system';
       } else {
         content = 'Mensagem indisponível';
       }
     }
 
     return { content, mediaType, messageType, quotedMessageId, quotedContent };
+  }
+
+  /**
+   * Converte notificações de sistema / stubs do WhatsApp em mensagens exatas
+   * equivalentes às exibidas no aplicativo oficial do WhatsApp (em português).
+   */
+  private formatStubMessage(stub: any, rawParams?: string[] | null): string {
+    const params = (rawParams || []).map((p) => String(p || '').trim());
+    const stubNum = typeof stub === 'number' ? stub : Number(stub);
+    const stubStr = String(stub || '').toUpperCase();
+
+    // Helper para limpar número de telefone (JID ou número cru)
+    const cleanPhone = (val: string): string => {
+      if (!val) return '';
+      const clean = val.replace(/@.*$/, '').replace(/\D/g, '');
+      return clean ? `+${clean}` : val;
+    };
+
+    const formatPhoneList = (list: string[]): string => {
+      const formatted = list.map(cleanPhone).filter(Boolean);
+      if (formatted.length === 0) return 'Participante';
+      if (formatted.length === 1) return formatted[0];
+      if (formatted.length === 2) return `${formatted[0]} e ${formatted[1]}`;
+      return `${formatted.slice(0, -1).join(', ')} e ${formatted[formatted.length - 1]}`;
+    };
+
+    // 1. Mensagem apagada / Revogada
+    if (stubNum === 1 || stubNum === 132 || stubStr.includes('REVOKE')) {
+      if (stubNum === 132 || stubStr.includes('ADMIN_REVOKE')) {
+        return '🚫 Esta mensagem foi apagada por um administrador';
+      }
+      return '🚫 Esta mensagem foi apagada';
+    }
+
+    // 2. Criptografia de ponta a ponta
+    if (stubNum === 39 || stubNum === 75 || stubStr.includes('E2E_ENCRYPTED')) {
+      return '🔒 As mensagens e as chamadas são protegidas com a criptografia de ponta a ponta. Ninguém fora desta conversa pode ler ou ouvir o conteúdo transmitido, nem mesmo o WhatsApp.';
+    }
+
+    // 3. Alteração do código de segurança do contato / troca de aparelho
+    if (
+      stubNum === 38 ||
+      stubNum === 73 ||
+      stubNum === 118 ||
+      stubStr.includes('IDENTITY_CHANGED') ||
+      stubStr.includes('DEVICE_CHANGED')
+    ) {
+      const target = params[0] ? cleanPhone(params[0]) : '';
+      return target
+        ? `🔒 O código de segurança de ${target} mudou.`
+        : '🔒 O código de segurança deste contato foi alterado.';
+    }
+
+    // 4. Mensagem aguardando sincronização de chaves
+    if (
+      stubNum === 2 ||
+      stubNum === 3 ||
+      stubNum === 68 ||
+      stubNum === 125 ||
+      stubStr.includes('CIPHERTEXT') ||
+      stubStr.includes('OVERSIZED') ||
+      stubStr.includes('SYNCING')
+    ) {
+      return '⏳ Aguardando esta mensagem. Isso pode levar alguns instantes.';
+    }
+
+    // 5. Chamadas de Voz e Vídeo
+    if (stubNum === 40 || stubStr === 'CALL_MISSED_VOICE') {
+      return '📞 Chamada de voz perdida';
+    }
+    if (stubNum === 41 || stubStr === 'CALL_MISSED_VIDEO') {
+      return '📹 Chamada de vídeo perdida';
+    }
+    if (stubNum === 45 || stubStr === 'CALL_MISSED_GROUP_VOICE') {
+      return '📞 Chamada de voz em grupo perdida';
+    }
+    if (stubNum === 46 || stubStr === 'CALL_MISSED_GROUP_VIDEO') {
+      return '📹 Chamada de vídeo em grupo perdida';
+    }
+    if (stubNum === 169 || stubStr.includes('SILENCED_UNKNOWN_CALLER_AUDIO')) {
+      return '📞 Chamada de voz silenciada (número desconhecido)';
+    }
+    if (stubNum === 170 || stubStr.includes('SILENCED_UNKNOWN_CALLER_VIDEO')) {
+      return '📹 Chamada de vídeo silenciada (número desconhecido)';
+    }
+    if (stubStr.includes('CALL_MISSED')) {
+      return '📞 Chamada perdida';
+    }
+
+    // 6. Mudança de número de telefone do contato
+    if (stubNum === 42 || stubNum === 33 || stubStr.includes('CHANGE_NUMBER')) {
+      if (params.length >= 2) {
+        return `📱 Este contato mudou de número de ${cleanPhone(params[0])} para ${cleanPhone(params[1])}.`;
+      }
+      if (params.length === 1 && params[0]) {
+        return `📱 Este contato mudou para o novo número ${cleanPhone(params[0])}.`;
+      }
+      return '📱 O número de telefone deste contato foi alterado.';
+    }
+
+    // 7. Mensagens temporárias
+    if (
+      stubNum === 72 ||
+      stubNum === 130 ||
+      stubNum === 143 ||
+      stubStr.includes('EPHEMERAL') ||
+      stubStr.includes('DISAPPEARING')
+    ) {
+      const durSec = parseInt(params[0] || '', 10);
+      if (params[0] === '0' || durSec === 0) {
+        return '⏱️ As mensagens temporárias foram desativadas.';
+      }
+      if (durSec === 86400) {
+        return '⏱️ As mensagens temporárias foram ativadas (24 horas).';
+      }
+      if (durSec === 604800) {
+        return '⏱️ As mensagens temporárias foram ativadas (7 dias).';
+      }
+      if (durSec === 7776000) {
+        return '⏱️ As mensagens temporárias foram ativadas (90 dias).';
+      }
+      if (!Number.isNaN(durSec) && durSec > 0) {
+        const days = Math.round(durSec / 86400);
+        return days >= 1
+          ? `⏱️ As mensagens temporárias foram ativadas (${days} dias).`
+          : `⏱️ As mensagens temporárias foram ativadas (${Math.round(durSec / 3600)} horas).`;
+      }
+      return '⏱️ A configuração de mensagens temporárias foi alterada nesta conversa.';
+    }
+
+    // 8. Mensagem fixada
+    if (stubNum === 177 || stubStr.includes('PINNED_MESSAGE')) {
+      return '📌 Uma mensagem foi fixada na conversa.';
+    }
+
+    // 9. Bloqueio de contato
+    if (stubNum === 122 || stubStr.includes('BLOCK_CONTACT')) {
+      return '🚫 Você bloqueou este contato.';
+    }
+
+    // 10. Mensagem de visualização única
+    if (stubNum === 74 || stubStr.includes('VIEWED_ONCE')) {
+      return '👁️ Mensagem de visualização única aberta.';
+    }
+
+    // 11. Conta comercial / Meta
+    if (stubNum === 64 || stubStr.includes('BIZ_NAME_CHANGE')) {
+      return params[0]
+        ? `🏢 A empresa alterou o nome para "${params[0]}".`
+        : '🏢 A empresa alterou o nome comercial.';
+    }
+    if (
+      (stubNum >= 60 && stubNum <= 67) ||
+      (stubNum >= 76 && stubNum <= 117) ||
+      (stubNum >= 126 && stubNum <= 129) ||
+      stubStr.startsWith('BIZ_') ||
+      stubStr.startsWith('BLUE_MSG_')
+    ) {
+      return '🏢 Esta conversa é com uma conta comercial oficial que utiliza ferramentas da Meta.';
+    }
+
+    // 12. Eventos de Grupos
+    if (stubNum === 20 || stubStr === 'GROUP_CREATE') {
+      return params[0] ? `👥 Grupo "${params[0]}" criado.` : '👥 Grupo criado.';
+    }
+    if (stubNum === 21 || stubStr === 'GROUP_CHANGE_SUBJECT') {
+      return params[0]
+        ? `👥 O nome do grupo foi alterado para "${params[0]}".`
+        : '👥 O nome do grupo foi alterado.';
+    }
+    if (stubNum === 22 || stubStr === 'GROUP_CHANGE_ICON') {
+      return '👥 O ícone do grupo foi alterado.';
+    }
+    if (stubNum === 23 || stubStr === 'GROUP_CHANGE_INVITE_LINK') {
+      return '👥 O link de convite do grupo foi redefinido.';
+    }
+    if (stubNum === 24 || stubStr === 'GROUP_CHANGE_DESCRIPTION') {
+      return params[0]
+        ? `👥 A descrição do grupo foi alterada: "${params[0]}".`
+        : '👥 A descrição do grupo foi alterada.';
+    }
+    if (stubNum === 25 || stubStr === 'GROUP_CHANGE_RESTRICT') {
+      return '👥 Apenas administradores podem editar os dados do grupo.';
+    }
+    if (stubNum === 26 || stubStr === 'GROUP_CHANGE_ANNOUNCE') {
+      return '👥 Apenas administradores podem enviar mensagens neste grupo.';
+    }
+    if (stubNum === 27 || stubStr === 'GROUP_PARTICIPANT_ADD') {
+      return `👥 ${formatPhoneList(params)} foi adicionado(a) ao grupo.`;
+    }
+    if (stubNum === 28 || stubStr === 'GROUP_PARTICIPANT_REMOVE') {
+      return `👥 ${formatPhoneList(params)} foi removido(a) do grupo.`;
+    }
+    if (stubNum === 32 || stubStr === 'GROUP_PARTICIPANT_LEAVE') {
+      return `👥 ${formatPhoneList(params)} saiu do grupo.`;
+    }
+    if (stubNum === 29 || stubStr === 'GROUP_PARTICIPANT_PROMOTE') {
+      return `👥 ${formatPhoneList(params)} agora é administrador(a) do grupo.`;
+    }
+    if (stubNum === 30 || stubStr === 'GROUP_PARTICIPANT_DEMOTE') {
+      return `👥 ${formatPhoneList(params)} não é mais administrador(a) do grupo.`;
+    }
+    if (stubNum === 31 || stubStr === 'GROUP_PARTICIPANT_INVITE') {
+      return '👥 Um convite para entrar no grupo foi enviado.';
+    }
+    if (
+      stubNum === 144 ||
+      stubNum === 172 ||
+      stubStr.includes('JOIN_APPROVAL_REQUEST')
+    ) {
+      return `👥 ${formatPhoneList(params)} solicitou permissão para entrar no grupo.`;
+    }
+    if (stubNum === 145 || stubStr.includes('JOIN_APPROVAL_MODE')) {
+      return '👥 A aprovação para entrada de novos membros foi configurada no grupo.';
+    }
+    if (
+      stubNum === 43 ||
+      stubNum === 203 ||
+      stubStr.includes('GROUP_DELETE') ||
+      stubStr.includes('GROUP_DEACTIVATED')
+    ) {
+      return '👥 O grupo foi excluído ou desativado.';
+    }
+    if (stubStr.includes('GROUP_PARTICIPANT')) {
+      return params.length > 0
+        ? `👥 Notificação de grupo (${formatPhoneList(params)})`
+        : '👥 Notificação de participantes do grupo.';
+    }
+
+    // 13. Pagamentos
+    if (stubStr.includes('PAYMENT')) {
+      return '💸 Notificação de pagamento do WhatsApp.';
+    }
+
+    // 14. Comunidades
+    if (stubStr.includes('COMMUNITY')) {
+      return '🌐 Notificação de comunidade do WhatsApp.';
+    }
+
+    // 15. Fallback amigável com informações
+    if (params.length > 0) {
+      return `ℹ️ Notificação do WhatsApp: ${params.join(', ')}`;
+    }
+
+    return 'ℹ️ Notificação do WhatsApp';
   }
 
   /** Converte uma mensagem citada (proto) em texto curto para preview */

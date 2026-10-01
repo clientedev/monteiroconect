@@ -396,6 +396,38 @@ function ChatMessageItem({
     }, 2000);
   };
 
+  const isSystemMsg =
+    msg.mediaType === 'system' ||
+    msg.type === 'system' ||
+    (typeof msg.content === 'string' && (
+      msg.content.startsWith('🔒 ') ||
+      msg.content.startsWith('⏱️ ') ||
+      msg.content.startsWith('📞 ') ||
+      msg.content.startsWith('📹 ') ||
+      msg.content.startsWith('🚫 ') ||
+      msg.content.startsWith('📱 Este contato mudou') ||
+      msg.content.startsWith('🏢 Esta conversa é') ||
+      msg.content.startsWith('📌 Uma mensagem foi fixada') ||
+      msg.content.startsWith('⏳ Aguardando esta mensagem') ||
+      msg.content.startsWith('👥 ') ||
+      msg.content.startsWith('ℹ️ Notificação') ||
+      msg.content.startsWith('💸 Notificação') ||
+      msg.content.startsWith('🌐 Notificação')
+    ));
+
+  if (isSystemMsg) {
+    return (
+      <div className="w-full flex flex-col items-center justify-center my-2.5 px-4 select-none">
+        <div className="bg-monte-azul/5 dark:bg-white/10 border border-monte-sereno/20 text-monte-azul/80 dark:text-white/80 text-[11px] font-medium px-4 py-1.5 rounded-2xl shadow-2xs max-w-[85%] text-center leading-relaxed backdrop-blur-xs flex flex-col items-center gap-0.5">
+          <span>{renderContent(msg.content || '')}</span>
+          <span className="text-[9px] text-monte-sereno/70">
+            {formatTime(msg.timestamp || msg.createdAt)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`group relative flex items-center w-full my-1 ${msg.isFromMe ? 'justify-end' : 'justify-start'}`}>
       <div
