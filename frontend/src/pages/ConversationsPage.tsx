@@ -1654,10 +1654,10 @@ export default function ConversationsPage() {
   const hasMoreHistory = messages.size < msgTotal;
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col h-full min-h-0">
       {syncProgress && !hideSyncProgress && (
         <div
-          className={`rounded-2xl border p-3.5 sm:p-4 shadow-sm relative pr-12 ${
+          className={`flex-shrink-0 rounded-2xl border p-3.5 sm:p-4 shadow-sm relative pr-12 lg:mx-0 ${
             syncProgress.status === 'error'
               ? 'bg-red-50 border-red-200'
               : syncProgress.status === 'completed'
@@ -1728,7 +1728,7 @@ export default function ConversationsPage() {
           </div>
         </div>
       )}
-      <div className="flex flex-1 h-full lg:h-[calc(100vh-8rem)] -m-0 lg:-m-6 rounded-none lg:rounded-3xl overflow-hidden lg:shadow-lg lg:border border-monte-sereno/15 relative">
+      <div className="flex flex-1 min-h-0 rounded-none lg:rounded-3xl overflow-hidden lg:shadow-lg lg:border border-monte-sereno/15 relative">
       {/* Sidebar - conversations list */}
       <div className={`w-full lg:w-80 bg-white/85 backdrop-blur-md flex flex-col flex-shrink-0 lg:border-r border-monte-sereno/15 ${
         selectedConv ? 'hidden lg:flex' : 'flex h-full pb-20 lg:pb-0'
