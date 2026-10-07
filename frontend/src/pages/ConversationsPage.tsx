@@ -1654,7 +1654,7 @@ export default function ConversationsPage() {
   const hasMoreHistory = messages.size < msgTotal;
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 w-full">
       {syncProgress && !hideSyncProgress && (
         <div
           className={`flex-shrink-0 rounded-2xl border p-3.5 sm:p-4 shadow-sm relative pr-12 lg:mx-0 ${
@@ -1728,13 +1728,13 @@ export default function ConversationsPage() {
           </div>
         </div>
       )}
-      <div className="flex flex-1 min-h-0 rounded-none lg:rounded-3xl overflow-hidden lg:shadow-lg lg:border border-monte-sereno/15 relative">
-      {/* Sidebar - conversations list */}
-      <div className={`w-full lg:w-80 bg-white/85 backdrop-blur-md flex flex-col flex-shrink-0 lg:border-r border-monte-sereno/15 ${
-        selectedConv ? 'hidden lg:flex' : 'flex h-full pb-20 lg:pb-0'
+      <div className="flex flex-1 min-h-0 w-full rounded-none md:rounded-3xl overflow-hidden md:shadow-lg md:border border-monte-sereno/15 relative">
+      {/* Sidebar - lista de conversas (Fixo e estável, nunca encolhe) */}
+      <div className={`w-full md:w-80 lg:w-96 xl:w-[380px] 2xl:w-[400px] bg-white/85 backdrop-blur-md flex flex-col flex-shrink-0 md:min-w-[320px] lg:min-w-[360px] xl:min-w-[380px] max-w-full md:max-w-[420px] md:border-r border-monte-sereno/15 h-full min-h-0 ${
+        selectedConv ? 'hidden md:flex' : 'flex h-full pb-20 md:pb-0'
       }`}>
         {/* Mobile Header da lista estilo WhatsApp */}
-        <div className="px-4 py-3 flex items-center justify-between lg:hidden border-b border-monte-sereno/10 bg-white shadow-2xs">
+        <div className="px-4 py-3 flex items-center justify-between md:hidden border-b border-monte-sereno/10 bg-white shadow-2xs flex-shrink-0">
           <div className="flex items-center gap-2">
             {(location.state as any)?.from && (
               <button
@@ -1818,7 +1818,7 @@ export default function ConversationsPage() {
            )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {conversations.map(conv => (
             <button
               key={conv.id}
@@ -1899,19 +1899,19 @@ export default function ConversationsPage() {
       </div>
 
       {/* Chat area */}
-      <div className={`flex-1 flex flex-col bg-monte-areia ${
-        !selectedConv ? 'hidden lg:flex' : 'flex h-full fixed inset-0 z-40 lg:static lg:z-auto'
+      <div className={`flex-1 min-w-0 min-h-0 flex flex-col bg-monte-areia ${
+        !selectedConv ? 'hidden md:flex' : 'flex h-full fixed inset-0 z-40 md:static md:z-auto'
       }`}>
         {selectedConv ? (
           <>
             {/* Header estilo WhatsApp */}
-            <div className="bg-white border-b border-monte-sereno/15 px-3 sm:px-4 pt-safe pb-2.5 flex items-center justify-between gap-3 shadow-2xs z-10">
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="bg-white border-b border-monte-sereno/15 px-3 sm:px-4 pt-safe pb-2.5 flex items-center justify-between gap-2.5 sm:gap-3 shadow-2xs z-10 flex-shrink-0">
+              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
                 <button
                   type="button"
                   onClick={handleBackToConversations}
-                  className="p-1.5 -ml-1.5 text-monte-azul hover:text-monte-verde rounded-full active:scale-95 transition-transform"
-                  title="Voltar para a lista"
+                  className="p-1.5 -ml-1 text-monte-azul hover:text-monte-verde rounded-full active:scale-95 transition-transform md:hidden flex-shrink-0"
+                  title="Voltar para a lista de conversas"
                 >
                   <ChevronLeft className="w-6 h-6" />
                 </button>
@@ -1945,7 +1945,7 @@ export default function ConversationsPage() {
               </div>
 
               {/* Botão de Opções do Contato e CRM */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setSelectedContactForCrm({
@@ -1955,11 +1955,11 @@ export default function ConversationsPage() {
                     conversationId: selectedConv.id,
                     initialTab: 'details',
                   })}
-                  className="px-3 py-1.5 bg-monte-verde/10 hover:bg-monte-verde text-monte-verde hover:text-white rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  className="px-2.5 sm:px-3 py-1.5 bg-monte-verde/10 hover:bg-monte-verde text-monte-verde hover:text-white rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer flex-shrink-0"
                   title="Ver Cadastro e Produtos no CRM"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span className="hidden sm:inline">Ver Cadastro CRM</span>
+                  <span className="hidden xl:inline">Ver Cadastro CRM</span>
                 </button>
                 <button
                   type="button"
@@ -1970,11 +1970,11 @@ export default function ConversationsPage() {
                     conversationId: selectedConv.id,
                     initialTab: 'opportunities',
                   })}
-                  className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-600 text-amber-700 hover:text-white rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  className="px-2.5 sm:px-3 py-1.5 bg-amber-500/10 hover:bg-amber-600 text-amber-700 hover:text-white rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer flex-shrink-0"
                   title="Ver Oportunidades do Contato no CRM"
                 >
                   <TrendingUp className="w-4 h-4" />
-                  <span className="hidden sm:inline">Ver Oportunidades</span>
+                  <span className="hidden xl:inline">Oportunidades</span>
                 </button>
                 <button
                   type="button"
@@ -1985,17 +1985,17 @@ export default function ConversationsPage() {
                     conversationId: selectedConv.id,
                     initialTab: 'policies',
                   })}
-                  className="px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  className="px-2.5 sm:px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer flex-shrink-0"
                   title="Ver Apólices do Contato no CRM"
                 >
                   <Shield className="w-4 h-4" />
-                  <span className="hidden sm:inline">Apólices</span>
+                  <span className="hidden 2xl:inline">Apólices</span>
                 </button>
                 {togglePopoutWindow && (
                   <button
                     type="button"
                     onClick={togglePopoutWindow}
-                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden md:flex items-center gap-1 cursor-pointer"
+                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden md:flex items-center gap-1 cursor-pointer flex-shrink-0"
                     title="Abrir WhatsApp em Janela Destacada (Pop-out / Picture in Picture)"
                   >
                     <ExternalLink className="w-4.5 h-4.5" />
@@ -2005,7 +2005,7 @@ export default function ConversationsPage() {
                   <button
                     type="button"
                     onClick={() => setIsFocusMode((v: boolean) => !v)}
-                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden md:flex items-center gap-1 cursor-pointer"
+                    className="p-2 text-monte-azul/70 hover:text-monte-verde hover:bg-monte-areiaSecao rounded-full transition-colors hidden md:flex items-center gap-1 cursor-pointer flex-shrink-0"
                     title={isFocusMode ? 'Sair do Modo Foco' : 'Modo Foco Total (Destacar Canvas)'}
                   >
                     {isFocusMode ? <Minimize2 className="w-4.5 h-4.5 text-monte-terracota" /> : <Maximize2 className="w-4.5 h-4.5" />}
@@ -2014,7 +2014,7 @@ export default function ConversationsPage() {
                 <button
                   type="button"
                   onClick={() => setShowContactDetails(v => !v)}
-                  className="p-2 text-monte-azul/70 hover:text-monte-azul hover:bg-monte-areiaSecao rounded-full transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="p-2 text-monte-azul/70 hover:text-monte-azul hover:bg-monte-areiaSecao rounded-full transition-colors flex items-center gap-1.5 cursor-pointer flex-shrink-0"
                   title="Opções da conversa"
                 >
                   <SlidersHorizontal className="w-5 h-5" />
@@ -2025,7 +2025,7 @@ export default function ConversationsPage() {
 
 
             {/* Linha secundária de opções rápidas (disponível no mobile e desktop) */}
-            <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-white/70 backdrop-blur-xs border-b border-monte-sereno/10 text-xs gap-2">
+            <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-white/70 backdrop-blur-xs border-b border-monte-sereno/10 text-xs gap-2 flex-shrink-0">
               <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                 {(selectedConv.tags || []).map((tag: ConversationTag) => (
                   <span
@@ -2107,7 +2107,7 @@ export default function ConversationsPage() {
             </div>
 
             {!isConnected && (
-              <div className="bg-amber-100/80 border-b border-amber-200/50 px-4 py-2 flex items-center gap-2 text-amber-800 text-xs">
+              <div className="bg-amber-100/80 border-b border-amber-200/50 px-4 py-2 flex items-center gap-2 text-amber-800 text-xs flex-shrink-0">
                 <WifiOff className="w-4 h-4 flex-shrink-0" />
                 Este WhatsApp está desconectado — reconecte na aba Whatsapps para enviar mensagens. O histórico continua visível.
               </div>
@@ -2116,7 +2116,7 @@ export default function ConversationsPage() {
             {/* Messages */}
              <div
                ref={messagesContainerRef}
-               className="flex-1 overflow-y-auto p-4 space-y-2"
+               className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2"
                onScroll={() => {
                  const container = messagesContainerRef.current;
                  if (!container) return;
@@ -2194,7 +2194,7 @@ export default function ConversationsPage() {
             </div>
 
             {/* Input com Safe Area do iPhone */}
-            <div className="bg-white/90 backdrop-blur-md border-t border-monte-sereno/15 p-2 sm:p-3 pb-safe relative">
+            <div className="bg-white/95 backdrop-blur-md border-t border-monte-sereno/15 p-2 sm:p-3 pb-safe relative flex-shrink-0">
               {/* Menu Flutuante ao Digitar /atalho */}
               {slashQuery !== null && matchingQuickMessages.length > 0 && (
                 <div className="absolute bottom-full mb-2 left-2 right-2 sm:left-12 sm:right-12 max-w-lg bg-white rounded-2xl shadow-2xl border border-emerald-300 p-2 z-40 animate-in fade-in zoom-in-95 duration-100">
@@ -2381,11 +2381,11 @@ export default function ConversationsPage() {
                   </select>
                 </div>
               )}
-              <div className="flex items-end gap-2">
+              <div className="flex items-end gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   onClick={() => setShowQuickMenu(prev => !prev)}
-                  className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors ${
+                  className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors flex-shrink-0 ${
                     showQuickMenu ? 'bg-monte-verde text-white shadow-sm' : 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao'
                   }`}
                   title="Mensagens Rápidas (/atalho)"
@@ -2393,17 +2393,17 @@ export default function ConversationsPage() {
                 >
                   <Zap className="w-5 h-5" />
                 </button>
-                <label className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem">
+                <label className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors flex-shrink-0 ${isConnected ? 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar imagem">
                   <ImageIcon className="w-5 h-5" />
                   <input type="file" accept="image/*" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
-                <label className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors ${isConnected ? 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar documento ou mídia">
+                <label className={`p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors flex-shrink-0 ${isConnected ? 'text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao' : 'text-monte-sereno/30 cursor-not-allowed'}`} title="Enviar documento ou mídia">
                   <Paperclip className="w-5 h-5" />
                   <input type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" className="hidden" onChange={handleSendFile} disabled={sending || !isConnected} />
                 </label>
                 <textarea
                   ref={textareaRef}
-                  className="input-rect flex-1 resize-none min-h-[42px] max-h-32 text-base sm:text-sm py-2 px-3.5 leading-relaxed rounded-2xl"
+                  className="input-rect flex-1 min-w-0 resize-none min-h-[42px] max-h-32 text-base sm:text-sm py-2 px-3.5 leading-relaxed rounded-2xl"
                   rows={1}
                   placeholder={isConnected ? 'Mensagem... (digite / para atalhos)' : 'WhatsApp desconectado...'}
                   value={newMessage}

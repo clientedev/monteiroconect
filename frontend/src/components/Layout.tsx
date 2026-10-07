@@ -481,7 +481,7 @@ export default function Layout() {
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 transition-all duration-300">
         {/* Top bar */}
         <header className={`bg-white border-b border-monte-sereno/15 px-4 lg:px-6 py-2.5 lg:py-0 lg:h-16 flex items-center gap-3 flex-shrink-0 z-20 ${
-          isMobileChatOpen ? 'hidden lg:flex' : 'flex'
+          isMobileChatOpen ? 'hidden md:flex' : 'flex'
         }`}>
           <button
             onClick={() => setSidebarOpen(true)}
@@ -877,9 +877,9 @@ export default function Layout() {
         {/* Page content */}
         <main
           ref={mainRef}
-          className={`flex-1 min-h-0 ${
+          className={`flex-1 min-h-0 min-w-0 ${
             location.pathname.startsWith('/conversations')
-              ? 'overflow-hidden flex flex-col p-0 lg:p-4'
+              ? 'overflow-hidden flex flex-col p-0 md:p-3 lg:p-4'
               : 'overflow-y-auto p-4 lg:p-6 pb-24 lg:pb-6'
           }`}
           onClick={() => { setShowSearch(false); }}
@@ -905,7 +905,7 @@ export default function Layout() {
       {!isMobileChatOpen && (
         <nav
           aria-label="Navegação móvel inferior"
-          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-monte-sereno/15 pb-safe pt-2 px-1 flex items-center justify-around shadow-[0_-4px_16px_rgba(0,0,0,0.06)]"
+          className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-monte-sereno/15 pb-safe pt-2 px-1 flex items-center justify-around shadow-[0_-4px_16px_rgba(0,0,0,0.06)]"
         >
           <NavLink
             to="/conversations"
