@@ -28,7 +28,7 @@ export const env = {
   frontendUrl: process.env.FRONTEND_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'http://localhost:5173'),
   databaseUrl: process.env.DATABASE_URL || 'file:./dev.db',
   jwtSecret: process.env.JWT_SECRET || process.env.SESSION_SECRET || 'monteiro-conecta-change-me-in-production',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '90d',
   sessionsPath: process.env.SESSIONS_PATH || './sessions',
   maxReconnectAttempts: parseInt(process.env.MAX_RECONNECT_ATTEMPTS || '100', 10),
   reconnectInitialDelay: parseInt(process.env.RECONNECT_INITIAL_DELAY || '5000', 10),

@@ -42,8 +42,8 @@ export const usePrismaAuthState = async (whatsappId: string): Promise<{ state: A
 
   const removeData = async (dataId: string) => {
     try {
-      await prisma.baileysAuthState.delete({
-        where: { whatsappId_dataId: { whatsappId, dataId } },
+      await prisma.baileysAuthState.deleteMany({
+        where: { whatsappId, dataId },
       });
     } catch {
       // Ignora erro se não existir

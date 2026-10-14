@@ -1476,13 +1476,31 @@ export default function CrmContactModal({
                     </div>
 
                     <div>
-                      <label className="block text-monte-sereno font-semibold mb-1">Data de Aniversário / Nascimento</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-monte-sereno font-semibold text-xs flex items-center gap-1.5">
+                          <span>Data de Nascimento</span>
+                          <span className="text-[10px] font-normal text-monte-sereno/70 bg-monte-sereno/10 px-1.5 py-0.5 rounded-full">Opcional</span>
+                        </label>
+                        {formAnniversaryDate && (
+                          <button
+                            type="button"
+                            onClick={() => setFormAnniversaryDate('')}
+                            className="text-[11px] text-red-500 hover:text-red-700 hover:underline font-medium transition-colors"
+                            title="Remover data de nascimento"
+                          >
+                            ✕ Limpar data
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="date"
                         className="input-rect text-xs w-full cursor-pointer"
                         value={formAnniversaryDate}
                         onChange={(e) => setFormAnniversaryDate(e.target.value)}
                       />
+                      <p className="text-[10px] text-monte-sereno/70 mt-1">
+                        Campo totalmente opcional. Pode deixar em branco se não souber.
+                      </p>
                     </div>
 
                     <div>

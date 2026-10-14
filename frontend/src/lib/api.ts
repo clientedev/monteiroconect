@@ -2,6 +2,11 @@ const API_BASE = '/api';
 
 class ApiClient {
   private token: string | null = null;
+  private onUnauthorized: (() => void) | null = null;
+
+  setOnUnauthorized(callback: () => void) {
+    this.onUnauthorized = callback;
+  }
 
   setToken(token: string | null) {
     this.token = token;
@@ -22,13 +27,33 @@ class ApiClient {
     return h;
   }
 
-  async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${API_BASE}${path}`, { headers: this.headers() });
+  private handleUnauthorized(path: string) {
+    if (path.includes('/auth/login')) return;
+    this.setToken(null);
+    try {
+      sessionStorage.setItem('wa_auth_message', 'Sua sessão expirou por segurança. Por favor, entre novamente com suas credenciais.');
+    } catch {}
+    if (this.onUnauthorized) {
+      this.onUnauthorized();
+    } else {
+      window.dispatchEvent(new CustomEvent('wa:unauthorized'));
+    }
+  }
+
+  private async handleResponse<T>(res: Response, path: string): Promise<T> {
     if (!res.ok) {
+      if (res.status === 401 && !path.includes('/auth/login')) {
+        this.handleUnauthorized(path);
+      }
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(err.error || 'Erro na requisição');
     }
     return res.json();
+  }
+
+  async get<T>(path: string): Promise<T> {
+    const res = await fetch(`${API_BASE}${path}`, { headers: this.headers() });
+    return this.handleResponse<T>(res, path);
   }
 
   async post<T>(path: string, body?: unknown): Promise<T> {
@@ -37,11 +62,7 @@ class ApiClient {
       headers: this.headers(),
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || 'Erro na requisição');
-    }
-    return res.json();
+    return this.handleResponse<T>(res, path);
   }
 
   async put<T>(path: string, body?: unknown): Promise<T> {
@@ -50,11 +71,7 @@ class ApiClient {
       headers: this.headers(),
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || 'Erro na requisição');
-    }
-    return res.json();
+    return this.handleResponse<T>(res, path);
   }
 
   async patch<T>(path: string, body?: unknown): Promise<T> {
@@ -63,11 +80,7 @@ class ApiClient {
       headers: this.headers(),
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || 'Erro na requisição');
-    }
-    return res.json();
+    return this.handleResponse<T>(res, path);
   }
 
   async del<T>(path: string): Promise<T> {
@@ -75,11 +88,7 @@ class ApiClient {
       method: 'DELETE',
       headers: this.headers(),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || 'Erro na requisição');
-    }
-    return res.json();
+    return this.handleResponse<T>(res, path);
   }
 
   async upload<T>(path: string, file: File): Promise<T> {
@@ -92,11 +101,7 @@ class ApiClient {
       headers: h,
       body: formData,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || 'Erro no upload');
-    }
-    return res.json();
+    return this.handleResponse<T>(res, path);
   }
 }
 

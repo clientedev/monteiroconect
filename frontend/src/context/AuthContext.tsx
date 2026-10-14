@@ -39,6 +39,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    const handleUnauth = () => {
+      localStorage.removeItem('wa_token');
+      api.setToken(null);
+      setUser(null);
+      setToken(null);
+    };
+
+    api.setOnUnauthorized(handleUnauth);
+    window.addEventListener('wa:unauthorized', handleUnauth);
+
     api.loadToken();
     const savedToken = localStorage.getItem('wa_token');
     if (savedToken) {
@@ -46,13 +56,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authApi.me()
         .then((u: any) => setUser(u as User))
         .catch(() => {
-          localStorage.removeItem('wa_token');
-          api.setToken(null);
+          handleUnauth();
         })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
+
+    return () => {
+      window.removeEventListener('wa:unauthorized', handleUnauth);
+    };
   }, []);
 
   const login = async (username: string, password: string) => {

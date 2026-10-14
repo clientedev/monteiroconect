@@ -9,11 +9,21 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('remember_me') === 'true');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [sessionNotice, setSessionNotice] = useState(() => {
+    try {
+      const msg = sessionStorage.getItem('wa_auth_message');
+      if (msg) sessionStorage.removeItem('wa_auth_message');
+      return msg || '';
+    } catch {
+      return '';
+    }
+  });
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSessionNotice('');
     setLoading(true);
 
     if (rememberMe) {
@@ -54,6 +64,12 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+            {sessionNotice && !error && (
+              <div className="bg-amber-500/25 backdrop-blur-sm border border-amber-400/40 text-amber-100 px-4 py-3 rounded-2xl text-xs sm:text-sm leading-relaxed">
+                ⚠️ {sessionNotice}
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-500/20 backdrop-blur-sm border border-red-400/30 text-red-100 px-4 py-3 rounded-2xl text-sm">
                 {error}
