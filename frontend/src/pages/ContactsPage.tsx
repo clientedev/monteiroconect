@@ -111,8 +111,12 @@ export default function ContactsPage() {
     whatsappApi
       .list()
       .then((data) => {
-        setAccounts(data);
-        if (data.length > 0) setSelectedAccountId(data[0].id);
+        const sorted = [...data].sort((a: any, b: any) =>
+          (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }) ||
+          (a.name || '').localeCompare(b.name || '', 'pt-BR')
+        );
+        setAccounts(sorted);
+        if (sorted.length > 0) setSelectedAccountId(sorted[0].id);
         else setLoading(false);
       })
       .catch(() => setLoading(false));

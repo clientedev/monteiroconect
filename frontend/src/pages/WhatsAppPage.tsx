@@ -34,8 +34,12 @@ export default function WhatsAppPage() {
   const loadAccounts = useCallback(async () => {
     try {
       const data = await whatsappApi.list();
-      setAccounts(data);
-      const qr = data.find((a: Account) => a.status === 'QR_CODE' && a.qrCode);
+      const sorted = [...data].sort((a: Account, b: Account) =>
+        (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }) ||
+        (a.name || '').localeCompare(b.name || '', 'pt-BR')
+      );
+      setAccounts(sorted);
+      const qr = sorted.find((a: Account) => a.status === 'QR_CODE' && a.qrCode);
       if (qr) setQrAccount(qr);
     } catch {}
     finally { setLoading(false); }

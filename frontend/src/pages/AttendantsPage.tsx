@@ -47,7 +47,13 @@ export default function AttendantsPage() {
   useEffect(() => { load(); }, []);
   useEffect(() => {
     if (user?.role === 'admin') {
-      whatsappApi.list().then(setAccounts).catch(() => {});
+      whatsappApi.list().then(data => {
+        const sorted = [...data].sort((a: any, b: any) =>
+          (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }) ||
+          (a.name || '').localeCompare(b.name || '', 'pt-BR')
+        );
+        setAccounts(sorted);
+      }).catch(() => {});
     }
   }, [user?.role]);
 

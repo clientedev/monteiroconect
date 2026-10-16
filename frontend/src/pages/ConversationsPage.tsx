@@ -863,20 +863,20 @@ export default function ConversationsPage() {
     try {
       const data = await whatsappApi.list();
       const sorted = [...data].sort((a: any, b: any) =>
-        (b.status === 'CONNECTED' ? 1 : 0) - (a.status === 'CONNECTED' ? 1 : 0)
+        (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }) ||
+        (a.name || '').localeCompare(b.name || '', 'pt-BR')
       );
       setAccounts(sorted);
-      const currentSelection = selectedAccountIdRef.current;
+      const targetAccountId = (location.state as any)?.accountId;
       if (sorted.length === 0) {
         setSelectedAccountId('');
-      } else if (
-        !currentSelection ||
-        (currentSelection !== ALL_ACCOUNTS && !sorted.some(account => account.id === currentSelection))
-      ) {
+      } else if (targetAccountId && sorted.some(account => account.id === targetAccountId)) {
+        setSelectedAccountId(targetAccountId);
+      } else {
         setSelectedAccountId(sorted[0].id);
       }
     } catch {}
-  }, []);
+  }, [location.state]);
 
   const loadConversations = useCallback(async (accountId?: string) => {
     const accId = accountId || selectedAccountIdRef.current || selectedAccountId;
@@ -1015,7 +1015,7 @@ export default function ConversationsPage() {
     }
   };
 
-  useEffect(() => { loadAccounts(); }, []);
+  useEffect(() => { loadAccounts(); }, [loadAccounts]);
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
   useEffect(() => () => {

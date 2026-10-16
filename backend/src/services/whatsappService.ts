@@ -21,12 +21,12 @@ export async function listWhatsAppAccounts(user: SessionUser) {
   const accountIds = await accessibleAccountIds(user);
   const accounts = await prisma.whatsAppAccount.findMany({
     where: accountIds ? { id: { in: accountIds } } : undefined,
-    orderBy: { createdAt: 'asc' },
+    orderBy: { name: 'asc' },
   });
   const sessions = sessionManager.getAllSessions();
   const sessionMap = new Map(sessions.map(s => [s.id, s]));
 
-  return accounts.map(acc => {
+  const list = accounts.map(acc => {
     const live = sessionMap.get(acc.id);
     return {
       id: acc.id,
@@ -38,6 +38,11 @@ export async function listWhatsAppAccounts(user: SessionUser) {
       createdAt: acc.createdAt,
     };
   });
+
+  return list.sort((a, b) =>
+    (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }) ||
+    (a.name || '').localeCompare(b.name || '', 'pt-BR')
+  );
 }
 
 export async function getWhatsAppAccount(id: string, user: SessionUser) {

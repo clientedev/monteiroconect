@@ -116,21 +116,26 @@ export async function getDashboardStats(user?: SessionUser) {
   let connectedCount = 0;
   let disconnectedCount = 0;
 
-  const messagesPerAccount = rawAccounts.map(acc => {
-    const live = sessionMap.get(acc.id);
-    const liveStatus = live?.status || acc.status;
-    if (liveStatus === 'CONNECTED') {
-      connectedCount++;
-    } else {
-      disconnectedCount++;
-    }
-    return {
-      id: acc.id,
-      name: acc.name,
-      status: liveStatus,
-      _count: { conversations: acc._count.conversations },
-    };
-  });
+  const messagesPerAccount = rawAccounts
+    .map(acc => {
+      const live = sessionMap.get(acc.id);
+      const liveStatus = live?.status || acc.status;
+      if (liveStatus === 'CONNECTED') {
+        connectedCount++;
+      } else {
+        disconnectedCount++;
+      }
+      return {
+        id: acc.id,
+        name: acc.name,
+        status: liveStatus,
+        _count: { conversations: acc._count.conversations },
+      };
+    })
+    .sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }) ||
+      (a.name || '').localeCompare(b.name || '', 'pt-BR')
+    );
 
   const isVisibleConversation = (conversation: any) =>
     conversation.contact?.phone !== conversation.whatsapp?.phone &&

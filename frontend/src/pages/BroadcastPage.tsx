@@ -46,7 +46,12 @@ function normalizeAccounts(value: unknown): any[] {
     : value && typeof value === 'object' && Array.isArray((value as { accounts?: unknown }).accounts)
       ? (value as { accounts: unknown[] }).accounts
       : [];
-  return accounts.filter(account => account && typeof account === 'object' && typeof (account as { id?: unknown }).id === 'string');
+  return accounts
+    .filter(account => account && typeof account === 'object' && typeof (account as { id?: unknown }).id === 'string')
+    .sort((a: any, b: any) =>
+      (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }) ||
+      (a.name || '').localeCompare(b.name || '', 'pt-BR')
+    );
 }
 
 function normalizeContacts(value: unknown): Contact[] {

@@ -200,7 +200,13 @@ export default function ChatbotsPage() {
       const { chatbotApi, whatsappApi } = await import('../lib/api');
       const [bots, accs] = await Promise.all([chatbotApi.list(), whatsappApi.list()]);
       setChatbots(bots);
-      setAccounts(accs.filter((a: WhatsAppAccount) => a.status === 'CONNECTED'));
+      const sortedAccs = [...accs]
+        .filter((a: WhatsAppAccount) => a.status === 'CONNECTED')
+        .sort((a: WhatsAppAccount, b: WhatsAppAccount) =>
+          (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }) ||
+          (a.name || '').localeCompare(b.name || '', 'pt-BR')
+        );
+      setAccounts(sortedAccs);
     } catch (e) {
       console.error('Erro ao carregar chatbots', e);
     } finally {
