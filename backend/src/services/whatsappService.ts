@@ -182,7 +182,12 @@ export async function broadcastWhatsAppMessages(
 
   for (let index = 0; index < data.recipients.length; index++) {
     const item = data.recipients[index];
-    const to = typeof item === 'string' ? item : item.phone;
+    const rawTo = typeof item === 'string' ? item : item.phone;
+    let cleanDigits = rawTo.replace(/\D/g, '');
+    if ((cleanDigits.length === 10 || cleanDigits.length === 11) && !cleanDigits.startsWith('55')) {
+      cleanDigits = `55${cleanDigits}`;
+    }
+    const to = cleanDigits || rawTo;
     let messageText = (typeof item === 'object' && item.content) ? item.content : baseText;
 
     if (typeof item === 'object' && item.variables && messageText) {

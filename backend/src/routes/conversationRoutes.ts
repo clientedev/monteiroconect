@@ -142,7 +142,7 @@ const recipientItemSchema = z.union([
 
 const broadcastSchema = z.object({
   accountId: z.string().optional(),
-  recipients: z.array(recipientItemSchema).min(1).max(500),
+  recipients: z.array(recipientItemSchema).min(1).max(10, 'Trava de segurança: máximo de 10 destinatários por disparo'),
   content: z.string().optional().default(''),
   messageTemplate: z.string().optional(),
   type: z.string().optional().default('text'),
