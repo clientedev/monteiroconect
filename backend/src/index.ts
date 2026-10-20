@@ -132,6 +132,43 @@ async function ensureMessageColumns(): Promise<void> {
       } catch {}
     }, 15000);
 
+    // Recuperação automática de mensagens para conversas esvaziadas por limpezas anteriores
+    try {
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "Message" ("id", "conversationId", "whatsappId", "type", "content", "isFromMe", "isRead", "timestamp", "createdAt", "toPhone")
+        SELECT 
+          'restored_' || c.id, 
+          c.id, 
+          c."whatsappId", 
+          'text', 
+          c."lastMessage", 
+          false, 
+          true, 
+          COALESCE(c."lastMessageAt", c."updatedAt", NOW()), 
+          COALESCE(c."lastMessageAt", c."updatedAt", NOW()),
+          COALESCE(ct."phone", '')
+        FROM "Conversation" c
+        JOIN "Contact" ct ON ct.id = c."contactId"
+        WHERE c."lastMessage" IS NOT NULL 
+          AND c."lastMessage" != ''
+          AND NOT EXISTS (
+            SELECT 1 FROM "Message" m WHERE m."conversationId" = c.id
+          )
+        ON CONFLICT DO NOTHING;
+      `);
+      logger.info('Auto-reparo de mensagens em conversas executado com sucesso.');
+    } catch (restoreErr) {
+      logger.warn('Aviso no auto-reparo de mensagens:', restoreErr);
+    }
+
+    // Limpeza de chaves de auth órfãs do Baileys para aliviar espaço no PostgreSQL
+    try {
+      await prisma.$executeRawUnsafe(`
+        DELETE FROM "BaileysAuthState" 
+        WHERE "whatsappId" NOT IN (SELECT id FROM "WhatsAppAccount");
+      `);
+    } catch {}
+
     logger.info('Schema de mensagens e mensagens rápidas verificado (deduplicação, índice waMsgId e QuickMessage ativos).');
   } catch (err: any) {
     // Em uma base vazia a tabela ainda não existe; o db push abaixo a criará.

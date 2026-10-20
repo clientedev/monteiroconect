@@ -350,6 +350,7 @@ export const storageApi = {
   getStatus: () => api.get<StorageStats>('/archive/status'),
   cleanStorage: (params?: { retentionDays?: number; preserveRecentPerConv?: number }) =>
     api.post<StorageCleanResult>('/archive/clean', params),
+  vacuumStorage: () => api.post<{ success: boolean; message: string }>('/archive/vacuum'),
   resetLock: () => api.post<{ success: boolean; message: string }>('/archive/reset-lock'),
 };
 

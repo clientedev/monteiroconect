@@ -157,20 +157,8 @@ class WhatsAppSessionManager extends EventEmitter {
     }
 
     logger.info(`WhatsAppSessionManager inicializado. ${this.sessions.size} contas carregadas.`);
-
-    // Remove mensagens mais antigas que a janela de sincronização — limpa a
-    // poluição de importações antigas que trouxeram anos de histórico
-    try {
-      const cutoff = new Date(Date.now() - Math.max(1, env.historySyncDays) * 24 * 60 * 60 * 1000);
-      const removed = await prisma.message.deleteMany({
-        where: { createdAt: { lt: cutoff } },
-      });
-      if (removed.count > 0) {
-        logger.info(`Limpeza de histórico: ${removed.count} mensagens antigas removidas (>${env.historySyncDays} dias)`);
-      }
-    } catch (err) {
-      logger.warn('Falha na limpeza de mensagens antigas:', err);
-    }
+    // A limpeza de mensagens antigas agora é gerenciada pelo archiveService,
+    // que respeita a retenção garantindo que nenhuma conversa fique zerada sem mensagens.
 
     // Purga conversas/mensagens fantasma criadas indevidamente por canais/newsletter
     try {
@@ -3348,23 +3336,19 @@ class WhatsAppSessionManager extends EventEmitter {
       ],
     });
 
-    if (!oldest || !oldest.waMsgId) {
-      return { success: false, message: 'Nenhuma mensagem de referência encontrada para puxar histórico anterior' };
-    }
-
     const jid = conv.contact.phone.includes('@')
       ? conv.contact.phone
       : `${conv.contact.phone}@s.whatsapp.net`;
 
     const oldestKey = {
       remoteJid: jid,
-      id: oldest.waMsgId,
-      fromMe: oldest.isFromMe,
+      id: oldest?.waMsgId || '',
+      fromMe: oldest?.isFromMe ?? false,
     };
 
-    const oldestTimestamp = oldest.timestamp
+    const oldestTimestamp = oldest?.timestamp
       ? oldest.timestamp.getTime()
-      : oldest.createdAt.getTime();
+      : (conv.lastMessageAt ? conv.lastMessageAt.getTime() : Date.now());
 
     try {
       if (typeof (session.socket as any).fetchMessageHistory === 'function') {

@@ -70,4 +70,12 @@ router.post('/reset-lock', (req, res) => {
   res.json(result);
 });
 
+/**
+ * Executa otimização e VACUUM sob demanda
+ */
+router.post('/vacuum', async (req, res) => {
+  const result = await archiveService.vacuumDatabase();
+  res.json(result);
+});
+
 export default router;

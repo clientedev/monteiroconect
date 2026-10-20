@@ -33,7 +33,7 @@ class ArchiveService {
   }> {
     const retentionDays = opts?.retentionDays ?? 5;
     const logRetentionDays = opts?.logRetentionDays ?? retentionDays;
-    const preserveRecentPerConv = opts?.preserveRecentPerConv ?? 1;
+    const preserveRecentPerConv = opts?.preserveRecentPerConv ?? 5;
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
     // Se o processo estiver travado há mais de 2 minutos, reseta automaticamente
@@ -97,12 +97,21 @@ class ArchiveService {
         logger.warn('Aviso ao purgar notificações antigas:', notifErr);
       }
 
-      // 3. Purga chaves temporárias antigas do Baileys (> retentionDays), mantendo 'creds'
+      // 3. Purga chaves temporárias antigas do Baileys (> retentionDays), mantendo 'creds' e sessões ativas
       try {
+        await prisma.$executeRawUnsafe(`
+          DELETE FROM "BaileysAuthState" 
+          WHERE "whatsappId" NOT IN (SELECT id FROM "WhatsAppAccount");
+        `);
+
         const baileysRes = await prisma.baileysAuthState.deleteMany({
           where: {
             dataId: { not: 'creds' },
-            updatedAt: { lt: cutoffDate },
+            OR: [
+              { dataId: { startsWith: 'pre-key-' }, updatedAt: { lt: cutoffDate } },
+              { dataId: { startsWith: 'app-state-sync-key-' }, updatedAt: { lt: cutoffDate } },
+              { updatedAt: { lt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } },
+            ],
           },
         });
         if (baileysRes.count > 0) {
@@ -178,6 +187,14 @@ class ArchiveService {
 
       const activeMessagesRemaining = await prisma.message.count();
 
+      // Executa otimização física no PostgreSQL (VACUUM ANALYZE) para liberar espaço no disco do Railway
+      try {
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "Message";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "BaileysAuthState";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "SystemLog";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "Notification";');
+      } catch {}
+
       logger.info(`Limpeza do Postgres concluída: ${archivedMessages} mensagens antigas excluídas em ${archivedConversations} conversas. Mensagens restantes no banco: ${activeMessagesRemaining} (últimos ${retentionDays} dias mantidos).`);
 
       return {
@@ -235,6 +252,26 @@ class ArchiveService {
     this.relievingStartedAt = 0;
     logger.info('Lock de alívio do banco de dados resetado manualmente.');
     return { success: true, message: 'Rotina de otimização destravada com sucesso.' };
+  }
+
+  /**
+   * Executa VACUUM FULL nas tabelas principais para devolver espaço livre ao SO no Railway
+   */
+  public async vacuumDatabase(): Promise<{ success: boolean; message: string }> {
+    try {
+      logger.info('Iniciando desfragmentação profunda e liberação de espaço (VACUUM)...');
+      await prisma.$executeRawUnsafe('VACUUM ANALYZE "Message";');
+      await prisma.$executeRawUnsafe('VACUUM ANALYZE "BaileysAuthState";');
+      await prisma.$executeRawUnsafe('VACUUM ANALYZE "SystemLog";');
+      await prisma.$executeRawUnsafe('VACUUM ANALYZE "Notification";');
+      await prisma.$executeRawUnsafe('VACUUM ANALYZE "Conversation";');
+      await prisma.$executeRawUnsafe('VACUUM ANALYZE "Contact";');
+      logger.info('Otimização e alívio do Postgres concluídos com sucesso.');
+      return { success: true, message: 'Otimização e desfragmentação concluídas com sucesso.' };
+    } catch (err: any) {
+      logger.warn('Aviso no VACUUM do PostgreSQL:', err);
+      return { success: false, message: err?.message || String(err) };
+    }
   }
 
   /**

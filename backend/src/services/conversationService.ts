@@ -225,31 +225,50 @@ export async function getConversationMessages(
   const currentConv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: {
+      id: true,
       whatsappId: true,
-      contact: { select: { phone: true } },
+      lastMessage: true,
+      lastMessageAt: true,
+      contact: { select: { id: true, phone: true } },
     },
   });
 
   if (!currentConv) throw new AppError('Conversa não encontrada', 404);
 
   let targetConvIds = [conversationId];
-
   const rawPhone = currentConv.contact?.phone;
-  // Conversas novas já são unificadas pelo gerenciador de sessão. Só procura
-  // equivalentes legadas quando o contato ainda está identificado por LID/JID,
-  // evitando uma consulta extra em toda abertura de conversa.
-  if (rawPhone && (rawPhone.includes('@lid') || rawPhone.includes('@s.whatsapp.net'))) {
-    const cleanPhone = rawPhone.replace('@s.whatsapp.net', '').replace(/:\d+$/, '');
+
+  if (rawPhone) {
+    const raw = rawPhone.trim();
+    const variants = new Set<string>([raw]);
+
+    if (!raw.endsWith('@g.us')) {
+      const clean = raw.replace('@s.whatsapp.net', '').replace(/:\d+$/, '').replace(/\D/g, '');
+      if (clean) {
+        variants.add(clean);
+        variants.add(`${clean}@s.whatsapp.net`);
+
+        if (clean.startsWith('55') && clean.length === 12) {
+          const ddd = clean.slice(2, 4);
+          const num = clean.slice(4);
+          const with9 = `55${ddd}9${num}`;
+          variants.add(with9);
+          variants.add(`${with9}@s.whatsapp.net`);
+        } else if (clean.startsWith('55') && clean.length === 13 && clean[4] === '9') {
+          const ddd = clean.slice(2, 4);
+          const num = clean.slice(5);
+          const without9 = `55${ddd}${num}`;
+          variants.add(without9);
+          variants.add(`${without9}@s.whatsapp.net`);
+        }
+      }
+    }
 
     const matchingConversations = await prisma.conversation.findMany({
       where: {
         whatsappId: currentConv.whatsappId,
         contact: {
-          OR: [
-            { phone: rawPhone },
-            { phone: cleanPhone },
-            { phone: `${cleanPhone}@s.whatsapp.net` },
-          ],
+          phone: { in: Array.from(variants) },
         },
       },
       select: { id: true },
@@ -261,9 +280,9 @@ export async function getConversationMessages(
   }
 
   const where = { conversationId: { in: targetConvIds } };
-  const total = await prisma.message.count({ where });
+  let total = await prisma.message.count({ where });
 
-  const messages = await prisma.message.findMany({
+  let messages = await prisma.message.findMany({
     where,
     orderBy: [
       { timestamp: { sort: 'desc', nulls: 'last' } },
@@ -273,6 +292,29 @@ export async function getConversationMessages(
     skip,
     take: limit,
   });
+
+  // Auto-recuperação: se a conversa ficou sem mensagens após rotina de alívio,
+  // mas ainda possui a prévia de lastMessage, reconstrói a mensagem para exibição imediata
+  if (total === 0 && currentConv.lastMessage && page === 1) {
+    try {
+      const restored = await prisma.message.create({
+        data: {
+          conversationId: currentConv.id,
+          whatsappId: currentConv.whatsappId,
+          type: 'text',
+          content: currentConv.lastMessage,
+          isFromMe: false,
+          isRead: true,
+          timestamp: currentConv.lastMessageAt || new Date(),
+          toPhone: currentConv.contact?.phone || '',
+        },
+      });
+      messages = [restored];
+      total = 1;
+    } catch {
+      // Ignora erro de corrida se já criada simultaneamente
+    }
+  }
 
   return { total, page, limit, messages: messages.reverse() };
 }

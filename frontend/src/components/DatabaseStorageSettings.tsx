@@ -59,6 +59,35 @@ export default function DatabaseStorageSettings() {
     }
   };
 
+  const [isVacuuming, setIsVacuuming] = useState(false);
+
+  const handleExecuteVacuum = async () => {
+    try {
+      setIsVacuuming(true);
+      setFeedbackMessage(null);
+      const res = await storageApi.vacuumStorage();
+      if (res.success) {
+        setFeedbackMessage({
+          type: 'success',
+          text: 'Otimização física (VACUUM FULL) concluída! Espaço em disco liberado no Railway.',
+        });
+      } else {
+        setFeedbackMessage({
+          type: 'error',
+          text: res.message || 'Falha ao executar desfragmentação.',
+        });
+      }
+      await fetchStats();
+    } catch (err: any) {
+      setFeedbackMessage({
+        type: 'error',
+        text: err?.message || 'Erro ao desfragmentar banco de dados.',
+      });
+    } finally {
+      setIsVacuuming(false);
+    }
+  };
+
   const handleExecuteClean = async () => {
     try {
       setIsProcessing(true);
@@ -67,7 +96,7 @@ export default function DatabaseStorageSettings() {
 
       const result = await storageApi.cleanStorage({
         retentionDays,
-        preserveRecentPerConv: 1,
+        preserveRecentPerConv: 5,
       });
 
       setLastResult(result);
@@ -75,7 +104,7 @@ export default function DatabaseStorageSettings() {
       if (result.success) {
         setFeedbackMessage({
           type: 'success',
-          text: `Otimização concluída com sucesso! ${result.archivedMessages.toLocaleString('pt-BR')} mensagens antigas foram limpas do Postgres. As mensagens dos últimos ${retentionDays} dias foram mantidas intactas no banco.`,
+          text: `Otimização concluída com sucesso! ${result.archivedMessages.toLocaleString('pt-BR')} mensagens antigas foram limpas do Postgres. As conversas mantiveram mensagens recentes intactas.`,
         });
       } else {
         setFeedbackMessage({
@@ -118,7 +147,7 @@ export default function DatabaseStorageSettings() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
             <button
               onClick={fetchStats}
-              disabled={loadingStats || isProcessing}
+              disabled={loadingStats || isProcessing || isVacuuming}
               className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-200 bg-slate-800/80 hover:bg-slate-700/90 border border-slate-600/80 transition-all flex items-center justify-center gap-2 hover:text-white"
             >
               <RefreshCw className={`w-4 h-4 ${loadingStats ? 'animate-spin' : ''}`} />
@@ -126,8 +155,18 @@ export default function DatabaseStorageSettings() {
             </button>
 
             <button
+              onClick={handleExecuteVacuum}
+              disabled={isVacuuming || isProcessing}
+              title="Executa desfragmentação física das tabelas (VACUUM FULL) para devolver o espaço liberado ao disco no Railway"
+              className="px-4 py-2.5 rounded-xl text-sm font-medium text-teal-200 bg-teal-950/60 hover:bg-teal-900/80 border border-teal-500/40 transition-all flex items-center justify-center gap-2 hover:text-white disabled:opacity-50"
+            >
+              <Database className={`w-4 h-4 ${isVacuuming ? 'animate-spin' : ''}`} />
+              <span>{isVacuuming ? 'Liberando...' : 'Liberar Disco (VACUUM)'}</span>
+            </button>
+
+            <button
               onClick={() => setConfirmModalOpen(true)}
-              disabled={isProcessing}
+              disabled={isProcessing || isVacuuming}
               className="px-5 py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-950/50 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50"
             >
               <Trash2 className="w-4 h-4" />
