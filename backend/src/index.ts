@@ -389,6 +389,17 @@ async function bootstrap() {
   // Rotina periódica de alívio do banco de dados (Railway Postgres)
   if (env.archiveAutoEnabled) {
     const intervalMs = Math.max(1, env.archiveAutoIntervalHours) * 60 * 60 * 1000;
+    
+    // Execução inicial 3 minutos após inicialização para manter o banco sempre leve
+    setTimeout(async () => {
+      try {
+        logger.info('Executando alívio inicial de manutenção do PostgreSQL...');
+        await archiveService.cleanOldMessages({ retentionDays: 5, preserveRecentPerConv: 5, logRetentionDays: 3 });
+      } catch (bootCleanErr) {
+        logger.warn('Aviso no alívio inicial do PostgreSQL:', bootCleanErr);
+      }
+    }, 180_000);
+
     setInterval(async () => {
       try {
         logger.info('Rotina periódica de alívio do PostgreSQL em execução...');

@@ -149,6 +149,8 @@ const broadcastSchema = z.object({
   mediaUrl: z.string().optional(),
   mediaMimeType: z.string().max(200).optional(),
   mediaFileName: z.string().max(255).optional(),
+  minDelaySeconds: z.number().int().min(1).max(300).optional().default(20),
+  maxDelaySeconds: z.number().int().min(1).max(300).optional().default(45),
 }).refine(v => (v.content && v.content.length > 0) || (v.messageTemplate && v.messageTemplate.length > 0) || !!v.mediaUrl, {
   message: 'content, messageTemplate ou mediaUrl é obrigatório',
 });

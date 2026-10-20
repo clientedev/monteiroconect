@@ -173,6 +173,8 @@ export const conversationApi = {
     mediaUrl?: string,
     mediaMimeType?: string,
     mediaFileName?: string,
+    minDelaySeconds?: number,
+    maxDelaySeconds?: number,
   ) => api.post<{
     success: boolean;
     total: number;
@@ -187,6 +189,8 @@ export const conversationApi = {
     mediaUrl,
     mediaMimeType,
     mediaFileName,
+    minDelaySeconds,
+    maxDelaySeconds,
   }),
 };
 
@@ -332,6 +336,8 @@ export interface StorageStats {
   totalConversations: number;
   totalContacts: number;
   retentionDaysDefault: number;
+  dbSizePretty?: string;
+  dbSizeBytes?: number;
 }
 
 export interface StorageCleanResult {

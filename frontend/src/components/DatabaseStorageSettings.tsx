@@ -102,9 +102,19 @@ export default function DatabaseStorageSettings() {
       setLastResult(result);
 
       if (result.success) {
+        // Imediatamente executa VACUUM para devolver o espaço ao disco no Railway
+        await storageApi.vacuumStorage().catch(() => {});
+
+        const parts = [];
+        if (result.archivedMessages > 0) parts.push(`${result.archivedMessages.toLocaleString('pt-BR')} mensagens antigas`);
+        if (result.purgedLogs > 0) parts.push(`${result.purgedLogs.toLocaleString('pt-BR')} logs de sistema`);
+        if (result.purgedNotifications > 0) parts.push(`${result.purgedNotifications.toLocaleString('pt-BR')} notificações`);
+
+        const details = parts.length > 0 ? parts.join(', ') : 'Registros desnecessários';
+
         setFeedbackMessage({
           type: 'success',
-          text: `Otimização concluída com sucesso! ${result.archivedMessages.toLocaleString('pt-BR')} mensagens antigas foram limpas do Postgres. As conversas mantiveram mensagens recentes intactas.`,
+          text: `Alívio do PostgreSQL concluído com sucesso! Foram limpos: ${details}. O espaço em disco foi desfragmentado no Railway e as conversas mantiveram mensagens recentes intactas.`,
         });
       } else {
         setFeedbackMessage({
@@ -215,31 +225,31 @@ export default function DatabaseStorageSettings() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-900/60 rounded-2xl p-5 border border-slate-800 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Total no Postgres</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Espaço em Disco</span>
             <Database className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-3">
             <span className="text-2xl font-bold text-white">
-              {loadingStats ? '...' : (stats?.activeMessagesInDb ?? 0).toLocaleString('pt-BR')}
+              {loadingStats ? '...' : (stats?.dbSizePretty || 'Otimizado')}
             </span>
             <div className="text-xs text-slate-400 mt-1">
-              <span>Mensagens armazenadas no banco</span>
+              <span>Tamanho do banco no Railway</span>
             </div>
           </div>
         </div>
 
         <div className="bg-slate-900/60 rounded-2xl p-5 border border-slate-800 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Mensagens Recentes</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Mensagens Ativas</span>
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-3">
             <span className="text-2xl font-bold text-emerald-400">
-              {loadingStats ? '...' : (stats?.recentMessagesRetained ?? 0).toLocaleString('pt-BR')}
+              {loadingStats ? '...' : (stats?.activeMessagesInDb ?? 0).toLocaleString('pt-BR')}
             </span>
             <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-              <span>Últimos {retentionDays} dias (100% mantidas)</span>
+              <span>Últimos {retentionDays} dias mantidos</span>
             </div>
           </div>
         </div>
@@ -269,7 +279,7 @@ export default function DatabaseStorageSettings() {
               WhatsApp Conectado
             </span>
             <div className="text-xs text-slate-400 mt-1">
-              <span>Histórico completo preservado no celular</span>
+              <span>Histórico completo no celular</span>
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { sessionManager } from '../whatsapp/sessionManager.js';
 import { AppError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { accessibleAccountIds, assertAccountAccess, SessionUser } from './accessService.js';
+import { sendPushToUser } from './pushNotificationService.js';
 
 export async function createWhatsAppAccount(name: string, creator?: SessionUser) {
   const session = await sessionManager.createSession(name);
@@ -145,6 +146,8 @@ export async function broadcastWhatsAppMessages(
     mediaUrl?: string;
     mediaMimeType?: string;
     mediaFileName?: string;
+    minDelaySeconds?: number;
+    maxDelaySeconds?: number;
   },
   user: SessionUser,
 ) {
@@ -180,6 +183,9 @@ export async function broadcastWhatsAppMessages(
   const baseText = data.content || data.messageTemplate || '';
   const results: Array<{ to: string; ok: boolean; error?: string }> = [];
 
+  const minSec = Math.max(1, Number(data.minDelaySeconds) || 20);
+  const maxSec = Math.max(minSec, Number(data.maxDelaySeconds) || 45);
+
   for (let index = 0; index < data.recipients.length; index++) {
     const item = data.recipients[index];
     const rawTo = typeof item === 'string' ? item : item.phone;
@@ -209,17 +215,32 @@ export async function broadcastWhatsAppMessages(
         undefined,
       );
       results.push({ to, ok: true });
+      logger.info(`[Broadcast] Mensagem ${index + 1}/${data.recipients.length} enviada para ${to} com sucesso.`);
     } catch (err: any) {
       results.push({ to, ok: false, error: err?.message || 'Falha ao enviar' });
+      logger.warn(`[Broadcast] Falha ao enviar para ${to}: ${err?.message || err}`);
     }
 
-    // Espaça os envios para reduzir bloqueios por rajada no WhatsApp
+    // Espaçamento humanizado anti-bloqueio entre cada envio (Margem de segurança até 45s)
     if (index < data.recipients.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      const delayMs = Math.floor((minSec + Math.random() * (maxSec - minSec)) * 1000);
+      logger.info(`[Broadcast] Aguardando ${(delayMs / 1000).toFixed(1)}s antes do próximo contato (margem de segurança Meta)...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
 
   const sent = results.filter(result => result.ok).length;
+
+  // Notificação Push de conclusão do disparo
+  if (user?.id) {
+    sendPushToUser(user.id, {
+      title: 'Disparo Concluído 📢',
+      body: `${sent} de ${results.length} mensagens entregues com sucesso no WhatsApp com proteção anti-bloqueio.`,
+      tag: 'broadcast-finish',
+      data: { url: '/broadcast' },
+    }).catch(() => {});
+  }
+
   return {
     success: results.every(result => result.ok),
     total: results.length,

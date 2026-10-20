@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, contactApi, conversationApi, quickMessageApi, whatsappApi, type QuickMessage } from '../lib/api';
+import { playNotificationTone } from '../lib/sound';
 import {
   AlertTriangle,
   ArrowRight,
+  Bell,
   Bold,
   Check,
   CheckCheck,
   CheckCircle2,
   ClipboardPaste,
+  Clock,
   Edit3,
   Eye,
   FileAudio,
@@ -26,6 +29,8 @@ import {
   Search,
   Send,
   ShieldAlert,
+  ShieldCheck,
+  Sliders,
   Smile,
   Sparkles,
   Strikethrough,
@@ -33,6 +38,7 @@ import {
   UploadCloud,
   Users,
   Video,
+  Volume2,
   XCircle,
 } from 'lucide-react';
 
@@ -314,6 +320,26 @@ export default function BroadcastPage() {
   const [error, setError] = useState('');
   const [successNotice, setSuccessNotice] = useState('');
 
+  // Configurações de Cadência Anti-Bloqueio (Margem de segurança até 45s)
+  const [cadencePreset, setCadencePreset] = useState<'safe45' | 'ultra' | 'quick' | 'custom'>('safe45');
+  const [minDelay, setMinDelay] = useState<number>(20);
+  const [maxDelay, setMaxDelay] = useState<number>(45);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+
+  const handleSelectPreset = (preset: 'safe45' | 'ultra' | 'quick' | 'custom') => {
+    setCadencePreset(preset);
+    if (preset === 'safe45') {
+      setMinDelay(20);
+      setMaxDelay(45);
+    } else if (preset === 'ultra') {
+      setMinDelay(35);
+      setMaxDelay(60);
+    } else if (preset === 'quick') {
+      setMinDelay(10);
+      setMaxDelay(25);
+    }
+  };
+
   const selectedAccount = accounts.find(account => account.id === accountId);
   const connected = selectedAccount?.status === 'CONNECTED';
 
@@ -370,6 +396,26 @@ export default function BroadcastPage() {
   const sampleRecipient = currentRecipients[0] || {
     name: 'João Silva',
     displayPhone: '+55 (11) 98765-4321',
+  };
+
+  // Cálculo de tempo estimado para o lote com cadência humanizada
+  const estimatedBatchTime = useMemo(() => {
+    const count = currentRecipients.length;
+    if (count <= 1) return 'Envio imediato (~3s)';
+    const avgSec = (minDelay + maxDelay) / 2;
+    const totalSec = Math.round(avgSec * (count - 1));
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    if (min === 0) return `~${sec} segundos`;
+    return `~${min} min e ${sec} seg`;
+  }, [currentRecipients.length, minDelay, maxDelay]);
+
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window && Notification.permission !== 'granted') {
+      try {
+        await Notification.requestPermission();
+      } catch {}
+    }
   };
 
   // Carrega mensagens rápidas para sugestões/templates
@@ -650,17 +696,29 @@ export default function BroadcastPage() {
         attachment?.url,
         attachment?.mimetype,
         attachment?.originalName,
+        minDelay,
+        maxDelay,
       );
 
       setResult(response);
 
       if (response.sent > 0) {
+        if (soundEnabled) {
+          playNotificationTone('suave', 0.9);
+        }
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Disparo Concluído 📢', {
+            body: `${response.sent} mensagem(ns) enviada(s) com proteção anti-bloqueio!`,
+            icon: '/favicon.ico',
+          });
+        }
+
         if (sourceMode === 'excel') {
           setSentBatchIndexes(prev => new Set(prev).add(currentBatchIndex));
-          setSuccessNotice(`Lote ${currentBatchIndex + 1} disparado com sucesso! (${response.sent} enviados)`);
+          setSuccessNotice(`Lote ${currentBatchIndex + 1} disparado com sucesso! (${response.sent} enviados com intervalo seguro de até ${maxDelay}s)`);
         } else {
           setSelectedCrmIds(new Set());
-          setSuccessNotice(`Disparo realizado com sucesso! (${response.sent} enviados)`);
+          setSuccessNotice(`Disparo realizado com sucesso! (${response.sent} enviados com intervalo seguro de até ${maxDelay}s)`);
         }
       }
     } catch (err: any) {
@@ -1491,6 +1549,169 @@ Qualquer dúvida me chame aqui.`}
               </div>
             )}
 
+            {/* PAINEL DE CONTROLE DE CADÊNCIA ANTI-BLOQUEIO META (MARGEM DE SEGURANÇA ATÉ 45s) */}
+            <div className="rounded-2xl border border-monte-azul/15 bg-gradient-to-br from-monte-areiaSecao/80 via-white to-monte-areiaSecao/40 p-4 space-y-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-monte-verde/15 text-monte-verde flex items-center justify-center">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-monte-azul flex items-center gap-1.5">
+                      <span>Cadência Anti-Bloqueio Meta</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-semibold border border-emerald-200">
+                        Margem 45s
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-monte-sereno">
+                      Intervalo humanizado aleatório entre envios para evitar banimento da Meta.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSoundEnabled(v => !v)}
+                  className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition-all ${
+                    soundEnabled
+                      ? 'bg-monte-verde/10 text-monte-verde border-monte-verde/30'
+                      : 'bg-slate-100 text-slate-400 border-slate-200'
+                  }`}
+                  title={soundEnabled ? 'Aviso sonoro ativo' : 'Aviso sonoro mudo'}
+                >
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span className="text-[10px] font-semibold">{soundEnabled ? 'Som Ativo' : 'Mudo'}</span>
+                </button>
+              </div>
+
+              {/* Botões de Seleção de Preset */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset('safe45')}
+                  className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all text-left flex flex-col justify-between ${
+                    cadencePreset === 'safe45'
+                      ? 'bg-monte-verde text-white border-monte-verde shadow-sm'
+                      : 'bg-white hover:bg-slate-50 text-monte-azul border-monte-sereno/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span>🛡️ Margem 45s</span>
+                    {cadencePreset === 'safe45' && <Check className="w-3 h-3" />}
+                  </div>
+                  <span className={`text-[10px] mt-0.5 ${cadencePreset === 'safe45' ? 'text-emerald-100' : 'text-monte-sereno'}`}>
+                    20s a 45s (Recomendado)
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset('ultra')}
+                  className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all text-left flex flex-col justify-between ${
+                    cadencePreset === 'ultra'
+                      ? 'bg-monte-verde text-white border-monte-verde shadow-sm'
+                      : 'bg-white hover:bg-slate-50 text-monte-azul border-monte-sereno/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span>🐢 Ultra Seguro</span>
+                    {cadencePreset === 'ultra' && <Check className="w-3 h-3" />}
+                  </div>
+                  <span className={`text-[10px] mt-0.5 ${cadencePreset === 'ultra' ? 'text-emerald-100' : 'text-monte-sereno'}`}>
+                    35s a 60s (Chip novo)
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset('quick')}
+                  className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all text-left flex flex-col justify-between ${
+                    cadencePreset === 'quick'
+                      ? 'bg-monte-verde text-white border-monte-verde shadow-sm'
+                      : 'bg-white hover:bg-slate-50 text-monte-azul border-monte-sereno/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span>⚡ Rápido</span>
+                    {cadencePreset === 'quick' && <Check className="w-3 h-3" />}
+                  </div>
+                  <span className={`text-[10px] mt-0.5 ${cadencePreset === 'quick' ? 'text-emerald-100' : 'text-monte-sereno'}`}>
+                    10s a 25s (Avisos)
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectPreset('custom')}
+                  className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all text-left flex flex-col justify-between ${
+                    cadencePreset === 'custom'
+                      ? 'bg-monte-verde text-white border-monte-verde shadow-sm'
+                      : 'bg-white hover:bg-slate-50 text-monte-azul border-monte-sereno/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span>⚙️ Ajustar</span>
+                    {cadencePreset === 'custom' && <Check className="w-3 h-3" />}
+                  </div>
+                  <span className={`text-[10px] mt-0.5 ${cadencePreset === 'custom' ? 'text-emerald-100' : 'text-monte-sereno'}`}>
+                    {minDelay}s a {maxDelay}s
+                  </span>
+                </button>
+              </div>
+
+              {/* Controles customizados se preset for custom */}
+              {cadencePreset === 'custom' && (
+                <div className="p-2.5 bg-white rounded-xl border border-monte-sereno/20 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="text-[11px] font-semibold text-monte-azul block mb-1">
+                      Espera Mínima por envio (s):
+                    </label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={120}
+                      value={minDelay}
+                      onChange={e => setMinDelay(Math.max(5, Number(e.target.value) || 5))}
+                      className="input-field py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-monte-azul block mb-1">
+                      Espera Máxima por envio (s):
+                    </label>
+                    <input
+                      type="number"
+                      min={minDelay}
+                      max={180}
+                      value={maxDelay}
+                      onChange={e => setMaxDelay(Math.max(minDelay, Number(e.target.value) || minDelay))}
+                      className="input-field py-1 text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Rodapé com tempo estimado do lote */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-monte-sereno/15 text-[11px]">
+                <div className="flex items-center gap-1.5 text-monte-azul font-medium">
+                  <Clock className="w-3.5 h-3.5 text-monte-verde" />
+                  <span>Tempo estimado para este lote ({currentRecipients.length} contatos):</span>
+                  <strong className="text-monte-verde font-bold">{estimatedBatchTime}</strong>
+                </div>
+
+                {'Notification' in window && Notification.permission !== 'granted' && (
+                  <button
+                    type="button"
+                    onClick={requestNotificationPermission}
+                    className="text-[10.5px] text-monte-azul underline font-semibold flex items-center gap-1 hover:text-monte-verde"
+                  >
+                    <Bell className="w-3 h-3" />
+                    Ativar aviso push no navegador
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* BOX DE CONFERÊNCIA E TRAVA DE 10 */}
             <div className="rounded-2xl bg-monte-areiaSecao p-3.5 text-xs text-monte-sereno space-y-2 border border-monte-sereno/15">
               <div className="flex items-center justify-between">
@@ -1530,6 +1751,20 @@ Qualquer dúvida me chame aqui.`}
               )}
             </div>
 
+            {/* AVISO DE ENVIO EM ANDAMENTO COM CADÊNCIA */}
+            {sending && (
+              <div className="rounded-2xl border border-emerald-300 bg-emerald-50/90 p-3.5 text-xs text-emerald-900 space-y-2 shadow-xs">
+                <div className="flex items-center gap-2 font-bold text-sm text-emerald-950">
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600 shrink-0" />
+                  <span>Disparo em andamento com cadência humanizada...</span>
+                </div>
+                <p className="text-[11.5px] leading-relaxed text-emerald-800">
+                  As mensagens estão sendo disparadas de forma espaçada (intervalo aleatório entre <strong>{minDelay}s e {maxDelay}s</strong>) para total proteção contra bloqueios da Meta.
+                  Você receberá um <strong>aviso sonoro e notificação</strong> assim que o lote for concluído.
+                </p>
+              </div>
+            )}
+
             {/* BOTÃO PRINCIPAL DE DISPARO */}
             <button
               type="button"
@@ -1547,7 +1782,7 @@ Qualquer dúvida me chame aqui.`}
               {sending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Enviando disparo para {currentRecipients.length} contatos...
+                  Disparando com proteção anti-bloqueio ({currentRecipients.length} contatos)...
                 </>
               ) : (
                 <>
@@ -1561,7 +1796,7 @@ Qualquer dúvida me chame aqui.`}
 
             <div className="text-[11px] text-monte-sereno text-center flex items-center justify-center gap-1">
               <Lock className="w-3 h-3 text-amber-600" />
-              Trava de segurança: proteção anti-bloqueio Meta ativada
+              Trava de segurança ativa (máx. 10) · Intervalo seguro de {minDelay}s a {maxDelay}s
             </div>
 
             {accounts.length === 0 && !loadingAccounts && (

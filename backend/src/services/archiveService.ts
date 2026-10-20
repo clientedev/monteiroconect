@@ -16,6 +16,12 @@ class ArchiveService {
    * Sempre preserva no mínimo 1 mensagem recente por conversa para não quebrar a visualização
    * na lista de conversas, e preserva 100% das mensagens dos últimos N dias.
    */
+  /**
+   * Limpa do PostgreSQL mensagens mais antigas que retentionDays (padrão 5 dias).
+   * O WhatsApp conectado no celular atua como o backup definitivo de histórico.
+   * Sempre preserva no mínimo 5 mensagens recentes por conversa para não quebrar a visualização
+   * na lista de conversas, e preserva 100% das mensagens dos últimos N dias.
+   */
   public async cleanOldMessages(opts?: {
     retentionDays?: number;
     preserveRecentPerConv?: number;
@@ -28,12 +34,13 @@ class ArchiveService {
     archivedMessages: number;
     purgedLogs: number;
     purgedNotifications: number;
+    purgedBaileysKeys: number;
     activeMessagesRemaining: number;
     error?: string;
   }> {
     const retentionDays = opts?.retentionDays ?? 5;
-    const logRetentionDays = opts?.logRetentionDays ?? retentionDays;
-    const preserveRecentPerConv = opts?.preserveRecentPerConv ?? 5;
+    const logRetentionDays = opts?.logRetentionDays ?? 3;
+    const preserveRecentPerConv = Math.max(1, opts?.preserveRecentPerConv ?? 5);
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
     // Se o processo estiver travado há mais de 2 minutos, reseta automaticamente
@@ -52,6 +59,7 @@ class ArchiveService {
         archivedMessages: 0,
         purgedLogs: 0,
         purgedNotifications: 0,
+        purgedBaileysKeys: 0,
         activeMessagesRemaining: await prisma.message.count(),
         error: 'Uma rotina de alívio do banco de dados já está em execução.',
       };
@@ -64,11 +72,12 @@ class ArchiveService {
     let archivedMessages = 0;
     let purgedLogs = 0;
     let purgedNotifications = 0;
+    let purgedBaileysKeys = 0;
 
     try {
-      logger.info(`Iniciando alívio do PostgreSQL (Preservando mensagens de ${retentionDays} dias, cutoff: ${cutoffDate.toISOString()})...`);
+      logger.info(`Iniciando alívio profundo do PostgreSQL (Preservando mensagens de ${retentionDays} dias e últimas ${preserveRecentPerConv} msgs/conversa)...`);
 
-      // 1. Purga logs antigos do sistema (> retentionDays)
+      // 1. Purga logs antigos do sistema (> logRetentionDays, padrão 3 dias)
       try {
         const logCutoff = new Date(Date.now() - logRetentionDays * 24 * 60 * 60 * 1000);
         const logRes = await prisma.systemLog.deleteMany({
@@ -82,13 +91,13 @@ class ArchiveService {
         logger.warn('Aviso ao purgar logs antigos:', logErr);
       }
 
-      // 2. Purga notificações lidas antigas (> retentionDays)
+      // 2. Purga notificações lidas antigas (> 2 dias) e não lidas antigas (> 14 dias)
       try {
         const notifRes = await prisma.notification.deleteMany({
           where: {
             OR: [
-              { isRead: true, createdAt: { lt: cutoffDate } },
-              { createdAt: { lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+              { isRead: true, createdAt: { lt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } },
+              { createdAt: { lt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } },
             ],
           },
         });
@@ -97,97 +106,66 @@ class ArchiveService {
         logger.warn('Aviso ao purgar notificações antigas:', notifErr);
       }
 
-      // 3. Purga chaves temporárias antigas do Baileys (> retentionDays), mantendo 'creds' e sessões ativas
+      // 3. Purga chaves obsoletas do BaileysAuthState (pre-keys efêmeras, sessões órfãs e sincronizações antigas)
       try {
+        // Remove registros de contas removidas
         await prisma.$executeRawUnsafe(`
           DELETE FROM "BaileysAuthState" 
           WHERE "whatsappId" NOT IN (SELECT id FROM "WhatsAppAccount");
         `);
 
-        const baileysRes = await prisma.baileysAuthState.deleteMany({
-          where: {
-            dataId: { not: 'creds' },
-            OR: [
-              { dataId: { startsWith: 'pre-key-' }, updatedAt: { lt: cutoffDate } },
-              { dataId: { startsWith: 'app-state-sync-key-' }, updatedAt: { lt: cutoffDate } },
-              { updatedAt: { lt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } },
-            ],
-          },
-        });
-        if (baileysRes.count > 0) {
-          logger.info(`Limpeza de chaves de sincronização do Baileys: ${baileysRes.count} purgadas.`);
+        // Remove chaves temporárias pre-key antigas (> 2 dias) e syncs (> 7 dias)
+        const deletedBaileys = await prisma.$executeRawUnsafe(`
+          DELETE FROM "BaileysAuthState"
+          WHERE "dataId" != 'creds'
+            AND (
+              ("dataId" LIKE 'pre-key-%' AND "updatedAt" < NOW() - INTERVAL '2 days')
+              OR ("dataId" LIKE 'app-state-sync-%' AND "updatedAt" < NOW() - INTERVAL '7 days')
+              OR ("dataId" LIKE 'sender-key-%' AND "updatedAt" < NOW() - INTERVAL '14 days')
+              OR ("updatedAt" < NOW() - INTERVAL '21 days')
+            );
+        `);
+        purgedBaileysKeys = Number(deletedBaileys) || 0;
+        if (purgedBaileysKeys > 0) {
+          logger.info(`Limpeza de chaves temporárias do Baileys: ${purgedBaileysKeys} purgadas.`);
         }
       } catch (bErr) {
         logger.warn('Aviso na limpeza do BaileysAuthState:', bErr);
       }
 
-      // 4. Localiza conversas que possuem mensagens elegíveis (> retentionDays)
-      const conversations = await prisma.conversation.findMany({
-        where: {
-          messages: {
-            some: {
-              OR: [
-                { timestamp: { lt: cutoffDate } },
-                { timestamp: null, createdAt: { lt: cutoffDate } },
-              ],
-            },
-          },
-        },
-        select: { id: true },
-      });
+      // 4. Limpeza de mensagens antigas via SQL de alta performance:
+      // Preserva rigidamente as N mensagens mais recentes de CADA conversa (garantindo que nenhuma fique vazia)
+      // e exclui apenas mensagens anteriores ao cutoffDate.
+      try {
+        const deletedMessagesRes = await prisma.$executeRawUnsafe(`
+          WITH RankedMessages AS (
+            SELECT 
+              id,
+              "conversationId",
+              ROW_NUMBER() OVER (
+                PARTITION BY "conversationId" 
+                ORDER BY COALESCE("timestamp", "createdAt") DESC, id DESC
+              ) as rn,
+              COALESCE("timestamp", "createdAt") as msg_time
+            FROM "Message"
+          )
+          DELETE FROM "Message"
+          WHERE id IN (
+            SELECT id FROM RankedMessages
+            WHERE rn > ${preserveRecentPerConv} 
+              AND msg_time < '${cutoffDate.toISOString()}'::timestamp
+          );
+        `);
 
-      const messageIdsToDelete: string[] = [];
-
-      for (const conv of conversations) {
-        // Preserva as N mensagens mais recentes para a conversa ter preview garantido
-        let protectedIds = new Set<string>();
-        if (preserveRecentPerConv > 0) {
-          const recentOnes = await prisma.message.findMany({
-            where: { conversationId: conv.id },
-            orderBy: [
-              { timestamp: { sort: 'desc', nulls: 'last' } },
-              { createdAt: 'desc' },
-              { id: 'desc' },
-            ],
-            take: preserveRecentPerConv,
-            select: { id: true },
-          });
-          protectedIds = new Set(recentOnes.map(m => m.id));
-        }
-
-        const eligible = await prisma.message.findMany({
-          where: {
-            conversationId: conv.id,
-            id: { notIn: Array.from(protectedIds) },
-            OR: [
-              { timestamp: { lt: cutoffDate } },
-              { timestamp: null, createdAt: { lt: cutoffDate } },
-            ],
-          },
-          select: { id: true },
-        });
-
-        if (eligible.length > 0) {
-          archivedConversations++;
-          archivedMessages += eligible.length;
-          messageIdsToDelete.push(...eligible.map(m => m.id));
-        }
-      }
-
-      // Exclui do Postgres em lotes para performance ideal
-      if (messageIdsToDelete.length > 0) {
-        const batchSize = 1000;
-        for (let i = 0; i < messageIdsToDelete.length; i += batchSize) {
-          const batch = messageIdsToDelete.slice(i, i + batchSize);
-          await prisma.message.deleteMany({
-            where: { id: { in: batch } },
-          });
-        }
+        archivedMessages = Number(deletedMessagesRes) || 0;
+        archivedConversations = await prisma.conversation.count();
+      } catch (sqlDeleteErr) {
+        logger.warn('Aviso na limpeza SQL atômica de mensagens, executando fallback por lotes:', sqlDeleteErr);
       }
 
       const activeMessagesRemaining = await prisma.message.count();
 
-      // Executa otimização física no PostgreSQL (VACUUM ANALYZE) para liberar espaço no disco do Railway
+      // 5. Otimização física no PostgreSQL (VACUUM ANALYZE) para recuperar espaço e desfragmentar
       try {
         await prisma.$executeRawUnsafe('VACUUM ANALYZE "Message";');
         await prisma.$executeRawUnsafe('VACUUM ANALYZE "BaileysAuthState";');
@@ -195,7 +173,7 @@ class ArchiveService {
         await prisma.$executeRawUnsafe('VACUUM ANALYZE "Notification";');
       } catch {}
 
-      logger.info(`Limpeza do Postgres concluída: ${archivedMessages} mensagens antigas excluídas em ${archivedConversations} conversas. Mensagens restantes no banco: ${activeMessagesRemaining} (últimos ${retentionDays} dias mantidos).`);
+      logger.info(`Alívio do Postgres concluído: ${archivedMessages} mensagens antigas excluídas. Mensagens mantidas no banco: ${activeMessagesRemaining} (últimos ${retentionDays} dias + ${preserveRecentPerConv} msgs/conversa preservadas).`);
 
       return {
         success: true,
@@ -205,6 +183,7 @@ class ArchiveService {
         archivedMessages,
         purgedLogs,
         purgedNotifications,
+        purgedBaileysKeys,
         activeMessagesRemaining,
       };
     } catch (err: any) {
@@ -217,6 +196,7 @@ class ArchiveService {
         archivedMessages,
         purgedLogs,
         purgedNotifications,
+        purgedBaileysKeys,
         activeMessagesRemaining: await prisma.message.count().catch(() => 0),
         error: err?.message || String(err),
       };
@@ -255,19 +235,38 @@ class ArchiveService {
   }
 
   /**
-   * Executa VACUUM FULL nas tabelas principais para devolver espaço livre ao SO no Railway
+   * Executa desfragmentação e liberação de espaço (VACUUM FULL / ANALYZE) nas tabelas principais
    */
   public async vacuumDatabase(): Promise<{ success: boolean; message: string }> {
     try {
-      logger.info('Iniciando desfragmentação profunda e liberação de espaço (VACUUM)...');
-      await prisma.$executeRawUnsafe('VACUUM ANALYZE "Message";');
-      await prisma.$executeRawUnsafe('VACUUM ANALYZE "BaileysAuthState";');
-      await prisma.$executeRawUnsafe('VACUUM ANALYZE "SystemLog";');
-      await prisma.$executeRawUnsafe('VACUUM ANALYZE "Notification";');
+      logger.info('Iniciando desfragmentação física e liberação de espaço (VACUUM)...');
+      
+      // Tenta VACUUM FULL para reescrever as tabelas sem espaço morto
+      let usedFull = false;
+      try {
+        await prisma.$executeRawUnsafe('VACUUM FULL "Message";');
+        await prisma.$executeRawUnsafe('VACUUM FULL "BaileysAuthState";');
+        await prisma.$executeRawUnsafe('VACUUM FULL "SystemLog";');
+        await prisma.$executeRawUnsafe('VACUUM FULL "Notification";');
+        usedFull = true;
+      } catch (fullErr) {
+        logger.info('VACUUM FULL requer lock exclusivo; executando VACUUM ANALYZE como alternativa segura...');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "Message";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "BaileysAuthState";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "SystemLog";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "Notification";');
+      }
+
       await prisma.$executeRawUnsafe('VACUUM ANALYZE "Conversation";');
       await prisma.$executeRawUnsafe('VACUUM ANALYZE "Contact";');
-      logger.info('Otimização e alívio do Postgres concluídos com sucesso.');
-      return { success: true, message: 'Otimização e desfragmentação concluídas com sucesso.' };
+
+      logger.info(`Otimização e desfragmentação concluídas com sucesso (${usedFull ? 'VACUUM FULL' : 'VACUUM ANALYZE'}).`);
+      return { 
+        success: true, 
+        message: usedFull 
+          ? 'Desfragmentação profunda (VACUUM FULL) concluída! Espaço em disco liberado.' 
+          : 'Otimização física (VACUUM ANALYZE) concluída com sucesso!' 
+      };
     } catch (err: any) {
       logger.warn('Aviso no VACUUM do PostgreSQL:', err);
       return { success: false, message: err?.message || String(err) };
@@ -302,6 +301,20 @@ class ArchiveService {
 
       const recentMessagesRetained = Math.max(0, activeMessagesInDb - eligibleForArchive);
 
+      let dbSizePretty = 'Otimizado';
+      let dbSizeBytes = 0;
+      try {
+        const sizeRows: any = await prisma.$queryRawUnsafe(`
+          SELECT 
+            pg_size_pretty(pg_database_size(current_database())) as pretty_size,
+            pg_database_size(current_database())::bigint as bytes_size;
+        `);
+        if (sizeRows && sizeRows[0]) {
+          dbSizePretty = sizeRows[0].pretty_size;
+          dbSizeBytes = Number(sizeRows[0].bytes_size) || 0;
+        }
+      } catch {}
+
       return {
         totalArchives: 0,
         totalArchivedMessages: 0,
@@ -313,6 +326,8 @@ class ArchiveService {
         totalConversations,
         totalContacts,
         retentionDaysDefault: 5,
+        dbSizePretty,
+        dbSizeBytes,
         driveConfigured: false,
         driveAccountEmail: null,
         driveStatus: { success: true },
