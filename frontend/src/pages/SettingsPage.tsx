@@ -53,7 +53,7 @@ export default function SettingsPage() {
               }`}
             >
               <Database className="w-3.5 h-3.5 text-slate-400" />
-              <span>Armazenamento & Postgres</span>
+              <span>Alívio de Espaço</span>
               <span className="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">Admin</span>
             </button>
           </div>

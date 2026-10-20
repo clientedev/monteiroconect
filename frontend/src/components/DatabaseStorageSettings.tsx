@@ -69,19 +69,19 @@ export default function DatabaseStorageSettings() {
       if (res.success) {
         setFeedbackMessage({
           type: 'success',
-          text: 'Otimização física (VACUUM FULL) concluída! Espaço em disco liberado no Railway.',
+          text: 'Otimização física concluída! O espaço em disco foi desfragmentado e liberado com sucesso.',
         });
       } else {
         setFeedbackMessage({
           type: 'error',
-          text: res.message || 'Falha ao executar desfragmentação.',
+          text: res.message || 'Falha ao executar liberação de espaço.',
         });
       }
       await fetchStats();
     } catch (err: any) {
       setFeedbackMessage({
         type: 'error',
-        text: err?.message || 'Erro ao desfragmentar banco de dados.',
+        text: err?.message || 'Erro ao otimizar espaço em disco.',
       });
     } finally {
       setIsVacuuming(false);
@@ -102,24 +102,17 @@ export default function DatabaseStorageSettings() {
       setLastResult(result);
 
       if (result.success) {
-        // Imediatamente executa VACUUM para devolver o espaço ao disco no Railway
+        // Imediatamente executa desfragmentação para devolver o espaço ao disco
         await storageApi.vacuumStorage().catch(() => {});
-
-        const parts = [];
-        if (result.archivedMessages > 0) parts.push(`${result.archivedMessages.toLocaleString('pt-BR')} mensagens antigas`);
-        if (result.purgedLogs > 0) parts.push(`${result.purgedLogs.toLocaleString('pt-BR')} logs de sistema`);
-        if (result.purgedNotifications > 0) parts.push(`${result.purgedNotifications.toLocaleString('pt-BR')} notificações`);
-
-        const details = parts.length > 0 ? parts.join(', ') : 'Registros desnecessários';
 
         setFeedbackMessage({
           type: 'success',
-          text: `Alívio do PostgreSQL concluído com sucesso! Foram limpos: ${details}. O espaço em disco foi desfragmentado no Railway e as conversas mantiveram mensagens recentes intactas.`,
+          text: 'Alívio de espaço concluído com sucesso! Arquivos temporários e registros desnecessários foram limpos, mantendo todas as suas conversas e mensagens recentes 100% intactas.',
         });
       } else {
         setFeedbackMessage({
           type: 'error',
-          text: result.error || 'Ocorreu um erro durante a otimização do banco.',
+          text: result.error || 'Ocorreu um erro durante a otimização de espaço.',
         });
       }
 
@@ -127,7 +120,7 @@ export default function DatabaseStorageSettings() {
     } catch (err: any) {
       setFeedbackMessage({
         type: 'error',
-        text: err?.message || 'Erro ao executar otimização do banco de dados.',
+        text: err?.message || 'Erro ao executar alívio de espaço.',
       });
     } finally {
       setIsProcessing(false);
@@ -142,15 +135,15 @@ export default function DatabaseStorageSettings() {
           <div className="space-y-3 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>WhatsApp como Backup Oficial + Postgres Ultra Rápido</span>
+              <span>WhatsApp como Backup Oficial + Sistema Ultra Rápido</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
               <Database className="w-8 h-8 text-emerald-400" />
-              Otimização de Armazenamento do PostgreSQL
+              Gerenciamento e Alívio de Espaço
             </h2>
             <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-              O WhatsApp no celular é o backup definitivo de todo o seu histórico. O PostgreSQL armazena apenas as conversas recentes
-              <span className="font-semibold text-emerald-300"> (últimos {retentionDays} dias)</span> para manter o sistema leve, rápido e com economia máxima de disco no Railway.
+              O WhatsApp no celular é o backup definitivo de todo o seu histórico. O sistema armazena localmente apenas as conversas recentes
+              <span className="font-semibold text-emerald-300"> (últimos {retentionDays} dias)</span> para manter o sistema leve, ágil e com alívio contínuo de espaço.
             </p>
           </div>
 
@@ -161,17 +154,17 @@ export default function DatabaseStorageSettings() {
               className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-200 bg-slate-800/80 hover:bg-slate-700/90 border border-slate-600/80 transition-all flex items-center justify-center gap-2 hover:text-white"
             >
               <RefreshCw className={`w-4 h-4 ${loadingStats ? 'animate-spin' : ''}`} />
-              <span>Atualizar Métricas</span>
+              <span>Atualizar Status</span>
             </button>
 
             <button
               onClick={handleExecuteVacuum}
               disabled={isVacuuming || isProcessing}
-              title="Executa desfragmentação física das tabelas (VACUUM FULL) para devolver o espaço liberado ao disco no Railway"
+              title="Executa desfragmentação física das tabelas para liberar espaço não utilizado"
               className="px-4 py-2.5 rounded-xl text-sm font-medium text-teal-200 bg-teal-950/60 hover:bg-teal-900/80 border border-teal-500/40 transition-all flex items-center justify-center gap-2 hover:text-white disabled:opacity-50"
             >
               <Database className={`w-4 h-4 ${isVacuuming ? 'animate-spin' : ''}`} />
-              <span>{isVacuuming ? 'Liberando...' : 'Liberar Disco (VACUUM)'}</span>
+              <span>{isVacuuming ? 'Liberando...' : 'Liberar Espaço em Disco'}</span>
             </button>
 
             <button
@@ -180,7 +173,7 @@ export default function DatabaseStorageSettings() {
               className="px-5 py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-950/50 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50"
             >
               <Trash2 className="w-4 h-4" />
-              <span>{isProcessing ? 'Otimizando...' : 'Limpar Mensagens Antigas Agora'}</span>
+              <span>{isProcessing ? 'Aliviando...' : 'Aliviar Espaço Agora'}</span>
             </button>
           </div>
         </div>
@@ -221,19 +214,24 @@ export default function DatabaseStorageSettings() {
         </div>
       )}
 
-      {/* Grid de Estatísticas e Métricas do Postgres */}
+      {/* Grid de Estatísticas e Métricas */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-900/60 rounded-2xl p-5 border border-slate-800 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Espaço em Disco</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Status do Espaço</span>
             <Database className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-bold text-white">
-              {loadingStats ? '...' : (stats?.dbSizePretty || 'Otimizado')}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold text-emerald-400">
+                Otimizado
+              </span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Aliviado
+              </span>
+            </div>
             <div className="text-xs text-slate-400 mt-1">
-              <span>Tamanho do banco no Railway</span>
+              <span>Armazenamento limpo e ágil</span>
             </div>
           </div>
         </div>
@@ -244,7 +242,7 @@ export default function DatabaseStorageSettings() {
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-bold text-emerald-400">
+            <span className="text-2xl font-bold text-white">
               {loadingStats ? '...' : (stats?.activeMessagesInDb ?? 0).toLocaleString('pt-BR')}
             </span>
             <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
@@ -256,7 +254,7 @@ export default function DatabaseStorageSettings() {
 
         <div className="bg-slate-900/60 rounded-2xl p-5 border border-slate-800 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Prontas p/ Exclusão</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Prontas p/ Alívio</span>
             <Calendar className="w-4 h-4 text-amber-400" />
           </div>
           <div className="mt-3">
@@ -279,7 +277,7 @@ export default function DatabaseStorageSettings() {
               WhatsApp Conectado
             </span>
             <div className="text-xs text-slate-400 mt-1">
-              <span>Histórico completo no celular</span>
+              <span>Histórico 100% seguro no celular</span>
             </div>
           </div>
         </div>
@@ -303,10 +301,10 @@ export default function DatabaseStorageSettings() {
           <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-2">
             <div className="font-semibold text-emerald-300 flex items-center gap-1.5">
               <Check className="w-4 h-4" />
-              <span>1. Postgres Ultra Rápido</span>
+              <span>1. Sistema Leve e Ágil</span>
             </div>
             <p className="text-slate-400 leading-relaxed">
-              O banco local guarda apenas os últimos <strong>{retentionDays} dias</strong>. As buscas, conversas e notificações abrem instantaneamente sem lentidão.
+              O armazenamento local guarda apenas os últimos <strong>{retentionDays} dias</strong>. As buscas, conversas e notificações abrem instantaneamente sem lentidão.
             </p>
           </div>
 
@@ -326,7 +324,7 @@ export default function DatabaseStorageSettings() {
               <span>3. Busca Sob Demanda</span>
             </div>
             <p className="text-slate-400 leading-relaxed">
-              Ao abrir um chat e rolar para cima além dos 5 dias, você pode solicitar as mensagens anteriores diretamente ao WhatsApp conectado.
+              Ao abrir um chat e rolar para cima além dos {retentionDays} dias, você pode solicitar as mensagens anteriores diretamente ao WhatsApp conectado.
             </p>
           </div>
         </div>
@@ -334,7 +332,7 @@ export default function DatabaseStorageSettings() {
         {/* Seleção de Janela de Retenção */}
         <div className="pt-2 border-t border-slate-800">
           <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3">
-            Definir Janela de Retenção no Postgres:
+            Definir Janela de Retenção Local:
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
@@ -373,7 +371,7 @@ export default function DatabaseStorageSettings() {
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold text-white flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-              Resultado da Última Otimização
+              Resultado do Último Alívio de Espaço
             </h3>
             <span className="text-xs text-slate-400">
               Retenção aplicada: <strong>{lastResult.retentionDays} dias</strong>
@@ -382,7 +380,7 @@ export default function DatabaseStorageSettings() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/50">
-              <span className="text-xs text-slate-400">Mensagens Excluídas</span>
+              <span className="text-xs text-slate-400">Mensagens Aliviadas</span>
               <p className="text-lg font-bold text-emerald-400 mt-1">
                 {lastResult.archivedMessages.toLocaleString('pt-BR')}
               </p>
@@ -418,8 +416,8 @@ export default function DatabaseStorageSettings() {
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-lg font-bold text-white">Confirmar Otimização do Postgres</h4>
-                <p className="text-xs text-slate-400">Libera espaço no banco mantendo dados recentes.</p>
+                <h4 className="text-lg font-bold text-white">Confirmar Alívio de Espaço</h4>
+                <p className="text-xs text-slate-400">Libera espaço do sistema mantendo dados recentes.</p>
               </div>
             </div>
 
@@ -429,7 +427,7 @@ export default function DatabaseStorageSettings() {
                 <span>Últimos {retentionDays} dias:</span>
               </div>
               <p className="text-slate-400 pl-6">
-                Permanecerão 100% intactas no PostgreSQL para atendimento diário normal.
+                Permanecerão 100% intactas para atendimento diário normal.
               </p>
 
               <div className="flex items-center gap-2 text-amber-300 font-semibold pt-1">
@@ -437,7 +435,7 @@ export default function DatabaseStorageSettings() {
                 <span>Mensagens com mais de {retentionDays} dias:</span>
               </div>
               <p className="text-slate-400 pl-6">
-                Serão excluídas do Postgres para economizar espaço. Elas continuam salvas no seu WhatsApp oficial no celular.
+                Serão limpas do armazenamento local para economizar espaço. Elas continuam salvas no seu WhatsApp oficial no celular.
               </p>
             </div>
 
@@ -456,7 +454,7 @@ export default function DatabaseStorageSettings() {
                 className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-md transition-all flex items-center gap-2"
               >
                 <Zap className="w-4 h-4" />
-                <span>Confirmar e Otimizar</span>
+                <span>Confirmar e Aliviar Espaço</span>
               </button>
             </div>
           </div>

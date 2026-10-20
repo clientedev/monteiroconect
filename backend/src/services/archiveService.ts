@@ -114,15 +114,15 @@ class ArchiveService {
           WHERE "whatsappId" NOT IN (SELECT id FROM "WhatsAppAccount");
         `);
 
-        // Remove chaves temporárias pre-key antigas (> 2 dias) e syncs (> 7 dias)
+        // Remove chaves temporárias pre-key antigas (> 1 dia) e syncs (> 3 dias)
         const deletedBaileys = await prisma.$executeRawUnsafe(`
           DELETE FROM "BaileysAuthState"
           WHERE "dataId" != 'creds'
             AND (
-              ("dataId" LIKE 'pre-key-%' AND "updatedAt" < NOW() - INTERVAL '2 days')
-              OR ("dataId" LIKE 'app-state-sync-%' AND "updatedAt" < NOW() - INTERVAL '7 days')
-              OR ("dataId" LIKE 'sender-key-%' AND "updatedAt" < NOW() - INTERVAL '14 days')
-              OR ("updatedAt" < NOW() - INTERVAL '21 days')
+              ("dataId" LIKE 'pre-key-%' AND "updatedAt" < NOW() - INTERVAL '1 day')
+              OR ("dataId" LIKE 'app-state-sync-%' AND "updatedAt" < NOW() - INTERVAL '3 days')
+              OR ("dataId" LIKE 'sender-key-%' AND "updatedAt" < NOW() - INTERVAL '7 days')
+              OR ("updatedAt" < NOW() - INTERVAL '14 days')
             );
         `);
         purgedBaileysKeys = Number(deletedBaileys) || 0;
@@ -165,12 +165,9 @@ class ArchiveService {
 
       const activeMessagesRemaining = await prisma.message.count();
 
-      // 5. Otimização física no PostgreSQL (VACUUM ANALYZE) para recuperar espaço e desfragmentar
+      // 5. Otimização física profunda das tabelas para devolução imediata do espaço em disco
       try {
-        await prisma.$executeRawUnsafe('VACUUM ANALYZE "Message";');
-        await prisma.$executeRawUnsafe('VACUUM ANALYZE "BaileysAuthState";');
-        await prisma.$executeRawUnsafe('VACUUM ANALYZE "SystemLog";');
-        await prisma.$executeRawUnsafe('VACUUM ANALYZE "Notification";');
+        await this.vacuumDatabase();
       } catch {}
 
       logger.info(`Alívio do Postgres concluído: ${archivedMessages} mensagens antigas excluídas. Mensagens mantidas no banco: ${activeMessagesRemaining} (últimos ${retentionDays} dias + ${preserveRecentPerConv} msgs/conversa preservadas).`);
