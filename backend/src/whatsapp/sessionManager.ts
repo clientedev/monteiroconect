@@ -366,6 +366,15 @@ class WhatsAppSessionManager extends EventEmitter {
           this.emit('connected', { accountId, phone, name: session.name });
           logger.info(`WhatsApp conectado: ${session.name} (${phone})`);
 
+          // Garante que as pre-keys estejam atualizadas no servidor do WhatsApp para evitar falhas de descriptografia
+          try {
+            if (typeof (socket as any).uploadPreKeysToServerIfRequired === 'function') {
+              await (socket as any).uploadPreKeysToServerIfRequired();
+            }
+          } catch (preKeyErr) {
+            logger.warn(`Aviso ao verificar pre-keys para ${session.name}:`, preKeyErr);
+          }
+
           // Sincroniza grupos e contatos automaticamente ao conectar (idêntico ao WhatsApp Web)
           this.syncNow(accountId).catch(err => logger.warn(`Sincronização pós-conexão (${accountId}):`, err));
         }
@@ -3287,21 +3296,31 @@ class WhatsAppSessionManager extends EventEmitter {
   }
 
   /**
-   * Retoma a sessão existente sem remover credenciais. Se o processo tiver
+   * Retoma ou reinicia a sessão existente sem remover credenciais. Se o processo tiver
    * perdido a sessão no disco, o fluxo de criação pode gerar QR normalmente;
    * em uma sessão válida, Baileys restaura o login sem pedir novo QR.
+   * Se a sessão já estava CONNECTED mas parou de receber mensagens (zombie socket),
+   * força a reinicialização limpa da conexão e reconexão.
    */
-  async reconnectSession(accountId: string): Promise<{ status: SessionStatus; qrCode: string | null }> {
+  async reconnectSession(accountId: string, force = true): Promise<{ status: SessionStatus; qrCode: string | null }> {
     const session = this.sessions.get(accountId);
     if (!session) throw new AppError('Sessão não encontrada', 404);
 
-    if (session.status === 'CONNECTED' && session.socket) {
+    if (!force && session.status === 'CONNECTED' && session.socket) {
       return { status: session.status, qrCode: null };
     }
 
     this.cancelReconnect(accountId);
     session.isDestroying = false;
     session.reconnectAttempts = 0;
+
+    // Se já havia um socket aberto (mesmo se reportava CONNECTED), encerra com segurança
+    if (session.socket) {
+      try { (session.socket.ev as any).removeAllListeners(); } catch {}
+      try { (session.socket as any).end?.(undefined); } catch {}
+      session.socket = null;
+    }
+
     const hasSession = await this.sessionExists(accountId);
 
     await this.connectSession(accountId, !hasSession);

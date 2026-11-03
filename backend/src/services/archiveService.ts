@@ -106,28 +106,17 @@ class ArchiveService {
         logger.warn('Aviso ao purgar notificações antigas:', notifErr);
       }
 
-      // 3. Purga chaves obsoletas do BaileysAuthState (pre-keys efêmeras, sessões órfãs e sincronizações antigas)
+      // 3. Purga apenas registros órfãos do BaileysAuthState (contas que foram excluídas do sistema).
+      // NUNCA deletar pre-keys, sender-keys ou sessions de contas ativas, pois são as chaves
+      // criptográficas E2EE do Signal/WhatsApp; apagá-las corrompe a sessão e impede o recebimento de mensagens.
       try {
-        // Remove registros de contas removidas
-        await prisma.$executeRawUnsafe(`
+        const deletedBaileys = await prisma.$executeRawUnsafe(`
           DELETE FROM "BaileysAuthState" 
           WHERE "whatsappId" NOT IN (SELECT id FROM "WhatsAppAccount");
         `);
-
-        // Remove chaves temporárias pre-key antigas (> 1 dia) e syncs (> 3 dias)
-        const deletedBaileys = await prisma.$executeRawUnsafe(`
-          DELETE FROM "BaileysAuthState"
-          WHERE "dataId" != 'creds'
-            AND (
-              ("dataId" LIKE 'pre-key-%' AND "updatedAt" < NOW() - INTERVAL '1 day')
-              OR ("dataId" LIKE 'app-state-sync-%' AND "updatedAt" < NOW() - INTERVAL '3 days')
-              OR ("dataId" LIKE 'sender-key-%' AND "updatedAt" < NOW() - INTERVAL '7 days')
-              OR ("updatedAt" < NOW() - INTERVAL '14 days')
-            );
-        `);
         purgedBaileysKeys = Number(deletedBaileys) || 0;
         if (purgedBaileysKeys > 0) {
-          logger.info(`Limpeza de chaves temporárias do Baileys: ${purgedBaileysKeys} purgadas.`);
+          logger.info(`Limpeza de chaves órfãs do Baileys: ${purgedBaileysKeys} purgadas.`);
         }
       } catch (bErr) {
         logger.warn('Aviso na limpeza do BaileysAuthState:', bErr);

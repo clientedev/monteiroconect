@@ -182,9 +182,22 @@ export default function WhatsAppPage() {
                   </button>
                 )}
                 {acc.status === 'CONNECTED' && (
-                  <button onClick={() => handleDisconnect(acc.id)} className="btn-secondary text-xs flex items-center gap-1" title="Desconectar">
-                    <WifiOff className="w-3 h-3" />
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-1">
+                    <button
+                      onClick={() => handleReconnect(acc.id)}
+                      className="btn-secondary text-xs flex items-center gap-1 flex-1 justify-center"
+                      title="Reiniciar conexão e sincronizar sem deslogar"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Reconectar
+                    </button>
+                    <button
+                      onClick={() => handleDisconnect(acc.id)}
+                      className="btn-secondary text-xs p-2 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
+                      title="Desconectar sessão"
+                    >
+                      <WifiOff className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 )}
                 <button onClick={() => handleRemove(acc.id)} className="btn-secondary text-xs text-monte-terracota hover:bg-monte-terracota/10 flex items-center gap-1" title="Remover">
                   <Trash2 className="w-3 h-3" />
