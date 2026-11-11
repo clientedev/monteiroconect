@@ -114,23 +114,30 @@ async function ensureMessageColumns(): Promise<void> {
       'CREATE INDEX IF NOT EXISTS "MessageArchive_syncedToDrive_idx" ON "MessageArchive" ("syncedToDrive")',
     );
 
-    // Sanitização retroativa em background (não bloqueia o boot)
+    // Sanitização retroativa em background (não bloqueia o boot).
+    // Um comando por chamada: o Postgres não aceita vários comandos num único prepared statement
+    // (antes o bloco inteiro falhava silenciosamente em todo boot).
     setTimeout(async () => {
-      try {
-        await prisma.$executeRawUnsafe(`
-          UPDATE "Message" SET content = '🎭 Figurinha' WHERE ("mediaType" = 'sticker' OR type = 'sticker') AND (content = '' OR content IS NULL OR content = '[messageContextInfo]' OR content = '[unknown]');
-          UPDATE "Message" SET content = '🔒 [Mensagem protegida por criptografia]' WHERE content = '[secretEncryptedMessage]';
-          UPDATE "Message" SET content = '📋 [Mensagem interativa]' WHERE content = '[templateMessage]';
-          UPDATE "Message" SET content = 'Mensagem de sistema' WHERE content = '[messageContextInfo]' OR content = '[unknown]';
-          UPDATE "Conversation" SET "lastMessage" = '🎭 Figurinha' WHERE "lastMessage" IN ('[sticker]', '[messageContextInfo]', '[unknown]');
-          UPDATE "Conversation" SET "lastMessage" = '📷 Imagem' WHERE "lastMessage" = '[image]';
-          UPDATE "Conversation" SET "lastMessage" = '🎵 Áudio' WHERE "lastMessage" = '[audio]';
-          UPDATE "Conversation" SET "lastMessage" = '🎥 Vídeo' WHERE "lastMessage" = '[video]';
-          UPDATE "Conversation" SET "lastMessage" = '📄 Documento' WHERE "lastMessage" = '[document]';
-          UPDATE "Conversation" SET "lastMessage" = '📍 Localização' WHERE "lastMessage" = '[location]';
-          UPDATE "Conversation" SET "lastMessage" = '👤 Contato' WHERE "lastMessage" = '[contact]';
-        `);
-      } catch {}
+      const sanitizeStatements = [
+        `UPDATE "Message" SET content = '🎭 Figurinha' WHERE ("mediaType" = 'sticker' OR type = 'sticker') AND (content = '' OR content IS NULL OR content = '[messageContextInfo]' OR content = '[unknown]')`,
+        `UPDATE "Message" SET content = '🔒 [Mensagem protegida por criptografia]' WHERE content = '[secretEncryptedMessage]'`,
+        `UPDATE "Message" SET content = '📋 [Mensagem interativa]' WHERE content = '[templateMessage]'`,
+        `UPDATE "Message" SET content = 'Mensagem de sistema' WHERE content = '[messageContextInfo]' OR content = '[unknown]'`,
+        `UPDATE "Conversation" SET "lastMessage" = '🎭 Figurinha' WHERE "lastMessage" IN ('[sticker]', '[messageContextInfo]', '[unknown]')`,
+        `UPDATE "Conversation" SET "lastMessage" = '📷 Imagem' WHERE "lastMessage" = '[image]'`,
+        `UPDATE "Conversation" SET "lastMessage" = '🎵 Áudio' WHERE "lastMessage" = '[audio]'`,
+        `UPDATE "Conversation" SET "lastMessage" = '🎥 Vídeo' WHERE "lastMessage" = '[video]'`,
+        `UPDATE "Conversation" SET "lastMessage" = '📄 Documento' WHERE "lastMessage" = '[document]'`,
+        `UPDATE "Conversation" SET "lastMessage" = '📍 Localização' WHERE "lastMessage" = '[location]'`,
+        `UPDATE "Conversation" SET "lastMessage" = '👤 Contato' WHERE "lastMessage" = '[contact]'`,
+      ];
+      for (const statement of sanitizeStatements) {
+        try {
+          await prisma.$executeRawUnsafe(statement);
+        } catch (sanitizeErr) {
+          logger.warn('Aviso na sanitização retroativa de mensagens:', sanitizeErr);
+        }
+      }
     }, 15000);
 
     // Recuperação automática de mensagens para conversas esvaziadas por limpezas anteriores
