@@ -26,6 +26,11 @@ class ArchiveService {
     retentionDays?: number;
     preserveRecentPerConv?: number;
     logRetentionDays?: number;
+    /**
+     * 'full'  = VACUUM FULL (reescreve a tabela inteira, lock exclusivo, pico alto de RAM/disco).
+     * 'light' = VACUUM ANALYZE (sem lock exclusivo, reaproveita espaço morto). Usado nas rotinas automáticas.
+     */
+    vacuumMode?: 'full' | 'light';
   }): Promise<{
     success: boolean;
     retentionDays: number;
@@ -156,7 +161,7 @@ class ArchiveService {
 
       // 5. Otimização física profunda das tabelas para devolução imediata do espaço em disco
       try {
-        await this.vacuumDatabase();
+        await this.vacuumDatabase({ full: (opts?.vacuumMode ?? 'full') === 'full' });
       } catch {}
 
       logger.info(`Alívio do Postgres concluído: ${archivedMessages} mensagens antigas excluídas. Mensagens mantidas no banco: ${activeMessagesRemaining} (últimos ${retentionDays} dias + ${preserveRecentPerConv} msgs/conversa preservadas).`);
@@ -200,6 +205,7 @@ class ArchiveService {
     keepCount?: number;
     logRetentionDays?: number;
     preserveRecentPerConv?: number;
+    vacuumMode?: 'full' | 'light';
   }) {
     const res = await this.cleanOldMessages(opts);
     return {
@@ -223,13 +229,21 @@ class ArchiveService {
   /**
    * Executa desfragmentação e liberação de espaço (VACUUM FULL / ANALYZE) nas tabelas principais
    */
-  public async vacuumDatabase(): Promise<{ success: boolean; message: string }> {
+  public async vacuumDatabase(opts?: { full?: boolean }): Promise<{ success: boolean; message: string }> {
+    const tryFull = opts?.full ?? true;
     try {
-      logger.info('Iniciando desfragmentação física e liberação de espaço (VACUUM)...');
+      logger.info(`Iniciando ${tryFull ? 'desfragmentação física (VACUUM FULL)' : 'manutenção leve (VACUUM ANALYZE)'}...`);
       
-      // Tenta VACUUM FULL para reescrever as tabelas sem espaço morto
+      // VACUUM FULL só quando solicitado (botão manual). Nas rotinas automáticas ele reescrevia
+      // a tabela Message inteira (incluindo mídias em base64) a cada 6h, com lock exclusivo —
+      // causando picos de RAM/disco no Postgres e bloqueando a gravação de mensagens recebidas.
       let usedFull = false;
-      try {
+      if (!tryFull) {
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "Message";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "BaileysAuthState";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "SystemLog";');
+        await prisma.$executeRawUnsafe('VACUUM ANALYZE "Notification";');
+      } else try {
         await prisma.$executeRawUnsafe('VACUUM FULL "Message";');
         await prisma.$executeRawUnsafe('VACUUM FULL "BaileysAuthState";');
         await prisma.$executeRawUnsafe('VACUUM FULL "SystemLog";');

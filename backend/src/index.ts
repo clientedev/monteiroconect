@@ -1,3 +1,4 @@
+import './utils/consoleNoise.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -394,7 +395,7 @@ async function bootstrap() {
     setTimeout(async () => {
       try {
         logger.info('Executando alívio inicial de manutenção do PostgreSQL...');
-        await archiveService.cleanOldMessages({ retentionDays: 5, preserveRecentPerConv: 5, logRetentionDays: 3 });
+        await archiveService.cleanOldMessages({ retentionDays: 5, preserveRecentPerConv: 5, logRetentionDays: 3, vacuumMode: 'light' });
       } catch (bootCleanErr) {
         logger.warn('Aviso no alívio inicial do PostgreSQL:', bootCleanErr);
       }
@@ -403,7 +404,7 @@ async function bootstrap() {
     setInterval(async () => {
       try {
         logger.info('Rotina periódica de alívio do PostgreSQL em execução...');
-        await archiveService.relieveDatabase();
+        await archiveService.relieveDatabase({ vacuumMode: 'light' });
       } catch (e) {
         logger.warn('Erro na rotina de alívio automático do banco:', e);
       }

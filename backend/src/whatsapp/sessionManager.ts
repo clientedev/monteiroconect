@@ -86,9 +86,12 @@ class WhatsAppSessionManager extends EventEmitter {
   private cacheRawMessage(id: string | null | undefined, message: proto.IMessage | null | undefined): void {
     if (!id || !message) return;
     this.recentRawMessages.set(id, { message, timestamp: Date.now() });
-    if (this.recentRawMessages.size > 2000) {
+    // Limite configurável (RAW_MESSAGE_CACHE_SIZE, padrão 1000). Mensagens com mídia carregam
+    // miniaturas JPEG embutidas, então 2000 entradas chegavam a dezenas de MB de heap.
+    while (this.recentRawMessages.size > env.rawMessageCacheSize) {
       const oldestKey = this.recentRawMessages.keys().next().value;
-      if (oldestKey) this.recentRawMessages.delete(oldestKey);
+      if (!oldestKey) break;
+      this.recentRawMessages.delete(oldestKey);
     }
   }
 
@@ -2534,21 +2537,26 @@ class WhatsAppSessionManager extends EventEmitter {
       const match = safeFilename.match(/^(\d+)-([a-zA-Z0-9_-]+)\.([a-zA-Z0-9]+)$/);
       const safeId = match ? match[2] : null;
 
-      const msg = await prisma.message.findFirst({
-        where: {
-          OR: [
-            { mediaUrl: { contains: safeFilename } },
-            ...(safeId ? [{ waMsgId: safeId }, { messageId: safeId }] : []),
-          ],
-        },
-        include: {
-          conversation: {
-            include: {
-              contact: true,
-            },
+      // Busca primeiro pelo waMsgId (indexado). Só cai no `contains` (varredura completa da tabela)
+      // quando o nome do arquivo não segue o padrão <timestamp>-<id>.<ext> ou o id não é encontrado.
+      const recoverQuery = {
+        omit: { mediaData: false },
+        include: { conversation: { include: { contact: true } } },
+      } as const;
+      let msg = safeId
+        ? await prisma.message.findFirst({ where: { waMsgId: safeId }, ...recoverQuery })
+        : null;
+      if (!msg) {
+        msg = await prisma.message.findFirst({
+          where: {
+            OR: [
+              { mediaUrl: { contains: safeFilename } },
+              ...(safeId ? [{ messageId: safeId }] : []),
+            ],
           },
-        },
-      });
+          ...recoverQuery,
+        });
+      }
 
       // 1. Tenta recuperar usando base64 armazenado no banco (instantâneo, persistência definitiva)
       if (msg?.mediaData) {

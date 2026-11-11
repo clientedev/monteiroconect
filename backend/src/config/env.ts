@@ -61,5 +61,6 @@ export const env = {
   archiveLocalPath: process.env.ARCHIVE_LOCAL_PATH || './archive_cache',
   archiveAutoEnabled: process.env.ARCHIVE_AUTO_ENABLED !== 'false',
   archiveAutoIntervalHours: parseInt(process.env.ARCHIVE_AUTO_INTERVAL_HOURS || '6', 10),
+  rawMessageCacheSize: Math.max(100, parseInt(process.env.RAW_MESSAGE_CACHE_SIZE || '1000', 10)),
   archiveLogRetentionDays: parseInt(process.env.ARCHIVE_LOG_RETENTION_DAYS || '7', 10),
 } as const;
