@@ -27,6 +27,9 @@ import chatbotRoutes from './routes/chatbotRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import quickMessageRoutes from './routes/quickMessageRoutes.js';
 import archiveRoutes from './routes/archiveRoutes.js';
+import scheduledMessageRoutes from './routes/scheduledMessageRoutes.js';
+import { startScheduledMessageWorker } from './services/scheduledMessageService.js';
+import { startMemoryDiagnostics } from './utils/memoryDiagnostics.js';
 import { archiveService } from './services/archiveService.js';
 
 async function ensureMessageColumns(): Promise<void> {
@@ -112,6 +115,33 @@ async function ensureMessageColumns(): Promise<void> {
     );
     await prisma.$executeRawUnsafe(
       'CREATE INDEX IF NOT EXISTS "MessageArchive_syncedToDrive_idx" ON "MessageArchive" ("syncedToDrive")',
+    );
+    // Mensagens agendadas (mesma estrutura do schema.prisma; aditivo e idempotente)
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ScheduledMessage" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "whatsappId" TEXT NOT NULL,
+        "toPhone" TEXT NOT NULL,
+        "contactName" TEXT,
+        "content" TEXT NOT NULL,
+        "senderName" TEXT,
+        "scheduledAt" TIMESTAMP(3) NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'PENDING',
+        "attempts" INTEGER NOT NULL DEFAULT 0,
+        "lastError" TEXT,
+        "sentAt" TIMESTAMP(3),
+        "createdById" TEXT,
+        "createdByName" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "ScheduledMessage_whatsappId_fkey" FOREIGN KEY ("whatsappId") REFERENCES "WhatsAppAccount" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `);
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "ScheduledMessage_status_scheduledAt_idx" ON "ScheduledMessage" ("status", "scheduledAt")',
+    );
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "ScheduledMessage_whatsappId_idx" ON "ScheduledMessage" ("whatsappId")',
     );
 
     // Sanitização retroativa em background (não bloqueia o boot).
@@ -344,6 +374,7 @@ async function bootstrap() {
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/quick-messages', quickMessageRoutes);
   app.use('/api/archive', archiveRoutes);
+  app.use('/api/scheduled-messages', scheduledMessageRoutes);
 
   // Serve frontend buildado (produção — mesma origem, sem CORS)
   const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
@@ -393,6 +424,10 @@ async function bootstrap() {
     .catch((err) => {
       logger.warn('Aviso na sincronização do schema em background:', err);
     });
+
+  // Agendador de mensagens e retrato periódico do consumo de memória
+  startScheduledMessageWorker();
+  startMemoryDiagnostics();
 
   // Rotina periódica de alívio do banco de dados (Railway Postgres)
   if (env.archiveAutoEnabled) {

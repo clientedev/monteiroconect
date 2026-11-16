@@ -60,6 +60,7 @@ model WhatsAppAccount {
   chatbots      Chatbot[]
   assignments   WhatsAppAssignment[]
   baileysAuth   BaileysAuthState[]
+  scheduledMessages ScheduledMessage[]
 
   @@index([status])
 }
@@ -313,4 +314,30 @@ model MessageArchive {
   @@index([conversationId])
   @@index([whatsappId])
   @@index([syncedToDrive])
+}
+
+/// Mensagem agendada para envio futuro a um contato (ver scheduledMessageService).
+model ScheduledMessage {
+  id            String   @id @default(cuid())
+  whatsappId    String
+  whatsapp      WhatsAppAccount @relation(fields: [whatsappId], references: [id], onDelete: Cascade)
+  /// Telefone (apenas dígitos) ou JID completo (@g.us / @lid) do destinatário.
+  toPhone       String
+  contactName   String?
+  content       String   @db.Text
+  /// Atendente identificado na mensagem (mesmo comportamento do "Enviar como" das conversas).
+  senderName    String?
+  scheduledAt   DateTime
+  /// PENDING | SENDING | SENT | FAILED | CANCELED
+  status        String   @default("PENDING")
+  attempts      Int      @default(0)
+  lastError     String?
+  sentAt        DateTime?
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([whatsappId])
 }

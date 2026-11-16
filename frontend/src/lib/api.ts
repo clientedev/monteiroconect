@@ -373,3 +373,45 @@ export const archiveApi = {
 };
 
 
+
+// Mensagens agendadas
+export type ScheduledStatus = 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'CANCELED';
+
+export interface ScheduledMessage {
+  id: string;
+  whatsappId: string;
+  whatsapp?: { id: string; name: string; phone?: string | null } | null;
+  toPhone: string;
+  contactName?: string | null;
+  content: string;
+  senderName?: string | null;
+  scheduledAt: string;
+  status: ScheduledStatus;
+  attempts: number;
+  lastError?: string | null;
+  sentAt?: string | null;
+  createdByName?: string | null;
+  createdAt: string;
+}
+
+export const scheduledApi = {
+  list: (status: 'pending' | 'sent' | 'failed', opts?: { whatsappId?: string; to?: string }) => {
+    const params = new URLSearchParams({ status });
+    if (opts?.whatsappId) params.set('whatsappId', opts.whatsappId);
+    if (opts?.to) params.set('to', opts.to);
+    return api.get<ScheduledMessage[]>(`/scheduled-messages?${params.toString()}`);
+  },
+  pendingCount: () => api.get<{ count: number }>('/scheduled-messages/pending-count'),
+  create: (data: {
+    accountId: string;
+    to: string;
+    contactName?: string | null;
+    content: string;
+    scheduledAt: string;
+    senderName?: string | null;
+  }) => api.post<ScheduledMessage>('/scheduled-messages', data),
+  update: (id: string, data: { content?: string; scheduledAt?: string; senderName?: string | null }) =>
+    api.put<ScheduledMessage>(`/scheduled-messages/${id}`, data),
+  cancel: (id: string) => api.post<ScheduledMessage>(`/scheduled-messages/${id}/cancel`),
+  delete: (id: string) => api.del<{ id: string }>(`/scheduled-messages/${id}`),
+};

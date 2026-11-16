@@ -9,9 +9,10 @@ import {
   Check, CheckCheck, WifiOff, RefreshCw, ChevronUp, Eye, EyeOff, Tag as TagIcon,
   X, UserCheck, SlidersHorizontal, Info, Bot, User as UserIcon, ShieldCheck,
   Maximize2, Minimize2, ExternalLink, Reply, Share2, Bell, BellOff, ArrowLeft,
-  Zap, MessageSquareQuote, FileText, Download, TrendingUp, Shield, Smartphone,
+  Zap, MessageSquareQuote, FileText, Download, TrendingUp, Shield, Smartphone, CalendarClock,
 } from 'lucide-react';
 import CrmContactModal from '../components/CrmContactModal';
+import ScheduleMessageModal from '../components/ScheduleMessageModal';
 
 
 interface ConvItem {
@@ -633,6 +634,8 @@ export default function ConversationsPage() {
   const [showContactDetails, setShowContactDetails] = useState(false);
   const [messages, setMessages] = useState<Map<string, Msg>>(new Map());
   const [newMessage, setNewMessage] = useState('');
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [includeGroups, setIncludeGroups] = useState<boolean>(() => {
     try {
@@ -2400,6 +2403,15 @@ export default function ConversationsPage() {
                   </select>
                 </div>
               )}
+              {scheduleNotice && (
+                <div className="flex items-center justify-between gap-2 mb-1.5 px-3 py-1.5 rounded-xl bg-monte-verde/10 text-monte-verde text-xs font-semibold" role="status">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <CalendarClock className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{scheduleNotice}</span>
+                  </span>
+                  <Link to="/agendamentos" className="underline flex-shrink-0 hover:text-monte-azul">Ver agendamentos</Link>
+                </div>
+              )}
               <div className="flex items-end gap-1.5 sm:gap-2">
                 <button
                   type="button"
@@ -2465,6 +2477,14 @@ export default function ConversationsPage() {
                   }}
                   disabled={!isConnected}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(true)}
+                  className="p-2 sm:p-2.5 rounded-full cursor-pointer transition-colors flex-shrink-0 text-monte-sereno hover:text-monte-verde hover:bg-monte-areiaSecao"
+                  title="Agendar mensagem para este contato"
+                >
+                  <CalendarClock className="w-5 h-5" />
+                </button>
                 <button
                   onClick={handleSend}
                   disabled={!newMessage.trim() || sending || !isConnected}
@@ -2846,7 +2866,27 @@ export default function ConversationsPage() {
           </div>
         </div>
       )}
+
+      <ScheduleMessageModal
+        open={showScheduleModal && !!selectedConv}
+        onClose={() => setShowScheduleModal(false)}
+        target={selectedConv ? {
+          accountId: selectedConv.accountId,
+          accountName: selectedConv.accountName,
+          to: selectedConv.contactPhone,
+          contactName: selectedConv.contactName,
+        } : null}
+        initialContent={newMessage}
+        defaultSenderName={selectedAttendantName}
+        onSaved={(item) => {
+          setNewMessage('');
+          const when = new Date(item.scheduledAt);
+          setScheduleNotice(
+            `Mensagem agendada para ${when.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${when.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+          );
+          setTimeout(() => setScheduleNotice(null), 8000);
+        }}
+      />
     </div>
   );
 }
-

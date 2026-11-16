@@ -23,6 +23,10 @@ RUN npm run build
 FROM node:20-slim
 
 ENV NODE_ENV=production
+# Limita as arenas do malloc (glibc). O container enxerga todos os núcleos do host e a glibc cria
+# até 8 arenas por núcleo; com as threads do Node e do motor do Prisma isso fragmenta a memória e
+# infla o RSS (cobrado por GB no Railway) sem ganho real. Não altera o comportamento do app.
+ENV MALLOC_ARENA_MAX=2
 WORKDIR /app/backend
 
 # Git + OpenSSL necessários para runtime

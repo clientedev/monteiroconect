@@ -149,7 +149,7 @@ export async function sendPushForNewMessage(data: {
     const contactPhone = String(contact?.phone || conversation?.contact?.phone || '').trim();
     const isGroup = contactPhone.endsWith('@g.us') || Boolean(conversation?.contact?.phone?.endsWith('@g.us'));
     if (isGroup) {
-      logger.info(`Notificação Push suprimida para GRUPO: ${contactPhone}`);
+      logger.debug(`Notificação Push suprimida para GRUPO: ${contactPhone}`);
       return;
     }
 

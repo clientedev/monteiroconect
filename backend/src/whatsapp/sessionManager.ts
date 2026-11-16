@@ -51,7 +51,14 @@ function makeLogger() {
     debug: () => {},
     info: () => {},
     warn: () => {},
-    error: (msg: string) => logger.warn(`[Baileys] ${msg}`),
+    // O Baileys chama error(obj, msg) no padrão pino; antes isso aparecia como "[object Object]".
+    error: (...args: unknown[]) => {
+      const text = args
+        .map(a => (typeof a === 'string' ? a : a instanceof Error ? a.message : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()))
+        .join(' ')
+        .slice(0, 500);
+      logger.warn(`[Baileys] ${text}`);
+    },
     trace: () => {},
     fatal: () => {},
     child: () => makeLogger(),

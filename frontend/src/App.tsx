@@ -14,6 +14,7 @@ import TagsPage from './pages/TagsPage';
 import ChatbotsPage from './pages/ChatbotsPage';
 import SettingsPage from './pages/SettingsPage';
 import QuickMessagesPage from './pages/QuickMessagesPage';
+import ScheduledMessagesPage from './pages/ScheduledMessagesPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="whatsapp" element={<WhatsAppPage />} />
         <Route path="conversations" element={<ConversationsPage />} />
         <Route path="broadcast" element={<BroadcastPage />} />
+        <Route path="agendamentos" element={<ScheduledMessagesPage />} />
         <Route path="chatbots" element={<ChatbotsPage />} />
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="attendants" element={<AttendantsPage />} />

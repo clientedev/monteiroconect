@@ -12,6 +12,10 @@ const NOISE_PATTERNS: Array<[RegExp, string]> = [
   [/^Closing open session in favor of incoming prekey bundle/, 'Closing open session (prekey bundle)'],
   [/^Decrypted message with closed session/, 'Decrypted with closed session'],
   [/^Session already (open|closed)/, 'Session already open/closed'],
+  // console.info do libsignal: despeja o objeto da sessão inteiro, INCLUINDO chaves privadas, nos logs.
+  [/^(Closing|Opening) session:/, 'Session open/close'],
+  [/^Removing old closed session:/, 'Old closed session removed'],
+  [/^Migrating session to:/, 'Session migrated'],
 ];
 
 const counts = new Map<string, number>();
@@ -25,7 +29,7 @@ function flush(write: (...args: unknown[]) => void) {
   write(`[libsignal] últimos 60s → ${summary}`);
 }
 
-function wrap(method: 'error' | 'warn' | 'log') {
+function wrap(method: 'error' | 'warn' | 'info') {
   const original = console[method].bind(console);
   console[method] = (...args: unknown[]) => {
     const first = typeof args[0] === 'string' ? args[0] : '';
@@ -42,4 +46,5 @@ function wrap(method: 'error' | 'warn' | 'log') {
 if (process.env.LIBSIGNAL_VERBOSE_LOGS !== 'true') {
   wrap('error');
   wrap('warn');
+  wrap('info');
 }

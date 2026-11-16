@@ -6,7 +6,7 @@ import ForceChangePasswordModal from './ForceChangePasswordModal';
 import {
   LayoutDashboard, MessageSquare, Smartphone, Users, Tags, Bell, Megaphone, UserCheck,
   LogOut, Search, Menu, X, Bot, User, Clock, ArrowRight, Loader2, Sparkles, Phone, Settings,
-  PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, ExternalLink, MessageSquareQuote,
+  PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, ExternalLink, MessageSquareQuote, CalendarClock,
 } from 'lucide-react';
 import { Component, type ErrorInfo, type ReactNode, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { dashboardApi } from '../lib/api';
@@ -70,6 +70,7 @@ const navItems = [
   { to: '/whatsapp', icon: Smartphone, label: 'Whatsapps' },
   { to: '/conversations', icon: MessageSquare, label: 'Conversas', showBadge: true },
   { to: '/broadcast', icon: Megaphone, label: 'Disparo' },
+  { to: '/agendamentos', icon: CalendarClock, label: 'Agendamentos' },
   { to: '/chatbots', icon: Bot, label: 'Chatbots' },
 ];
 
