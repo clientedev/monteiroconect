@@ -28,9 +28,85 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import quickMessageRoutes from './routes/quickMessageRoutes.js';
 import archiveRoutes from './routes/archiveRoutes.js';
 import scheduledMessageRoutes from './routes/scheduledMessageRoutes.js';
+import automationRoutes from './routes/automationRoutes.js';
+import publicBookingRoutes from './routes/publicBookingRoutes.js';
+import { startAutomationWorker } from './services/automationService.js';
 import { startScheduledMessageWorker } from './services/scheduledMessageService.js';
 import { startMemoryDiagnostics } from './utils/memoryDiagnostics.js';
 import { archiveService } from './services/archiveService.js';
+
+const AUTOMATION_DDL = [
+  `CREATE TABLE IF NOT EXISTS "Automation" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "type" TEXT NOT NULL DEFAULT 'BOOKING',
+    "whatsappId" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'DRAFT',
+    "bookingOpen" BOOLEAN NOT NULL DEFAULT true,
+    "calendars" JSONB NOT NULL,
+    "targetCalendarId" TEXT,
+    "meetingTitle" TEXT NOT NULL DEFAULT 'Revisão de apólice',
+    "durationMinutes" INTEGER NOT NULL DEFAULT 30,
+    "bufferMinutes" INTEGER NOT NULL DEFAULT 15,
+    "daysAhead" INTEGER NOT NULL DEFAULT 14,
+    "minNoticeHours" INTEGER NOT NULL DEFAULT 24,
+    "slotsInMessage" INTEGER NOT NULL DEFAULT 6,
+    "workingHours" JSONB NOT NULL,
+    "skipHolidays" BOOLEAN NOT NULL DEFAULT true,
+    "messageTemplate" TEXT NOT NULL,
+    "confirmationTemplate" TEXT NOT NULL,
+    "senderName" TEXT,
+    "publicBaseUrl" TEXT,
+    "sendWindowStart" TEXT NOT NULL DEFAULT '09:00',
+    "sendWindowEnd" TEXT NOT NULL DEFAULT '19:00',
+    "lastError" TEXT,
+    "createdById" TEXT,
+    "createdByName" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "Automation_whatsappId_fkey" FOREIGN KEY ("whatsappId") REFERENCES "WhatsAppAccount" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
+  'CREATE INDEX IF NOT EXISTS "Automation_status_idx" ON "Automation" ("status")',
+  `CREATE TABLE IF NOT EXISTS "AutomationRecipient" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "automationId" TEXT NOT NULL,
+    "phone" TEXT NOT NULL,
+    "name" TEXT,
+    "source" TEXT,
+    "token" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "lastError" TEXT,
+    "sentAt" TIMESTAMP(3),
+    "openedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "AutomationRecipient_automationId_fkey" FOREIGN KEY ("automationId") REFERENCES "Automation" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
+  'CREATE UNIQUE INDEX IF NOT EXISTS "AutomationRecipient_token_key" ON "AutomationRecipient" ("token")',
+  'CREATE UNIQUE INDEX IF NOT EXISTS "AutomationRecipient_automationId_phone_key" ON "AutomationRecipient" ("automationId", "phone")',
+  'CREATE INDEX IF NOT EXISTS "AutomationRecipient_automationId_status_idx" ON "AutomationRecipient" ("automationId", "status")',
+  `CREATE TABLE IF NOT EXISTS "AutomationBooking" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "automationId" TEXT NOT NULL,
+    "recipientId" TEXT,
+    "phone" TEXT NOT NULL,
+    "name" TEXT,
+    "startAt" TIMESTAMP(3) NOT NULL,
+    "endAt" TIMESTAMP(3) NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'CONFIRMED',
+    "calendarEventId" TEXT,
+    "calendarError" TEXT,
+    "canceledBy" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "AutomationBooking_automationId_fkey" FOREIGN KEY ("automationId") REFERENCES "Automation" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
+  'CREATE INDEX IF NOT EXISTS "AutomationBooking_automationId_startAt_idx" ON "AutomationBooking" ("automationId", "startAt")',
+  'CREATE INDEX IF NOT EXISTS "AutomationBooking_recipientId_idx" ON "AutomationBooking" ("recipientId")',
+  // Dois clientes nunca ficam com o mesmo horário confirmado (vale entre todas as automações).
+  `CREATE UNIQUE INDEX IF NOT EXISTS "AutomationBooking_confirmed_slot_key" ON "AutomationBooking" ("startAt") WHERE "status" = 'CONFIRMED'`,
+];
 
 async function ensureMessageColumns(): Promise<void> {
   // O banco do Railway pode ter sido criado antes da inclusão de campos de
@@ -143,6 +219,10 @@ async function ensureMessageColumns(): Promise<void> {
     await prisma.$executeRawUnsafe(
       'CREATE INDEX IF NOT EXISTS "ScheduledMessage_whatsappId_idx" ON "ScheduledMessage" ("whatsappId")',
     );
+    // Automações de agendamento (mesma estrutura do schema.prisma; aditivo e idempotente)
+    for (const statement of AUTOMATION_DDL) {
+      await prisma.$executeRawUnsafe(statement);
+    }
 
     // Sanitização retroativa em background (não bloqueia o boot).
     // Um comando por chamada: o Postgres não aceita vários comandos num único prepared statement
@@ -375,6 +455,8 @@ async function bootstrap() {
   app.use('/api/quick-messages', quickMessageRoutes);
   app.use('/api/archive', archiveRoutes);
   app.use('/api/scheduled-messages', scheduledMessageRoutes);
+  app.use('/api/automations', automationRoutes);
+  app.use('/api/public/agendamento', publicBookingRoutes);
 
   // Serve frontend buildado (produção — mesma origem, sem CORS)
   const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
@@ -427,6 +509,7 @@ async function bootstrap() {
 
   // Agendador de mensagens e retrato periódico do consumo de memória
   startScheduledMessageWorker();
+  startAutomationWorker();
   startMemoryDiagnostics();
 
   // Rotina periódica de alívio do banco de dados (Railway Postgres)

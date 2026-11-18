@@ -1150,3 +1150,53 @@ export async function getCrmUsers(): Promise<CrmUserItem[]> {
   return Array.from(usersMap.values());
 }
 
+
+// ───────────── Automações: clientes por seguradora (somente leitura) ─────────────
+
+export interface CrmInsurerSummary {
+  name: string;
+  clients: number;
+}
+
+export interface CrmClientByInsurer {
+  name: string;
+  phone: string;
+  insurers?: string | null;
+  policies?: number;
+  nextExpiry?: string | null;
+}
+
+async function crmGetJson(pathAndQuery: string, timeoutMs = 20_000): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${env.crmBaseUrl}${pathAndQuery}`, {
+      headers: { Accept: 'application/json', 'X-API-Key': env.crmApiKey },
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+    if (!res.ok) {
+      throw new Error(data?.error || `CRM respondeu status HTTP ${res.status}`);
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function listCrmInsurers(): Promise<CrmInsurerSummary[]> {
+  const data = await crmGetJson('/api/v1/external/insurers');
+  return Array.isArray(data?.insurers) ? data.insurers : [];
+}
+
+export async function listCrmClientsByInsurer(
+  insurer: string,
+): Promise<{ clients: CrmClientByInsurer[]; withoutPhone: number }> {
+  const data = await crmGetJson(`/api/v1/external/clients/by-insurer?insurer=${encodeURIComponent(insurer)}`, 30_000);
+  return {
+    clients: Array.isArray(data?.clients) ? data.clients : [],
+    withoutPhone: Number(data?.withoutPhone || 0),
+  };
+}

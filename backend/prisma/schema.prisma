@@ -61,6 +61,7 @@ model WhatsAppAccount {
   assignments   WhatsAppAssignment[]
   baileysAuth   BaileysAuthState[]
   scheduledMessages ScheduledMessage[]
+  automations   Automation[]
 
   @@index([status])
 }
@@ -340,4 +341,86 @@ model ScheduledMessage {
 
   @@index([status, scheduledAt])
   @@index([whatsappId])
+}
+
+/// Automação de agendamento: envia aos clientes os horários livres (lidos das agendas Google)
+/// e um link onde o cliente escolhe e confirma a reunião. Ver automationService.
+model Automation {
+  id                   String   @id @default(cuid())
+  name                 String
+  type                 String   @default("BOOKING")
+  whatsappId           String
+  whatsapp             WhatsAppAccount @relation(fields: [whatsappId], references: [id], onDelete: Cascade)
+  /// DRAFT | ACTIVE (enviando) | PAUSED
+  status               String   @default("DRAFT")
+  bookingOpen          Boolean  @default(true)
+  /// [{ id, name }] — agendas cujos compromissos bloqueiam horários
+  calendars            Json
+  targetCalendarId     String?
+  meetingTitle         String   @default("Revisão de apólice")
+  durationMinutes      Int      @default(30)
+  bufferMinutes        Int      @default(15)
+  daysAhead            Int      @default(14)
+  minNoticeHours       Int      @default(24)
+  slotsInMessage       Int      @default(6)
+  /// { "1": [["09:00","12:00"],["13:30","18:00"]], ... } — 0 = domingo
+  workingHours         Json
+  skipHolidays         Boolean  @default(true)
+  messageTemplate      String   @db.Text
+  confirmationTemplate String   @db.Text
+  senderName           String?
+  publicBaseUrl        String?
+  sendWindowStart      String   @default("09:00")
+  sendWindowEnd        String   @default("19:00")
+  lastError            String?
+  createdById          String?
+  createdByName        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  recipients           AutomationRecipient[]
+  bookings             AutomationBooking[]
+
+  @@index([status])
+}
+
+model AutomationRecipient {
+  id           String   @id @default(cuid())
+  automationId String
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  phone        String
+  name         String?
+  source       String?
+  token        String   @unique
+  /// PENDING | SENT | FAILED | SKIPPED
+  status       String   @default("PENDING")
+  attempts     Int      @default(0)
+  lastError    String?
+  sentAt       DateTime?
+  openedAt     DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([automationId, phone])
+  @@index([automationId, status])
+}
+
+model AutomationBooking {
+  id              String   @id @default(cuid())
+  automationId    String
+  automation      Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  recipientId     String?
+  phone           String
+  name            String?
+  startAt         DateTime
+  endAt           DateTime
+  /// CONFIRMED | CANCELED
+  status          String   @default("CONFIRMED")
+  calendarEventId String?
+  calendarError   String?
+  canceledBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([automationId, startAt])
+  @@index([recipientId])
 }

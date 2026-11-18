@@ -15,6 +15,9 @@ import ChatbotsPage from './pages/ChatbotsPage';
 import SettingsPage from './pages/SettingsPage';
 import QuickMessagesPage from './pages/QuickMessagesPage';
 import ScheduledMessagesPage from './pages/ScheduledMessagesPage';
+import AutomationsPage from './pages/AutomationsPage';
+import AutomationDetailPage from './pages/AutomationDetailPage';
+import PublicBookingPage from './pages/PublicBookingPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -34,6 +37,7 @@ export default function App() {
 
   return (
     <Routes>
+      <Route path="/agendar/:token" element={<PublicBookingPage />} />
       <Route path="/login" element={
         user ? <Navigate to="/" /> : <LoginPage />
       } />
@@ -45,6 +49,8 @@ export default function App() {
         <Route path="conversations" element={<ConversationsPage />} />
         <Route path="broadcast" element={<BroadcastPage />} />
         <Route path="agendamentos" element={<ScheduledMessagesPage />} />
+        <Route path="automacoes" element={<AutomationsPage />} />
+        <Route path="automacoes/:id" element={<AutomationDetailPage />} />
         <Route path="chatbots" element={<ChatbotsPage />} />
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="attendants" element={<AttendantsPage />} />

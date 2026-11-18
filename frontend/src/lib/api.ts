@@ -415,3 +415,107 @@ export const scheduledApi = {
   cancel: (id: string) => api.post<ScheduledMessage>(`/scheduled-messages/${id}/cancel`),
   delete: (id: string) => api.del<{ id: string }>(`/scheduled-messages/${id}`),
 };
+
+// Automações de agendamento
+export type WorkingHours = Record<string, Array<[string, string]>>;
+
+export interface AutomationCalendar { id: string; name: string; ok?: boolean | null; error?: string }
+
+export interface Automation {
+  id: string;
+  name: string;
+  status: 'DRAFT' | 'ACTIVE' | 'PAUSED';
+  bookingOpen: boolean;
+  whatsappId: string;
+  whatsapp?: { id: string; name: string; status?: string } | null;
+  calendars: AutomationCalendar[];
+  targetCalendarId: string | null;
+  meetingTitle: string;
+  durationMinutes: number;
+  bufferMinutes: number;
+  daysAhead: number;
+  minNoticeHours: number;
+  slotsInMessage: number;
+  workingHours: WorkingHours;
+  skipHolidays: boolean;
+  messageTemplate: string;
+  confirmationTemplate: string;
+  senderName: string | null;
+  sendWindowStart: string;
+  sendWindowEnd: string;
+  lastError: string | null;
+  createdByName?: string | null;
+  createdAt: string;
+  stats: { PENDING: number; SENT: number; FAILED: number; SKIPPED: number; total: number; booked: number };
+}
+
+export interface AutomationRecipient {
+  id: string;
+  phone: string;
+  name: string | null;
+  source: string | null;
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
+  lastError: string | null;
+  sentAt: string | null;
+  openedAt: string | null;
+  bookedAt: string | null;
+}
+
+export interface AutomationBooking {
+  id: string;
+  phone: string;
+  name: string | null;
+  startAt: string;
+  endAt: string;
+  status: 'CONFIRMED' | 'CANCELED';
+  calendarEventId: string | null;
+  calendarError: string | null;
+  canceledBy: string | null;
+  createdAt: string;
+}
+
+export interface SlotDay { key: string; label: string; slots: Array<{ start: string; label: string }> }
+
+export interface AutomationPreview {
+  serviceAccountEmail: string | null;
+  calendarError: string | null;
+  calendars: AutomationCalendar[];
+  totalSlots: number;
+  days: SlotDay[];
+  message: string;
+}
+
+export interface AutomationMeta {
+  serviceAccountEmail: string | null;
+  presetCalendars: AutomationCalendar[];
+  presetTargetCalendarId: string;
+  defaultWorkingHours: WorkingHours;
+  defaultMessageTemplate: string;
+  defaultConfirmationTemplate: string;
+}
+
+export const automationApi = {
+  meta: () => api.get<AutomationMeta>('/automations/meta'),
+  list: () => api.get<Automation[]>('/automations'),
+  get: (id: string) => api.get<Automation>(`/automations/${id}`),
+  create: (data: Partial<Automation>) => api.post<Automation>('/automations', data),
+  update: (id: string, data: Partial<Automation>) => api.put<Automation>(`/automations/${id}`, data),
+  remove: (id: string) => api.del<{ id: string }>(`/automations/${id}`),
+  start: (id: string) => api.post<Automation>(`/automations/${id}/start`),
+  pause: (id: string) => api.post<Automation>(`/automations/${id}/pause`),
+  preview: (id: string) => api.get<AutomationPreview>(`/automations/${id}/preview`),
+  recipients: (id: string) => api.get<AutomationRecipient[]>(`/automations/${id}/recipients`),
+  addRecipients: (id: string, source: string, items: Array<{ phone: string; name?: string | null }>) =>
+    api.post<{ added: number; duplicates: number; invalid: number }>(`/automations/${id}/recipients`, { source, items }),
+  removeRecipient: (id: string, recipientId: string) => api.del(`/automations/${id}/recipients/${recipientId}`),
+  retryFailed: (id: string) => api.post<{ requeued: number }>(`/automations/${id}/recipients/retry-failed`),
+  bookings: (id: string) => api.get<AutomationBooking[]>(`/automations/${id}/bookings`),
+  cancelBooking: (id: string, bookingId: string) => api.post(`/automations/${id}/bookings/${bookingId}/cancel`),
+  crmInsurers: () => api.get<Array<{ name: string; clients: number }>>('/automations/crm/insurers'),
+  crmClients: (insurer: string) =>
+    api.get<{ clients: Array<{ name: string; phone: string; insurers?: string; policies?: number }>; withoutPhone: number }>(
+      `/automations/crm/clients?insurer=${encodeURIComponent(insurer)}`,
+    ),
+  tagContacts: (whatsappId: string, tagId: string) =>
+    api.get<Array<{ name: string | null; phone: string }>>(`/automations/tag-contacts?whatsappId=${whatsappId}&tagId=${tagId}`),
+};
